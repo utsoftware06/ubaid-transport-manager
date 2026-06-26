@@ -19,7 +19,7 @@ const BookingSlip = forwardRef<HTMLDivElement, BookingSlipProps>(
         </h1>
 
         <p className="text-center mb-6">
-          Transport Booking Slip
+          Bilty Receipt
         </p>
 
         <hr className="my-4" />
@@ -27,7 +27,7 @@ const BookingSlip = forwardRef<HTMLDivElement, BookingSlipProps>(
         <div className="grid grid-cols-2 gap-4">
 
           <p>
-            <strong>Booking No:</strong>{" "}
+            <strong>Bilty No:</strong>{" "}
             {booking.booking_no}
           </p>
 

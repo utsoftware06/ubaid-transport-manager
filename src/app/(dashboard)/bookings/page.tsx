@@ -161,7 +161,7 @@ const filteredBookings = bookings.filter(
     <main className="min-h-screen bg-slate-100 p-8">
       <div className="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-md">
         <h1 className="text-4xl font-bold text-center mb-8 text-gray-900">
-          Add New Booking
+          Create Bilty
         </h1>
 
         <form
@@ -192,7 +192,7 @@ const filteredBookings = bookings.filter(
 
           <input
             type="text"
-            placeholder="Booking Number"
+            placeholder="Bilty Number"
             value={bookingNo}
             onChange={(e) =>
               setBookingNo(e.target.value)
@@ -330,17 +330,17 @@ const filteredBookings = bookings.filter(
       : "bg-blue-600 hover:bg-blue-700"
   }`}
 >
-  {editingId ? "Update Booking" : "Save Booking"}
+  {editingId ? "Update Bilty" : "Save Bilty"}
 </button>
         </form>
 
         <div className="mt-10">
           <h2 className="text-2xl font-bold mb-4 text-gray-900">
-            My Bookings
+            Bilty List
           </h2>
         <input
   type="text"
-  placeholder="Search Booking No, Sender or Receiver"
+  placeholder="Search Bilty No, Sender or Receiver"
   value={search}
   onChange={(e) => setSearch(e.target.value)}
   className="w-full border p-3 rounded-lg mb-6 text-gray-700 placeholder:text-gray-500"
