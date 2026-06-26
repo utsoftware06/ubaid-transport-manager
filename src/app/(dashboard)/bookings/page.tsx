@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { useReactToPrint } from "react-to-print";
 import { supabase } from "@/lib/supabase/client";
+import BookingSlip from "@/components/bookings/BookingSlip";
 
 export default function BookingsPage() {
   const [addaId, setAddaId] = useState("");
@@ -23,6 +25,12 @@ export default function BookingsPage() {
   const [addas, setAddas] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedBooking, setSelectedBooking] = useState<any | null>(null);
+  const printRef = useRef<HTMLDivElement>(null);
+
+const handlePrint = useReactToPrint({
+  contentRef: printRef,
+});
 
   async function loadAddas() {
     const { data } = await supabase
@@ -405,6 +413,18 @@ const filteredBookings = bookings.filter(
   >
     ✏ Edit
   </button>
+ <button
+ onClick={() => {
+  setSelectedBooking(booking);
+
+  setTimeout(() => {
+    handlePrint();
+  }, 100);
+}}
+  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
+>
+  🖨 Print
+</button>
 </div>
                 </div>
               ))}
@@ -412,6 +432,10 @@ const filteredBookings = bookings.filter(
           )}
         </div>
       </div>
+           <BookingSlip
+  ref={printRef}
+  booking={selectedBooking}
+/>
     </main>
   );
 }
