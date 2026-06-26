@@ -64,12 +64,39 @@ const filteredBookings = bookings.filter(
       ?.toLowerCase()
       .includes(search.toLowerCase())
 );
-  async function handleSaveBooking(
-    e: React.FormEvent<HTMLFormElement>
-  ) {
-    e.preventDefault();
+ async function handleSaveBooking(
+  e: React.FormEvent<HTMLFormElement>
+) {
+  e.preventDefault();
 
-    const { error } = await supabase
+  let error;
+
+  if (editingId) {
+    // UPDATE
+    const result = await supabase
+      .from("bookings")
+      .update({
+        adda_id: addaId,
+        booking_no: bookingNo,
+        booking_date: bookingDate,
+        sender_name: senderName,
+        sender_phone: senderPhone,
+        receiver_name: receiverName,
+        receiver_phone: receiverPhone,
+        from_city: fromCity,
+        to_city: toCity,
+        goods_name: goodsName,
+        quantity: Number(quantity),
+        weight: Number(weight),
+        freight: Number(freight),
+        status,
+      })
+      .eq("id", editingId);
+
+    error = result.error;
+  } else {
+    // INSERT
+    const result = await supabase
       .from("bookings")
       .insert({
         adda_id: addaId,
@@ -88,30 +115,39 @@ const filteredBookings = bookings.filter(
         status,
       });
 
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    alert("Booking saved successfully!");
-
-    setAddaId("");
-    setBookingNo("");
-    setBookingDate("");
-    setSenderName("");
-    setSenderPhone("");
-    setReceiverName("");
-    setReceiverPhone("");
-    setFromCity("");
-    setToCity("");
-    setGoodsName("");
-    setQuantity("");
-    setWeight("");
-    setFreight("");
-    setStatus("Booked");
-
-    await loadBookings();
+    error = result.error;
   }
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  alert(
+    editingId
+      ? "Booking updated successfully!"
+      : "Booking saved successfully!"
+  );
+
+  setEditingId(null);
+
+  setAddaId("");
+  setBookingNo("");
+  setBookingDate("");
+  setSenderName("");
+  setSenderPhone("");
+  setReceiverName("");
+  setReceiverPhone("");
+  setFromCity("");
+  setToCity("");
+  setGoodsName("");
+  setQuantity("");
+  setWeight("");
+  setFreight("");
+  setStatus("Booked");
+
+  await loadBookings();
+}
 
   return (
     <main className="min-h-screen bg-slate-100 p-8">
@@ -278,12 +314,16 @@ const filteredBookings = bookings.filter(
             <option>Delivered</option>
           </select>
 
-          <button
-            type="submit"
-            className="w-full bg-blue-600 text-white p-3 rounded-lg"
-          >
-            Save Booking
-          </button>
+         <button
+  type="submit"
+  className={`w-full p-3 rounded-lg text-white ${
+    editingId
+      ? "bg-yellow-600 hover:bg-yellow-700"
+      : "bg-blue-600 hover:bg-blue-700"
+  }`}
+>
+  {editingId ? "Update Booking" : "Save Booking"}
+</button>
         </form>
 
         <div className="mt-10">
@@ -336,6 +376,36 @@ const filteredBookings = bookings.filter(
                   <p className="text-gray-700">
                     Status: {booking.status}
                   </p>
+                  <div className="mt-4">
+  <button
+    onClick={() => {
+      setEditingId(booking.id);
+
+      setAddaId(booking.adda_id ?? "");
+      setBookingNo(booking.booking_no ?? "");
+      setBookingDate(booking.booking_date ?? "");
+      setSenderName(booking.sender_name ?? "");
+      setSenderPhone(booking.sender_phone ?? "");
+      setReceiverName(booking.receiver_name ?? "");
+      setReceiverPhone(booking.receiver_phone ?? "");
+      setFromCity(booking.from_city ?? "");
+      setToCity(booking.to_city ?? "");
+      setGoodsName(booking.goods_name ?? "");
+      setQuantity(String(booking.quantity ?? ""));
+      setWeight(String(booking.weight ?? ""));
+      setFreight(String(booking.freight ?? ""));
+      setStatus(booking.status ?? "Booked");
+
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
+    }}
+    className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg"
+  >
+    ✏ Edit
+  </button>
+</div>
                 </div>
               ))}
             </div>
