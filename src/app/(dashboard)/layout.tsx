@@ -71,7 +71,18 @@ export default function DashboardLayout({
                 : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
             }`}
           >
-            📦 Bookings
+            📦 Bilty
+          </Link>
+
+          <Link
+            href="/loading"
+            className={`block p-3 rounded-lg font-medium ${
+              pathname === "/loading"
+                ? "border-2 border-black bg-blue-50 text-blue-600"
+                : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+            }`}
+          >
+            🚛 Loading
           </Link>
 
           <Link
@@ -88,9 +99,7 @@ export default function DashboardLayout({
       </aside>
 
       {/* Page Content */}
-      <main className="flex-1 p-8">
-        {children}
-      </main>
+      <main className="flex-1 p-8">{children}</main>
     </div>
   );
 }

@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
 
 export default function DriversPage() {
+  const [addaId, setAddaId] = useState("");
+  const [addas, setAddas] = useState<any[]>([]);
+
   const [name, setName] = useState("");
   const [fatherName, setFatherName] = useState("");
   const [cnic, setCnic] = useState("");
@@ -11,29 +14,50 @@ export default function DriversPage() {
   const [licenseNo, setLicenseNo] = useState("");
   const [address, setAddress] = useState("");
 
+  useEffect(() => {
+    loadAddas();
+  }, []);
+
+  async function loadAddas() {
+    const { data } = await supabase
+      .from("addas")
+      .select("*")
+      .order("name");
+
+    if (data) {
+      setAddas(data);
+    }
+  }
+
   async function handleSaveDriver(
     e: React.FormEvent<HTMLFormElement>
   ) {
     e.preventDefault();
 
-    const { error } = await supabase
-      .from("drivers")
-      .insert({
-        name,
-        father_name: fatherName,
-        cnic,
-        phone,
-        license_no: licenseNo,
-        address,
-      });
+   const { data, error } = await supabase
+  .from("drivers")
+  .insert({
+    adda_id: addaId,
+    name,
+    father_name: fatherName,
+    cnic,
+    phone,
+    license_no: licenseNo,
+    address,
+  })
+  .select();
 
-    if (error) {
-      alert(error.message);
-      return;
-    }
+console.log("DATA:", data);
+console.log("ERROR:", error);
+
+if (error) {
+  alert(error.message);
+  return;
+}
 
     alert("Driver saved successfully!");
 
+    setAddaId("");
     setName("");
     setFatherName("");
     setCnic("");
@@ -53,12 +77,28 @@ export default function DriversPage() {
           onSubmit={handleSaveDriver}
           className="space-y-4"
         >
+
+          <select
+            value={addaId}
+            onChange={(e) => setAddaId(e.target.value)}
+            className="w-full border border-gray-300 p-3 rounded-lg bg-white text-gray-900"
+            required
+          >
+            <option value="">Select Adda</option>
+
+            {addas.map((adda: any) => (
+              <option key={adda.id} value={adda.id}>
+                {adda.name}
+              </option>
+            ))}
+          </select>
+
           <input
             type="text"
             placeholder="Driver Name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full border border-gray-300 p-3 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="w-full border border-gray-300 p-3 rounded-lg bg-white text-gray-900"
             required
           />
 
@@ -67,7 +107,7 @@ export default function DriversPage() {
             placeholder="Father Name"
             value={fatherName}
             onChange={(e) => setFatherName(e.target.value)}
-            className="w-full border border-gray-300 p-3 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="w-full border border-gray-300 p-3 rounded-lg bg-white text-gray-900"
           />
 
           <input
@@ -75,7 +115,7 @@ export default function DriversPage() {
             placeholder="CNIC"
             value={cnic}
             onChange={(e) => setCnic(e.target.value)}
-            className="w-full border border-gray-300 p-3 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="w-full border border-gray-300 p-3 rounded-lg bg-white text-gray-900"
           />
 
           <input
@@ -83,7 +123,7 @@ export default function DriversPage() {
             placeholder="Phone Number"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className="w-full border border-gray-300 p-3 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="w-full border border-gray-300 p-3 rounded-lg bg-white text-gray-900"
           />
 
           <input
@@ -91,7 +131,7 @@ export default function DriversPage() {
             placeholder="License Number"
             value={licenseNo}
             onChange={(e) => setLicenseNo(e.target.value)}
-            className="w-full border border-gray-300 p-3 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="w-full border border-gray-300 p-3 rounded-lg bg-white text-gray-900"
           />
 
           <input
@@ -99,7 +139,7 @@ export default function DriversPage() {
             placeholder="Address"
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            className="w-full border border-gray-300 p-3 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="w-full border border-gray-300 p-3 rounded-lg bg-white text-gray-900"
           />
 
           <button
@@ -108,6 +148,7 @@ export default function DriversPage() {
           >
             Save Driver
           </button>
+
         </form>
       </div>
     </main>
