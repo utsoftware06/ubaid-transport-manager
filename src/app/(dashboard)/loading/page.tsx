@@ -364,6 +364,7 @@ export default function LoadingPage() {
   }
 
   async function handleDeleteLoading(loading: LoadingRecord) {
+    console.log("DELETE CLICKED:", loading);
     const confirmed = window.confirm(
       `Delete loading ${loading.loading_no}? This will also delete its loading items.`
     );
@@ -388,6 +389,9 @@ export default function LoadingPage() {
       .delete()
       .eq("id", loading.id);
 
+      console.log("Loading ID:", loading.id);
+console.log("Delete Error:", loadingError);
+
     setIsDeleting(false);
 
     if (loadingError) {
@@ -404,8 +408,13 @@ export default function LoadingPage() {
       resetLoadingForm();
     }
 
-    alert("Loading deleted successfully!");
-    await loadLoadings();
+   alert("Loading deleted successfully!");
+
+await loadLoadings();
+
+setLoadings((prev) =>
+  prev.filter((item) => item.id !== loading.id)
+);
   }
 
   function handlePrintLoadingSlip(loading: LoadingRecord) {
