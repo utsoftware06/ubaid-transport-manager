@@ -30,6 +30,8 @@ type LoadingFormProps = {
   setDriverId: (value: string) => void;
   route: string;
   setRoute: (value: string) => void;
+  advanceAmount: string;
+  setAdvanceAmount: (value: string) => void;
   vehicles: Vehicle[];
   drivers: Driver[];
   onSave: () => void;
@@ -37,6 +39,10 @@ type LoadingFormProps = {
   isEditing?: boolean;
   onCancelEdit?: () => void;
 };
+
+function formatAmount(value: number): string {
+  return `Rs. ${Number(value || 0).toLocaleString("en-PK")}`;
+}
 
 export default function LoadingForm({
   loadingNo,
@@ -52,6 +58,8 @@ export default function LoadingForm({
   setDriverId,
   route,
   setRoute,
+  advanceAmount,
+  setAdvanceAmount,
   vehicles,
   drivers,
   onSave,
@@ -59,6 +67,14 @@ export default function LoadingForm({
   isEditing = false,
   onCancelEdit,
 }: LoadingFormProps) {
+  const selectedBooking = bookings.find((booking) => booking.id === bookingId);
+  const totalFreight = Number(selectedBooking?.freight ?? 0);
+  const advance = Number(advanceAmount || 0);
+  const remainingAmount = Math.max(totalFreight - advance, 0);
+
+  const paymentStatus =
+    advance <= 0 ? "Unpaid" : advance >= totalFreight ? "Paid" : "Partial";
+
   return (
     <div>
       <div className="mb-8 flex flex-col justify-between gap-3 md:flex-row md:items-center">
@@ -67,8 +83,8 @@ export default function LoadingForm({
             {isEditing ? "Edit Loading" : "Create New Loading"}
           </h2>
           <p className="mt-1 text-base font-medium text-gray-900">
-            Link a booking and enter the loading, vehicle, driver, and route
-            details.
+            Link a booking and enter loading, vehicle, driver, route and freight
+            payment details.
           </p>
         </div>
 
@@ -77,7 +93,7 @@ export default function LoadingForm({
             type="button"
             onClick={onCancelEdit}
             disabled={isSaving}
-            className="rounded-lg border border-gray-300 bg-white px-5 py-3 font-semibold text-gray-900 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-lg border border-gray-300 bg-white px-5 py-3 font-semibold text-gray-900 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-white disabled:text-gray-900 disabled:opacity-100"
           >
             Cancel Edit
           </button>
@@ -99,7 +115,7 @@ export default function LoadingForm({
             value={loadingNo}
             onChange={(event) => setLoadingNo(event.target.value)}
             disabled={isSaving}
-            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 placeholder:text-gray-600 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100"
+            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 placeholder:text-gray-600 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-white disabled:text-gray-900 disabled:opacity-100"
           />
         </div>
 
@@ -116,7 +132,7 @@ export default function LoadingForm({
             value={loadingDate}
             onChange={(event) => setLoadingDate(event.target.value)}
             disabled={isSaving}
-            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100"
+            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-white disabled:text-gray-900 disabled:opacity-100"
           />
         </div>
 
@@ -133,14 +149,14 @@ export default function LoadingForm({
             onChange={(event) => setBookingId(event.target.value)}
             disabled={isSaving}
             required
-            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100"
+            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-white disabled:text-gray-900 disabled:opacity-100"
           >
             <option value="">Select Booking</option>
             {bookings.map((booking) => (
               <option key={booking.id} value={booking.id}>
                 {booking.booking_no} - {booking.sender_name} to{" "}
                 {booking.receiver_name} - Rs.{" "}
-                {Number(booking.freight || 0).toLocaleString()}
+                {Number(booking.freight || 0).toLocaleString("en-PK")}
               </option>
             ))}
           </select>
@@ -158,7 +174,7 @@ export default function LoadingForm({
             value={vehicleId}
             onChange={(event) => setVehicleId(event.target.value)}
             disabled={isSaving}
-            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100"
+            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-white disabled:text-gray-900 disabled:opacity-100"
           >
             <option value="">Select Vehicle</option>
             {vehicles.map((vehicle) => (
@@ -181,7 +197,7 @@ export default function LoadingForm({
             value={driverId}
             onChange={(event) => setDriverId(event.target.value)}
             disabled={isSaving}
-            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100"
+            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-white disabled:text-gray-900 disabled:opacity-100"
           >
             <option value="">Select Driver</option>
             {drivers.map((driver) => (
@@ -206,8 +222,70 @@ export default function LoadingForm({
             value={route}
             onChange={(event) => setRoute(event.target.value)}
             disabled={isSaving}
-            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 placeholder:text-gray-600 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100"
+            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 placeholder:text-gray-600 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-white disabled:text-gray-900 disabled:opacity-100"
           />
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-blue-50 p-5 md:col-span-2">
+          <h3 className="mb-4 text-xl font-bold text-gray-900">
+            Freight Payment
+          </h3>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
+            <div>
+              <p className="mb-2 block text-sm font-bold text-gray-900">
+                Total Freight
+              </p>
+              <div className="rounded-lg border border-gray-300 bg-white p-3 font-bold text-gray-900">
+                {formatAmount(totalFreight)}
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="advance-amount"
+                className="mb-2 block text-sm font-bold text-gray-900"
+              >
+                Advance Amount
+              </label>
+              <input
+                id="advance-amount"
+                type="number"
+                min="0"
+                placeholder="0"
+                value={advanceAmount}
+                onChange={(event) => setAdvanceAmount(event.target.value)}
+                disabled={isSaving || !bookingId}
+                className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 placeholder:text-gray-600 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-white disabled:text-gray-900 disabled:opacity-100"
+              />
+            </div>
+
+            <div>
+              <p className="mb-2 block text-sm font-bold text-gray-900">
+                Remaining
+              </p>
+              <div className="rounded-lg border border-gray-300 bg-white p-3 font-bold text-gray-900">
+                {formatAmount(remainingAmount)}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 block text-sm font-bold text-gray-900">
+                Status
+              </p>
+              <div
+                className={`rounded-lg border p-3 font-bold ${
+                  paymentStatus === "Paid"
+                    ? "border-green-200 bg-green-100 text-green-700"
+                    : paymentStatus === "Partial"
+                      ? "border-yellow-200 bg-yellow-100 text-yellow-800"
+                      : "border-red-200 bg-red-100 text-red-700"
+                }`}
+              >
+                {paymentStatus}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

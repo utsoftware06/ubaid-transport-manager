@@ -18,15 +18,15 @@ type Driver = {
 
 type Booking = {
   id: string;
-  booking_no: string;
-  sender_name: string;
-  receiver_name: string;
-  freight: number;
+  booking_no: string | null;
+  sender_name: string | null;
+  receiver_name: string | null;
+  freight: number | string | null;
 };
 
 type LoadingItem = {
-  id: number;
-  loading_id: number;
+  id: string;
+  loading_id: string;
   item_name: string;
   quantity: number;
   weight: number;
@@ -35,19 +35,27 @@ type LoadingItem = {
 };
 
 type LoadingRecord = {
-  id: number;
+  id: string;
   loading_no: string;
   loading_date: string;
   booking_id: string | null;
   vehicle_id: string;
   driver_id: string;
   route: string;
-  bookings?: Booking | null;
+  advance_amount: number | null;
+  remaining_amount: number | null;
+  payment_status: string | null;
   vehicles?: {
     vehicle_no: string;
   } | null;
   drivers?: {
     name: string;
+  } | null;
+  bookings?: {
+    booking_no: string | null;
+    sender_name: string | null;
+    receiver_name: string | null;
+    freight: number | string | null;
   } | null;
   loading_items?: LoadingItem[];
 };
@@ -59,6 +67,7 @@ export default function LoadingPage() {
   const [vehicleId, setVehicleId] = useState("");
   const [driverId, setDriverId] = useState("");
   const [route, setRoute] = useState("");
+  const [advanceAmount, setAdvanceAmount] = useState("");
 
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -73,15 +82,14 @@ export default function LoadingPage() {
   const [unit, setUnit] = useState("Kg");
   const [remarks, setRemarks] = useState("");
 
-  const [loadingId, setLoadingId] = useState<number | null>(null);
-  const [editingLoadingId, setEditingLoadingId] = useState<number | null>(null);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [editingLoadingId, setEditingLoadingId] = useState<string | null>(null);
   const [isSavingLoading, setIsSavingLoading] = useState(false);
   const [isSavingItem, setIsSavingItem] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const selectedLoading = useMemo(() => {
     if (!loadingId) return null;
-
     return loadings.find((loading) => loading.id === loadingId) ?? null;
   }, [loadingId, loadings]);
 
@@ -97,10 +105,13 @@ export default function LoadingPage() {
         loading.bookings?.booking_no,
         loading.bookings?.sender_name,
         loading.bookings?.receiver_name,
-        String(loading.bookings?.freight ?? ""),
         loading.vehicles?.vehicle_no,
         loading.drivers?.name,
         loading.route,
+        String(loading.bookings?.freight ?? ""),
+        String(loading.advance_amount ?? ""),
+        String(loading.remaining_amount ?? ""),
+        loading.payment_status ?? "",
         ...(loading.loading_items ?? []).flatMap((item) => [
           item.item_name,
           String(item.quantity ?? ""),
@@ -118,15 +129,15 @@ export default function LoadingPage() {
   }, [loadings, search]);
 
   useEffect(() => {
-    void loadBookings();
-    void loadVehicles();
-    void loadDrivers();
-    void loadLoadings();
+    loadBookings();
+    loadVehicles();
+    loadDrivers();
+    loadLoadings();
   }, []);
 
   useEffect(() => {
     if (loadingId) {
-      void loadLoadingItems(loadingId);
+      loadLoadingItems(loadingId);
     } else {
       setLoadingItems([]);
     }
@@ -136,20 +147,20 @@ export default function LoadingPage() {
     const { data, error } = await supabase
       .from("bookings")
       .select("id, booking_no, sender_name, receiver_name, freight")
-      .order("booking_no");
+      .order("booking_no", { ascending: false });
 
     if (error) {
       alert(error.message);
       return;
     }
 
-    setBookings((data ?? []) as Booking[]);
+    if (data) setBookings(data as Booking[]);
   }
 
   async function loadVehicles() {
     const { data, error } = await supabase
       .from("vehicles")
-      .select("id, vehicle_no")
+      .select("*")
       .order("vehicle_no");
 
     if (error) {
@@ -157,13 +168,13 @@ export default function LoadingPage() {
       return;
     }
 
-    setVehicles((data ?? []) as Vehicle[]);
+    if (data) setVehicles(data as Vehicle[]);
   }
 
   async function loadDrivers() {
     const { data, error } = await supabase
       .from("drivers")
-      .select("id, name")
+      .select("*")
       .order("name");
 
     if (error) {
@@ -171,7 +182,7 @@ export default function LoadingPage() {
       return;
     }
 
-    setDrivers((data ?? []) as Driver[]);
+    if (data) setDrivers(data as Driver[]);
   }
 
   async function loadLoadings() {
@@ -180,13 +191,7 @@ export default function LoadingPage() {
       .select(
         `
         *,
-        bookings(
-          id,
-          booking_no,
-          sender_name,
-          receiver_name,
-          freight
-        ),
+        bookings(booking_no, sender_name, receiver_name, freight),
         vehicles(vehicle_no),
         drivers(name),
         loading_items(*)
@@ -199,7 +204,7 @@ export default function LoadingPage() {
       return;
     }
 
-    setLoadings((data ?? []) as LoadingRecord[]);
+    if (data) setLoadings(data as LoadingRecord[]);
   }
 
   async function loadLoadingItems(currentLoadingId = loadingId) {
@@ -216,7 +221,7 @@ export default function LoadingPage() {
       return;
     }
 
-    setLoadingItems((data ?? []) as LoadingItem[]);
+    if (data) setLoadingItems(data as LoadingItem[]);
   }
 
   function resetLoadingForm() {
@@ -226,6 +231,7 @@ export default function LoadingPage() {
     setVehicleId("");
     setDriverId("");
     setRoute("");
+    setAdvanceAmount("");
     setEditingLoadingId(null);
   }
 
@@ -268,6 +274,11 @@ export default function LoadingPage() {
       return false;
     }
 
+    if (advanceAmount && Number(advanceAmount) < 0) {
+      alert("Advance amount cannot be negative.");
+      return false;
+    }
+
     return true;
   }
 
@@ -300,72 +311,95 @@ export default function LoadingPage() {
     return true;
   }
 
+  function getPaymentValues() {
+    const selectedBooking = bookings.find((booking) => booking.id === bookingId);
+    const totalFreight = Number(selectedBooking?.freight ?? 0);
+    const advance = Number(advanceAmount || 0);
+    const remaining = Math.max(totalFreight - advance, 0);
+
+    let paymentStatus = "Unpaid";
+
+    if (advance <= 0) {
+      paymentStatus = "Unpaid";
+    } else if (advance >= totalFreight) {
+      paymentStatus = "Paid";
+    } else {
+      paymentStatus = "Partial";
+    }
+
+    return {
+      advance,
+      remaining,
+      paymentStatus,
+    };
+  }
+
   async function handleSaveLoading() {
     if (!validateLoadingForm()) return;
 
+    const { advance, remaining, paymentStatus } = getPaymentValues();
+
     setIsSavingLoading(true);
 
-    try {
-      if (editingLoadingId) {
-        const { error } = await supabase
-          .from("loadings")
-          .update({
-            loading_no: loadingNo.trim(),
-            loading_date: loadingDate,
-            booking_id: bookingId,
-            vehicle_id: vehicleId,
-            driver_id: driverId,
-            route: route.trim(),
-          })
-          .eq("id", editingLoadingId);
-
-        if (error) {
-          if (error.code === "23505") {
-            alert("This booking is already linked with another loading.");
-            return;
-          }
-
-          alert(error.message);
-          return;
-        }
-
-        setLoadingId(editingLoadingId);
-        alert("Loading updated successfully!");
-        await loadLoadings();
-        resetLoadingForm();
-        return;
-      }
-
-      const { data, error } = await supabase
+    if (editingLoadingId) {
+      const { error } = await supabase
         .from("loadings")
-        .insert({
+        .update({
           loading_no: loadingNo.trim(),
           loading_date: loadingDate,
           booking_id: bookingId,
           vehicle_id: vehicleId,
           driver_id: driverId,
           route: route.trim(),
+          advance_amount: advance,
+          remaining_amount: remaining,
+          payment_status: paymentStatus,
         })
-        .select("id")
-        .single();
+        .eq("id", editingLoadingId);
+
+      setIsSavingLoading(false);
 
       if (error) {
-        if (error.code === "23505") {
-          alert("This booking is already linked with another loading.");
-          return;
-        }
-
         alert(error.message);
         return;
       }
 
-      setLoadingId(data.id);
-      alert("Loading saved successfully!");
+      setLoadingId(editingLoadingId);
+      alert("Loading updated successfully!");
       await loadLoadings();
       resetLoadingForm();
-    } finally {
-      setIsSavingLoading(false);
+      return;
     }
+
+    const { data, error } = await supabase
+      .from("loadings")
+      .insert({
+        loading_no: loadingNo.trim(),
+        loading_date: loadingDate,
+        booking_id: bookingId,
+        vehicle_id: vehicleId,
+        driver_id: driverId,
+        route: route.trim(),
+        advance_amount: advance,
+        remaining_amount: remaining,
+        payment_status: paymentStatus,
+      })
+      .select();
+
+    setIsSavingLoading(false);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      setLoadingId(data[0].id as string);
+    }
+
+    alert("Loading saved successfully!");
+    await loadLoadings();
+    resetLoadingForm();
   }
 
   async function handleAddItem() {
@@ -373,28 +407,26 @@ export default function LoadingPage() {
 
     setIsSavingItem(true);
 
-    try {
-      const { error } = await supabase.from("loading_items").insert({
-        loading_id: loadingId,
-        item_name: itemName.trim(),
-        quantity: Number(quantity),
-        weight: Number(weight),
-        unit,
-        remarks: remarks.trim(),
-      });
+    const { error } = await supabase.from("loading_items").insert({
+      loading_id: loadingId,
+      item_name: itemName.trim(),
+      quantity: Number(quantity),
+      weight: Number(weight),
+      unit,
+      remarks: remarks.trim(),
+    });
 
-      if (error) {
-        alert(error.message);
-        return;
-      }
+    setIsSavingItem(false);
 
-      alert("Item Added Successfully!");
-      await loadLoadingItems();
-      await loadLoadings();
-      resetItemForm();
-    } finally {
-      setIsSavingItem(false);
+    if (error) {
+      alert(error.message);
+      return;
     }
+
+    alert("Item Added Successfully!");
+    await loadLoadingItems();
+    await loadLoadings();
+    resetItemForm();
   }
 
   function handleViewLoading(loading: LoadingRecord) {
@@ -402,12 +434,16 @@ export default function LoadingPage() {
     setEditingLoadingId(null);
 
     alert(
-      `Loading No: ${loading.loading_no}\nBooking: ${
-        loading.bookings?.booking_no ?? "-"
-      }\nDate: ${loading.loading_date}\nVehicle: ${
+      `Loading No: ${loading.loading_no}\nDate: ${
+        loading.loading_date
+      }\nBooking: ${loading.bookings?.booking_no ?? "-"}\nVehicle: ${
         loading.vehicles?.vehicle_no ?? "-"
       }\nDriver: ${loading.drivers?.name ?? "-"}\nRoute: ${
         loading.route
+      }\nFreight: ${loading.bookings?.freight ?? 0}\nAdvance: ${
+        loading.advance_amount ?? 0
+      }\nRemaining: ${loading.remaining_amount ?? 0}\nPayment Status: ${
+        loading.payment_status ?? "Unpaid"
       }\nItems: ${loading.loading_items?.length ?? 0}`
     );
   }
@@ -418,9 +454,10 @@ export default function LoadingPage() {
     setLoadingNo(loading.loading_no ?? "");
     setLoadingDate(loading.loading_date ?? "");
     setBookingId(loading.booking_id ?? "");
-    setVehicleId(loading.vehicle_id ?? "");
-    setDriverId(loading.driver_id ?? "");
+    setVehicleId(String(loading.vehicle_id ?? ""));
+    setDriverId(String(loading.driver_id ?? ""));
     setRoute(loading.route ?? "");
+    setAdvanceAmount(String(loading.advance_amount ?? 0));
   }
 
   async function handleDeleteLoading(loading: LoadingRecord) {
@@ -432,45 +469,42 @@ export default function LoadingPage() {
 
     setIsDeleting(true);
 
-    try {
-      const { error: itemsError } = await supabase
-        .from("loading_items")
-        .delete()
-        .eq("loading_id", loading.id);
+    const { error: itemsError } = await supabase
+      .from("loading_items")
+      .delete()
+      .eq("loading_id", loading.id);
 
-      if (itemsError) {
-        alert(itemsError.message);
-        return;
-      }
-
-      const { error: loadingError } = await supabase
-        .from("loadings")
-        .delete()
-        .eq("id", loading.id);
-
-      if (loadingError) {
-        alert(loadingError.message);
-        return;
-      }
-
-      if (loadingId === loading.id) {
-        setLoadingId(null);
-        resetItemForm();
-      }
-
-      if (editingLoadingId === loading.id) {
-        resetLoadingForm();
-      }
-
-      setLoadings((previousLoadings) =>
-        previousLoadings.filter((item) => item.id !== loading.id)
-      );
-
-      alert("Loading deleted successfully!");
-      await loadLoadings();
-    } finally {
+    if (itemsError) {
       setIsDeleting(false);
+      alert(itemsError.message);
+      return;
     }
+
+    const { error: loadingError } = await supabase
+      .from("loadings")
+      .delete()
+      .eq("id", loading.id);
+
+    setIsDeleting(false);
+
+    if (loadingError) {
+      alert(loadingError.message);
+      return;
+    }
+
+    if (loadingId === loading.id) {
+      setLoadingId(null);
+      resetItemForm();
+    }
+
+    if (editingLoadingId === loading.id) {
+      resetLoadingForm();
+    }
+
+    alert("Loading deleted successfully!");
+    await loadLoadings();
+
+    setLoadings((prev) => prev.filter((item) => item.id !== loading.id));
   }
 
   function handlePrintLoadingSlip(loading: LoadingRecord) {
@@ -619,30 +653,21 @@ export default function LoadingPage() {
                 <h1>Loading Slip</h1>
                 <div class="subtitle">Transport Management System</div>
               </div>
-
               <div class="meta">
                 <div><strong>Loading No:</strong> ${loading.loading_no}</div>
-                <div><strong>Booking No:</strong> ${
-                  loading.bookings?.booking_no ?? "-"
-                }</div>
                 <div><strong>Date:</strong> ${loading.loading_date}</div>
               </div>
             </div>
 
             <div class="details">
-              <div><strong>Sender:</strong> ${
-                loading.bookings?.sender_name ?? "-"
-              }</div>
-              <div><strong>Receiver:</strong> ${
-                loading.bookings?.receiver_name ?? "-"
-              }</div>
-              <div><strong>Vehicle:</strong> ${
-                loading.vehicles?.vehicle_no ?? "-"
-              }</div>
-              <div><strong>Driver:</strong> ${
-                loading.drivers?.name ?? "-"
-              }</div>
+              <div><strong>Booking:</strong> ${loading.bookings?.booking_no ?? "-"}</div>
+              <div><strong>Vehicle:</strong> ${loading.vehicles?.vehicle_no ?? "-"}</div>
+              <div><strong>Driver:</strong> ${loading.drivers?.name ?? "-"}</div>
               <div><strong>Route:</strong> ${loading.route ?? "-"}</div>
+              <div><strong>Freight:</strong> ${loading.bookings?.freight ?? 0}</div>
+              <div><strong>Advance:</strong> ${loading.advance_amount ?? 0}</div>
+              <div><strong>Remaining:</strong> ${loading.remaining_amount ?? 0}</div>
+              <div><strong>Payment Status:</strong> ${loading.payment_status ?? "Unpaid"}</div>
               <div><strong>Total Items:</strong> ${items.length}</div>
             </div>
 
@@ -657,9 +682,7 @@ export default function LoadingPage() {
                   <th>Remarks</th>
                 </tr>
               </thead>
-
               <tbody>${itemRows}</tbody>
-
               <tfoot>
                 <tr>
                   <td colspan="2">Total</td>
@@ -715,6 +738,8 @@ export default function LoadingPage() {
           setDriverId={setDriverId}
           route={route}
           setRoute={setRoute}
+          advanceAmount={advanceAmount}
+          setAdvanceAmount={setAdvanceAmount}
           vehicles={vehicles}
           drivers={drivers}
           onSave={handleSaveLoading}

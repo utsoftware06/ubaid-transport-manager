@@ -116,6 +116,17 @@ export default function DashboardLayout({
 >
   🚚 Vehicle Ledger
 </Link>
+ 
+<Link
+  href="/payment-receipts"
+  className={`block p-3 rounded-lg font-medium ${
+    pathname === "/payment-receipts"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  💵 Payment Receipts
+</Link>
 
          <Link
             href="/bookings"
