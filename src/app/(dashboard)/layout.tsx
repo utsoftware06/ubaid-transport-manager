@@ -12,7 +12,6 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-gray-100 flex">
-      {/* Sidebar */}
       <aside className="w-72 bg-white border-r border-gray-200 shadow-sm p-6">
         <h1 className="text-3xl font-bold text-blue-600 mb-10">
           UT Software
@@ -31,9 +30,9 @@ export default function DashboardLayout({
           </Link>
 
           <Link
-            href="/dashboard"
+            href="/addas"
             className={`block p-3 rounded-lg font-medium ${
-              pathname === "/dashboard"
+              pathname === "/addas"
                 ? "border-2 border-black bg-blue-50 text-blue-600"
                 : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
             }`}
@@ -64,6 +63,61 @@ export default function DashboardLayout({
           </Link>
 
           <Link
+            href="/reports"
+            className={`block p-3 rounded-lg font-medium ${
+              pathname === "/reports"
+                ? "border-2 border-black bg-blue-50 text-blue-600"
+                : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+            }`}
+          >
+            📊 Reports
+          </Link>
+
+          <Link
+            href="/drivers-ledger"
+            className={`block p-3 rounded-lg font-medium ${
+              pathname === "/drivers-ledger"
+                ? "border-2 border-black bg-blue-50 text-blue-600"
+                : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+            }`}
+          >
+            📒 Driver Ledger
+          </Link>
+
+           <Link
+  href="/customer-ledger"
+  className={`block p-3 rounded-lg font-medium ${
+    pathname === "/customer-ledger"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  👥 Customer Ledger
+</Link>
+ 
+<Link
+  href="/owner-ledger"
+  className={`block p-3 rounded-lg font-medium ${
+    pathname === "/owner-ledger"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  🏢 Owner Ledger
+</Link>
+
+<Link
+  href="/vehicle-ledger"
+  className={`block p-3 rounded-lg font-medium ${
+    pathname === "/vehicle-ledger"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  🚚 Vehicle Ledger
+</Link>
+
+         <Link
             href="/bookings"
             className={`block p-3 rounded-lg font-medium ${
               pathname === "/bookings"
@@ -86,6 +140,17 @@ export default function DashboardLayout({
           </Link>
 
           <Link
+            href="/packing"
+            className={`block p-3 rounded-lg font-medium ${
+              pathname === "/packing"
+                ? "border-2 border-black bg-blue-50 text-blue-600"
+                : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+            }`}
+          >
+            📦 Packing Slip
+          </Link>
+
+          <Link
             href="/expenses"
             className={`block p-3 rounded-lg font-medium ${
               pathname === "/expenses"
@@ -98,7 +163,6 @@ export default function DashboardLayout({
         </nav>
       </aside>
 
-      {/* Page Content */}
       <main className="flex-1 p-8">{children}</main>
     </div>
   );

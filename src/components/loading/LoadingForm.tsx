@@ -1,10 +1,18 @@
+type Booking = {
+  id: string;
+  booking_no: string;
+  sender_name: string;
+  receiver_name: string;
+  freight: number;
+};
+
 type Vehicle = {
-  id: number;
+  id: string;
   vehicle_no: string;
 };
 
 type Driver = {
-  id: number;
+  id: string;
   name: string;
 };
 
@@ -13,6 +21,9 @@ type LoadingFormProps = {
   setLoadingNo: (value: string) => void;
   loadingDate: string;
   setLoadingDate: (value: string) => void;
+  bookingId: string;
+  setBookingId: (value: string) => void;
+  bookings: Booking[];
   vehicleId: string;
   setVehicleId: (value: string) => void;
   driverId: string;
@@ -32,6 +43,9 @@ export default function LoadingForm({
   setLoadingNo,
   loadingDate,
   setLoadingDate,
+  bookingId,
+  setBookingId,
+  bookings,
   vehicleId,
   setVehicleId,
   driverId,
@@ -53,7 +67,8 @@ export default function LoadingForm({
             {isEditing ? "Edit Loading" : "Create New Loading"}
           </h2>
           <p className="mt-1 text-base font-medium text-gray-900">
-            Enter loading details and continue to add goods.
+            Link a booking and enter the loading, vehicle, driver, and route
+            details.
           </p>
         </div>
 
@@ -61,7 +76,8 @@ export default function LoadingForm({
           <button
             type="button"
             onClick={onCancelEdit}
-            className="rounded-lg border border-gray-300 bg-white px-5 py-3 font-semibold text-gray-900 transition hover:bg-gray-50"
+            disabled={isSaving}
+            className="rounded-lg border border-gray-300 bg-white px-5 py-3 font-semibold text-gray-900 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Cancel Edit
           </button>
@@ -69,54 +85,130 @@ export default function LoadingForm({
       </div>
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-        <input
-          type="text"
-          placeholder="Loading Number"
-          value={loadingNo}
-          onChange={(event) => setLoadingNo(event.target.value)}
-          className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 placeholder:text-gray-600 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
-        />
+        <div>
+          <label
+            htmlFor="loading-no"
+            className="mb-2 block text-sm font-bold text-gray-900"
+          >
+            Loading Number
+          </label>
+          <input
+            id="loading-no"
+            type="text"
+            placeholder="Loading Number"
+            value={loadingNo}
+            onChange={(event) => setLoadingNo(event.target.value)}
+            disabled={isSaving}
+            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 placeholder:text-gray-600 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100"
+          />
+        </div>
 
-        <input
-          type="date"
-          value={loadingDate}
-          onChange={(event) => setLoadingDate(event.target.value)}
-          className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
-        />
+        <div>
+          <label
+            htmlFor="loading-date"
+            className="mb-2 block text-sm font-bold text-gray-900"
+          >
+            Loading Date
+          </label>
+          <input
+            id="loading-date"
+            type="date"
+            value={loadingDate}
+            onChange={(event) => setLoadingDate(event.target.value)}
+            disabled={isSaving}
+            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100"
+          />
+        </div>
 
-        <select
-          value={vehicleId}
-          onChange={(event) => setVehicleId(event.target.value)}
-          className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
-        >
-          <option value="">Select Vehicle</option>
-          {vehicles.map((vehicle) => (
-            <option key={vehicle.id} value={vehicle.id}>
-              {vehicle.vehicle_no}
-            </option>
-          ))}
-        </select>
+        <div className="md:col-span-2">
+          <label
+            htmlFor="booking"
+            className="mb-2 block text-sm font-bold text-gray-900"
+          >
+            Booking
+          </label>
+          <select
+            id="booking"
+            value={bookingId}
+            onChange={(event) => setBookingId(event.target.value)}
+            disabled={isSaving}
+            required
+            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100"
+          >
+            <option value="">Select Booking</option>
+            {bookings.map((booking) => (
+              <option key={booking.id} value={booking.id}>
+                {booking.booking_no} - {booking.sender_name} to{" "}
+                {booking.receiver_name} - Rs.{" "}
+                {Number(booking.freight || 0).toLocaleString()}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        <select
-          value={driverId}
-          onChange={(event) => setDriverId(event.target.value)}
-          className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
-        >
-          <option value="">Select Driver</option>
-          {drivers.map((driver) => (
-            <option key={driver.id} value={driver.id}>
-              {driver.name}
-            </option>
-          ))}
-        </select>
+        <div>
+          <label
+            htmlFor="vehicle"
+            className="mb-2 block text-sm font-bold text-gray-900"
+          >
+            Vehicle
+          </label>
+          <select
+            id="vehicle"
+            value={vehicleId}
+            onChange={(event) => setVehicleId(event.target.value)}
+            disabled={isSaving}
+            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100"
+          >
+            <option value="">Select Vehicle</option>
+            {vehicles.map((vehicle) => (
+              <option key={vehicle.id} value={vehicle.id}>
+                {vehicle.vehicle_no}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        <input
-          type="text"
-          placeholder="Route"
-          value={route}
-          onChange={(event) => setRoute(event.target.value)}
-          className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 placeholder:text-gray-600 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 md:col-span-2"
-        />
+        <div>
+          <label
+            htmlFor="driver"
+            className="mb-2 block text-sm font-bold text-gray-900"
+          >
+            Driver
+          </label>
+          <select
+            id="driver"
+            value={driverId}
+            onChange={(event) => setDriverId(event.target.value)}
+            disabled={isSaving}
+            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100"
+          >
+            <option value="">Select Driver</option>
+            {drivers.map((driver) => (
+              <option key={driver.id} value={driver.id}>
+                {driver.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="md:col-span-2">
+          <label
+            htmlFor="route"
+            className="mb-2 block text-sm font-bold text-gray-900"
+          >
+            Route
+          </label>
+          <input
+            id="route"
+            type="text"
+            placeholder="Route"
+            value={route}
+            onChange={(event) => setRoute(event.target.value)}
+            disabled={isSaving}
+            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 placeholder:text-gray-600 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100"
+          />
+        </div>
       </div>
 
       <button
@@ -125,7 +217,11 @@ export default function LoadingForm({
         disabled={isSaving}
         className="mt-8 rounded-lg bg-blue-600 px-8 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
       >
-        {isSaving ? "Saving..." : isEditing ? "Update Loading" : "Save & Next"}
+        {isSaving
+          ? "Saving..."
+          : isEditing
+            ? "Update Loading"
+            : "Save & Next"}
       </button>
     </div>
   );

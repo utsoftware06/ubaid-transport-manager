@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 type LoadingItem = {
   id: number;
   loading_id: number;
@@ -63,7 +65,7 @@ export default function LoadingTable({
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-gray-200">
-        <table className="w-full min-w-[1180px] border-collapse bg-white text-sm text-gray-900">
+        <table className="w-full min-w-[1240px] border-collapse bg-white text-sm text-gray-900">
           <thead className="bg-blue-600 text-white">
             <tr>
               <th className="p-3 text-left font-bold">Loading No</th>
@@ -126,24 +128,28 @@ export default function LoadingTable({
                         >
                           {loading.loading_no}
                         </td>
+
                         <td
                           rowSpan={rowSpan}
                           className="border-r border-gray-200 p-3 align-top font-semibold text-gray-900"
                         >
                           {loading.loading_date}
                         </td>
+
                         <td
                           rowSpan={rowSpan}
                           className="border-r border-gray-200 p-3 align-top font-semibold text-gray-900"
                         >
                           {loading.vehicles?.vehicle_no ?? "-"}
                         </td>
+
                         <td
                           rowSpan={rowSpan}
                           className="border-r border-gray-200 p-3 align-top font-semibold text-gray-900"
                         >
                           {loading.drivers?.name ?? "-"}
                         </td>
+
                         <td
                           rowSpan={rowSpan}
                           className="border-r border-gray-200 p-3 align-top font-semibold text-gray-900"
@@ -156,15 +162,19 @@ export default function LoadingTable({
                     <td className="p-3 font-semibold text-gray-900">
                       {item.item_name}
                     </td>
+
                     <td className="p-3 text-right font-semibold text-gray-900">
                       {item.quantity || "-"}
                     </td>
+
                     <td className="p-3 text-right font-semibold text-gray-900">
                       {item.weight || "-"}
                     </td>
+
                     <td className="p-3 font-semibold text-gray-900">
                       {item.unit}
                     </td>
+
                     <td className="p-3 font-semibold text-gray-900">
                       {item.remarks || "-"}
                     </td>
@@ -172,9 +182,16 @@ export default function LoadingTable({
                     {isFirstRow && (
                       <td
                         rowSpan={rowSpan}
-                        className="min-w-[220px] p-3 align-top"
+                        className="min-w-[280px] p-3 align-top"
                       >
                         <div className="flex flex-wrap gap-2">
+                          <Link
+                            href={`/loading-details/${loading.id}`}
+                            className="rounded-lg bg-purple-600 px-3 py-2 font-semibold text-white transition hover:bg-purple-700"
+                          >
+                            📄 Details
+                          </Link>
+
                           <button
                             type="button"
                             onClick={() => onView(loading)}
@@ -205,7 +222,7 @@ export default function LoadingTable({
                             onClick={() => onPrint(loading)}
                             className="rounded-lg bg-green-600 px-3 py-2 font-semibold text-white transition hover:bg-green-700"
                           >
-                            🖨 Print Loading Slip
+                            🖨 Print Slip
                           </button>
                         </div>
                       </td>

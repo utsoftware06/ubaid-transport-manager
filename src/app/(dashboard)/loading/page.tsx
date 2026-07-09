@@ -7,13 +7,21 @@ import LoadingTable from "@/components/loading/LoadingTable";
 import { supabase } from "@/lib/supabase/client";
 
 type Vehicle = {
-  id: number;
+  id: string;
   vehicle_no: string;
 };
 
 type Driver = {
-  id: number;
+  id: string;
   name: string;
+};
+
+type Booking = {
+  id: string;
+  booking_no: string;
+  sender_name: string;
+  receiver_name: string;
+  freight: number;
 };
 
 type LoadingItem = {
@@ -30,9 +38,11 @@ type LoadingRecord = {
   id: number;
   loading_no: string;
   loading_date: string;
-  vehicle_id: number | string;
-  driver_id: number | string;
+  booking_id: string | null;
+  vehicle_id: string;
+  driver_id: string;
   route: string;
+  bookings?: Booking | null;
   vehicles?: {
     vehicle_no: string;
   } | null;
@@ -45,10 +55,12 @@ type LoadingRecord = {
 export default function LoadingPage() {
   const [loadingNo, setLoadingNo] = useState("");
   const [loadingDate, setLoadingDate] = useState("");
+  const [bookingId, setBookingId] = useState("");
   const [vehicleId, setVehicleId] = useState("");
   const [driverId, setDriverId] = useState("");
   const [route, setRoute] = useState("");
 
+  const [bookings, setBookings] = useState<Booking[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [loadings, setLoadings] = useState<LoadingRecord[]>([]);
@@ -69,6 +81,7 @@ export default function LoadingPage() {
 
   const selectedLoading = useMemo(() => {
     if (!loadingId) return null;
+
     return loadings.find((loading) => loading.id === loadingId) ?? null;
   }, [loadingId, loadings]);
 
@@ -81,6 +94,10 @@ export default function LoadingPage() {
       const searchableText = [
         loading.loading_no,
         loading.loading_date,
+        loading.bookings?.booking_no,
+        loading.bookings?.sender_name,
+        loading.bookings?.receiver_name,
+        String(loading.bookings?.freight ?? ""),
         loading.vehicles?.vehicle_no,
         loading.drivers?.name,
         loading.route,
@@ -101,23 +118,38 @@ export default function LoadingPage() {
   }, [loadings, search]);
 
   useEffect(() => {
-    loadVehicles();
-    loadDrivers();
-    loadLoadings();
+    void loadBookings();
+    void loadVehicles();
+    void loadDrivers();
+    void loadLoadings();
   }, []);
 
   useEffect(() => {
     if (loadingId) {
-      loadLoadingItems(loadingId);
+      void loadLoadingItems(loadingId);
     } else {
       setLoadingItems([]);
     }
   }, [loadingId]);
 
+  async function loadBookings() {
+    const { data, error } = await supabase
+      .from("bookings")
+      .select("id, booking_no, sender_name, receiver_name, freight")
+      .order("booking_no");
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    setBookings((data ?? []) as Booking[]);
+  }
+
   async function loadVehicles() {
     const { data, error } = await supabase
       .from("vehicles")
-      .select("*")
+      .select("id, vehicle_no")
       .order("vehicle_no");
 
     if (error) {
@@ -125,13 +157,13 @@ export default function LoadingPage() {
       return;
     }
 
-    if (data) setVehicles(data as Vehicle[]);
+    setVehicles((data ?? []) as Vehicle[]);
   }
 
   async function loadDrivers() {
     const { data, error } = await supabase
       .from("drivers")
-      .select("*")
+      .select("id, name")
       .order("name");
 
     if (error) {
@@ -139,7 +171,7 @@ export default function LoadingPage() {
       return;
     }
 
-    if (data) setDrivers(data as Driver[]);
+    setDrivers((data ?? []) as Driver[]);
   }
 
   async function loadLoadings() {
@@ -148,6 +180,13 @@ export default function LoadingPage() {
       .select(
         `
         *,
+        bookings(
+          id,
+          booking_no,
+          sender_name,
+          receiver_name,
+          freight
+        ),
         vehicles(vehicle_no),
         drivers(name),
         loading_items(*)
@@ -160,7 +199,7 @@ export default function LoadingPage() {
       return;
     }
 
-    if (data) setLoadings(data as LoadingRecord[]);
+    setLoadings((data ?? []) as LoadingRecord[]);
   }
 
   async function loadLoadingItems(currentLoadingId = loadingId) {
@@ -177,12 +216,13 @@ export default function LoadingPage() {
       return;
     }
 
-    if (data) setLoadingItems(data as LoadingItem[]);
+    setLoadingItems((data ?? []) as LoadingItem[]);
   }
 
   function resetLoadingForm() {
     setLoadingNo("");
     setLoadingDate("");
+    setBookingId("");
     setVehicleId("");
     setDriverId("");
     setRoute("");
@@ -205,6 +245,11 @@ export default function LoadingPage() {
 
     if (!loadingDate) {
       alert("Loading Date is required.");
+      return false;
+    }
+
+    if (!bookingId) {
+      alert("Please select a booking.");
       return false;
     }
 
@@ -260,57 +305,67 @@ export default function LoadingPage() {
 
     setIsSavingLoading(true);
 
-    if (editingLoadingId) {
-      const { error } = await supabase
+    try {
+      if (editingLoadingId) {
+        const { error } = await supabase
+          .from("loadings")
+          .update({
+            loading_no: loadingNo.trim(),
+            loading_date: loadingDate,
+            booking_id: bookingId,
+            vehicle_id: vehicleId,
+            driver_id: driverId,
+            route: route.trim(),
+          })
+          .eq("id", editingLoadingId);
+
+        if (error) {
+          if (error.code === "23505") {
+            alert("This booking is already linked with another loading.");
+            return;
+          }
+
+          alert(error.message);
+          return;
+        }
+
+        setLoadingId(editingLoadingId);
+        alert("Loading updated successfully!");
+        await loadLoadings();
+        resetLoadingForm();
+        return;
+      }
+
+      const { data, error } = await supabase
         .from("loadings")
-        .update({
+        .insert({
           loading_no: loadingNo.trim(),
           loading_date: loadingDate,
+          booking_id: bookingId,
           vehicle_id: vehicleId,
           driver_id: driverId,
           route: route.trim(),
         })
-        .eq("id", editingLoadingId);
-
-      setIsSavingLoading(false);
+        .select("id")
+        .single();
 
       if (error) {
+        if (error.code === "23505") {
+          alert("This booking is already linked with another loading.");
+          return;
+        }
+
         alert(error.message);
         return;
       }
 
-      setLoadingId(editingLoadingId);
-      alert("Loading updated successfully!");
+      setLoadingId(data.id);
+      alert("Loading saved successfully!");
       await loadLoadings();
       resetLoadingForm();
-      return;
+    } finally {
+      setIsSavingLoading(false);
     }
-
-    const { data, error } = await supabase
-      .from("loadings")
-      .insert({
-        loading_no: loadingNo.trim(),
-        loading_date: loadingDate,
-        vehicle_id: vehicleId,
-        driver_id: driverId,
-        route: route.trim(),
-      })
-      .select();
-
-    setIsSavingLoading(false);
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    if (data && data.length > 0) {
-      setLoadingId(data[0].id);
-    }
-
-    alert("Loading saved successfully!");
-    await loadLoadings();
-    resetLoadingForm();
   }
 
   async function handleAddItem() {
@@ -318,26 +373,28 @@ export default function LoadingPage() {
 
     setIsSavingItem(true);
 
-    const { error } = await supabase.from("loading_items").insert({
-      loading_id: loadingId,
-      item_name: itemName.trim(),
-      quantity: Number(quantity),
-      weight: Number(weight),
-      unit,
-      remarks: remarks.trim(),
-    });
+    try {
+      const { error } = await supabase.from("loading_items").insert({
+        loading_id: loadingId,
+        item_name: itemName.trim(),
+        quantity: Number(quantity),
+        weight: Number(weight),
+        unit,
+        remarks: remarks.trim(),
+      });
 
-    setIsSavingItem(false);
+      if (error) {
+        alert(error.message);
+        return;
+      }
 
-    if (error) {
-      alert(error.message);
-      return;
+      alert("Item Added Successfully!");
+      await loadLoadingItems();
+      await loadLoadings();
+      resetItemForm();
+    } finally {
+      setIsSavingItem(false);
     }
-
-    alert("Item Added Successfully!");
-    await loadLoadingItems();
-    await loadLoadings();
-    resetItemForm();
   }
 
   function handleViewLoading(loading: LoadingRecord) {
@@ -345,11 +402,13 @@ export default function LoadingPage() {
     setEditingLoadingId(null);
 
     alert(
-      `Loading No: ${loading.loading_no}\nDate: ${
-        loading.loading_date
-      }\nVehicle: ${loading.vehicles?.vehicle_no ?? "-"}\nDriver: ${
-        loading.drivers?.name ?? "-"
-      }\nRoute: ${loading.route}\nItems: ${loading.loading_items?.length ?? 0}`
+      `Loading No: ${loading.loading_no}\nBooking: ${
+        loading.bookings?.booking_no ?? "-"
+      }\nDate: ${loading.loading_date}\nVehicle: ${
+        loading.vehicles?.vehicle_no ?? "-"
+      }\nDriver: ${loading.drivers?.name ?? "-"}\nRoute: ${
+        loading.route
+      }\nItems: ${loading.loading_items?.length ?? 0}`
     );
   }
 
@@ -358,13 +417,13 @@ export default function LoadingPage() {
     setEditingLoadingId(loading.id);
     setLoadingNo(loading.loading_no ?? "");
     setLoadingDate(loading.loading_date ?? "");
-    setVehicleId(String(loading.vehicle_id ?? ""));
-    setDriverId(String(loading.driver_id ?? ""));
+    setBookingId(loading.booking_id ?? "");
+    setVehicleId(loading.vehicle_id ?? "");
+    setDriverId(loading.driver_id ?? "");
     setRoute(loading.route ?? "");
   }
 
   async function handleDeleteLoading(loading: LoadingRecord) {
-    console.log("DELETE CLICKED:", loading);
     const confirmed = window.confirm(
       `Delete loading ${loading.loading_no}? This will also delete its loading items.`
     );
@@ -373,48 +432,45 @@ export default function LoadingPage() {
 
     setIsDeleting(true);
 
-    const { error: itemsError } = await supabase
-      .from("loading_items")
-      .delete()
-      .eq("loading_id", loading.id);
+    try {
+      const { error: itemsError } = await supabase
+        .from("loading_items")
+        .delete()
+        .eq("loading_id", loading.id);
 
-    if (itemsError) {
+      if (itemsError) {
+        alert(itemsError.message);
+        return;
+      }
+
+      const { error: loadingError } = await supabase
+        .from("loadings")
+        .delete()
+        .eq("id", loading.id);
+
+      if (loadingError) {
+        alert(loadingError.message);
+        return;
+      }
+
+      if (loadingId === loading.id) {
+        setLoadingId(null);
+        resetItemForm();
+      }
+
+      if (editingLoadingId === loading.id) {
+        resetLoadingForm();
+      }
+
+      setLoadings((previousLoadings) =>
+        previousLoadings.filter((item) => item.id !== loading.id)
+      );
+
+      alert("Loading deleted successfully!");
+      await loadLoadings();
+    } finally {
       setIsDeleting(false);
-      alert(itemsError.message);
-      return;
     }
-
-    const { error: loadingError } = await supabase
-      .from("loadings")
-      .delete()
-      .eq("id", loading.id);
-
-      console.log("Loading ID:", loading.id);
-console.log("Delete Error:", loadingError);
-
-    setIsDeleting(false);
-
-    if (loadingError) {
-      alert(loadingError.message);
-      return;
-    }
-
-    if (loadingId === loading.id) {
-      setLoadingId(null);
-      resetItemForm();
-    }
-
-    if (editingLoadingId === loading.id) {
-      resetLoadingForm();
-    }
-
-   alert("Loading deleted successfully!");
-
-await loadLoadings();
-
-setLoadings((prev) =>
-  prev.filter((item) => item.id !== loading.id)
-);
   }
 
   function handlePrintLoadingSlip(loading: LoadingRecord) {
@@ -563,15 +619,29 @@ setLoadings((prev) =>
                 <h1>Loading Slip</h1>
                 <div class="subtitle">Transport Management System</div>
               </div>
+
               <div class="meta">
                 <div><strong>Loading No:</strong> ${loading.loading_no}</div>
+                <div><strong>Booking No:</strong> ${
+                  loading.bookings?.booking_no ?? "-"
+                }</div>
                 <div><strong>Date:</strong> ${loading.loading_date}</div>
               </div>
             </div>
 
             <div class="details">
-              <div><strong>Vehicle:</strong> ${loading.vehicles?.vehicle_no ?? "-"}</div>
-              <div><strong>Driver:</strong> ${loading.drivers?.name ?? "-"}</div>
+              <div><strong>Sender:</strong> ${
+                loading.bookings?.sender_name ?? "-"
+              }</div>
+              <div><strong>Receiver:</strong> ${
+                loading.bookings?.receiver_name ?? "-"
+              }</div>
+              <div><strong>Vehicle:</strong> ${
+                loading.vehicles?.vehicle_no ?? "-"
+              }</div>
+              <div><strong>Driver:</strong> ${
+                loading.drivers?.name ?? "-"
+              }</div>
               <div><strong>Route:</strong> ${loading.route ?? "-"}</div>
               <div><strong>Total Items:</strong> ${items.length}</div>
             </div>
@@ -587,7 +657,9 @@ setLoadings((prev) =>
                   <th>Remarks</th>
                 </tr>
               </thead>
+
               <tbody>${itemRows}</tbody>
+
               <tfoot>
                 <tr>
                   <td colspan="2">Total</td>
@@ -634,6 +706,9 @@ setLoadings((prev) =>
           setLoadingNo={setLoadingNo}
           loadingDate={loadingDate}
           setLoadingDate={setLoadingDate}
+          bookingId={bookingId}
+          setBookingId={setBookingId}
+          bookings={bookings}
           vehicleId={vehicleId}
           setVehicleId={setVehicleId}
           driverId={driverId}
