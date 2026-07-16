@@ -2,87 +2,188 @@
 
 import { useEffect, useMemo, useState } from "react";
 import ExpenseForm from "@/components/expenses/ExpenseForm";
-import ExpenseItems, {
-  type ExpenseItemRow,
-} from "@/components/expenses/ExpenseItems";
+import ExpenseItems from "@/components/expenses/ExpenseItems";
 import ExpenseTable from "@/components/expenses/ExpenseTable";
 import { supabase } from "@/lib/supabase/client";
+
+type ReceiptStatus = "idle" | "uploading" | "replacing" | "deleting";
+
+type ExpenseItemRow = {
+  rowId: number;
+  dbId?: number;
+  expenseType: string;
+  amount: string;
+  paymentMethod: string;
+  remarks: string;
+  receiptUrl: string | null;
+  receiptName: string | null;
+  receiptFile: File | null;
+  receiptStatus: ReceiptStatus;
+  receiptError: string;
+  petrolPumpId: string;
+  liters: string;
+  rate: string;
+  paidAmount: string;
+  slipNo: string;
+};
+
+type VehicleRelation = {
+  vehicle_no: string | null;
+};
+
+type DriverRelation = {
+  name: string | null;
+};
 
 type LoadingRecord = {
   id: number;
   loading_no: string;
   loading_date: string;
   route: string;
-  vehicles?: {
-    vehicle_no: string;
-  } | null;
-  drivers?: {
-    name: string;
-  } | null;
+  vehicle_id: string | null;
+  driver_id: string | null;
+  vehicles?: VehicleRelation | null;
+  drivers?: DriverRelation | null;
+};
+
+type PetrolPumpOption = {
+  id: string;
+  pumpName: string;
+  openingBalance: number;
 };
 
 type ExpenseItemRecord = {
   id: number;
   expense_id: number;
   expense_type: string;
-  amount: number;
+  amount: number | string;
   payment_method: string;
   remarks: string | null;
   receipt_url: string | null;
   receipt_name: string | null;
 };
 
-type ExpenseVoucherRecord = {
+type DieselEntryRecord = {
+  id: number;
+  expense_id: number;
+  expense_item_id: number;
+  entry_date: string;
+  petrol_pump_id: string;
+  vehicle_id: string;
+  driver_id: string | null;
+  loading_id: number | null;
+  slip_no: string | null;
+  liters: number | string;
+  rate: number | string;
+  total_amount: number | string;
+  paid_amount: number | string;
+  remaining_amount: number | string;
+  payment_status: string;
+  remarks: string | null;
+  petrol_pumps?: {
+    pump_name: string | null;
+  } | null;
+};
+
+type ExpenseVoucher = {
   id: number;
   expense_no: string;
   expense_date: string;
-  loading_id: number | string;
+  loading_id: number;
   description: string | null;
-  created_at?: string;
+  created_at?: string | null;
   loadings?: LoadingRecord | null;
   expense_items?: ExpenseItemRecord[];
+  diesel_entries?: DieselEntryRecord[];
 };
 
-type PreviewReceipt = {
-  url: string;
-  name: string;
+type ExpenseFormProps = {
+  expenseNo: string;
+  setExpenseNo: (value: string) => void;
+  expenseDate: string;
+  setExpenseDate: (value: string) => void;
+  loadingId: string;
+  setLoadingId: (value: string) => void;
+  description: string;
+  setDescription: (value: string) => void;
+  loadings: LoadingRecord[];
+  selectedLoading: LoadingRecord | null;
+  onSave: () => void;
+  isSaving: boolean;
+  isEditing: boolean;
+  onCancelEdit: () => void;
 };
 
-const RECEIPT_BUCKET = "expense-receipts";
-const MAX_RECEIPT_SIZE = 5 * 1024 * 1024;
-const ALLOWED_RECEIPT_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "pdf"];
-const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
+let nextExpenseItemRowId = 1;
 
 function createEmptyExpenseItem(): ExpenseItemRow {
-  return {
-    rowId: Date.now() + Math.floor(Math.random() * 100000),
+  const row: ExpenseItemRow = {
+    rowId: nextExpenseItemRowId,
     expenseType: "",
     amount: "",
-    paymentMethod: "",
+    paymentMethod: "Cash",
     remarks: "",
     receiptUrl: null,
     receiptName: null,
     receiptFile: null,
     receiptStatus: "idle",
     receiptError: "",
+    petrolPumpId: "",
+    liters: "",
+    rate: "",
+    paidAmount: "",
+    slipNo: "",
   };
+
+  nextExpenseItemRowId += 1;
+  return row;
 }
 
-function getFileExtension(fileName: string) {
-  return fileName.split(".").pop()?.toLowerCase() ?? "";
+function toNumber(value: number | string | null | undefined) {
+  const numericValue = Number(value ?? 0);
+  return Number.isFinite(numericValue) ? numericValue : 0;
 }
 
-function isImageReceipt(fileName: string) {
-  return IMAGE_EXTENSIONS.includes(getFileExtension(fileName));
+function getDieselStatus(paidAmount: number, totalAmount: number) {
+  if (paidAmount <= 0) return "Unpaid";
+  if (paidAmount >= totalAmount) return "Paid";
+  return "Partial";
 }
 
-function getStoragePathFromPublicUrl(url: string) {
-  const marker = `/${RECEIPT_BUCKET}/`;
-  const [, path] = url.split(marker);
+function mapCashbookPaymentMethod(paymentMethod: string) {
+  if (paymentMethod === "Bank Transfer") return "Bank";
+  if (paymentMethod === "JazzCash") return "Online Transfer";
+  if (paymentMethod === "EasyPaisa") return "Online Transfer";
+  if (paymentMethod === "Cheque") return "Cheque";
+  if (paymentMethod === "Bank") return "Bank";
+  return "Cash";
+}
 
-  if (!path) return "";
+function getReceiptPath(fileUrl: string) {
+  const marker = "/expense-receipts/";
+  const markerIndex = fileUrl.indexOf(marker);
 
-  return decodeURIComponent(path.split("?")[0]);
+  if (markerIndex >= 0) {
+    return fileUrl.slice(markerIndex + marker.length);
+  }
+
+  return "";
+}
+
+function isAllowedReceipt(file: File) {
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "application/pdf",
+  ];
+  const allowedExtensions = [".jpg", ".jpeg", ".png", ".webp", ".pdf"];
+  const lowerName = file.name.toLowerCase();
+
+  return (
+    allowedTypes.includes(file.type) ||
+    allowedExtensions.some((extension) => lowerName.endsWith(extension))
+  );
 }
 
 export default function ExpensesPage() {
@@ -92,22 +193,22 @@ export default function ExpensesPage() {
   const [description, setDescription] = useState("");
 
   const [loadings, setLoadings] = useState<LoadingRecord[]>([]);
-  const [expenseVouchers, setExpenseVouchers] = useState<
-    ExpenseVoucherRecord[]
-  >([]);
+  const [petrolPumps, setPetrolPumps] = useState<PetrolPumpOption[]>([]);
   const [expenseItems, setExpenseItems] = useState<ExpenseItemRow[]>([
     createEmptyExpenseItem(),
   ]);
-
-  const [search, setSearch] = useState("");
-  const [editingExpenseId, setEditingExpenseId] = useState<number | null>(null);
-  const [viewingExpense, setViewingExpense] =
-    useState<ExpenseVoucherRecord | null>(null);
-  const [previewReceipt, setPreviewReceipt] = useState<PreviewReceipt | null>(
+  const [expenseVouchers, setExpenseVouchers] = useState<ExpenseVoucher[]>([]);
+  const [viewingExpense, setViewingExpense] = useState<ExpenseVoucher | null>(
     null
   );
+
+  const [search, setSearch] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const ExpenseFormComponent =
+    ExpenseForm as React.ComponentType<ExpenseFormProps>;
 
   const selectedLoading = useMemo(() => {
     if (!loadingId) return null;
@@ -115,10 +216,7 @@ export default function ExpensesPage() {
   }, [loadingId, loadings]);
 
   const grandTotal = useMemo(() => {
-    return expenseItems.reduce(
-      (total, item) => total + Number(item.amount || 0),
-      0
-    );
+    return expenseItems.reduce((total, item) => total + toNumber(item.amount), 0);
   }, [expenseItems]);
 
   const filteredExpenseVouchers = useMemo(() => {
@@ -127,27 +225,44 @@ export default function ExpensesPage() {
     if (!keyword) return expenseVouchers;
 
     return expenseVouchers.filter((voucher) => {
-      const loading = voucher.loadings;
-
-      const searchableText = [
+      const text = [
         voucher.expense_no,
-        loading?.loading_no,
-        loading?.vehicles?.vehicle_no,
-        loading?.drivers?.name,
-        loading?.route,
+        voucher.expense_date,
+        voucher.description ?? "",
+        voucher.loadings?.loading_no ?? "",
+        voucher.loadings?.vehicles?.vehicle_no ?? "",
+        voucher.loadings?.drivers?.name ?? "",
+        voucher.loadings?.route ?? "",
+        ...(voucher.expense_items ?? []).flatMap((item) => [
+          item.expense_type,
+          String(item.amount ?? ""),
+          item.payment_method,
+          item.remarks ?? "",
+          item.receipt_name ?? "",
+        ]),
+        ...(voucher.diesel_entries ?? []).flatMap((diesel) => [
+          diesel.petrol_pumps?.pump_name ?? "",
+          diesel.slip_no ?? "",
+          String(diesel.liters ?? ""),
+          String(diesel.rate ?? ""),
+          String(diesel.paid_amount ?? ""),
+          diesel.payment_status,
+        ]),
       ]
-        .filter(Boolean)
         .join(" ")
         .toLowerCase();
 
-      return searchableText.includes(keyword);
+      return text.includes(keyword);
     });
   }, [expenseVouchers, search]);
 
   useEffect(() => {
-    loadLoadings();
-    loadExpenseVouchers();
+    loadInitialData();
   }, []);
+
+  async function loadInitialData() {
+    await Promise.all([loadLoadings(), loadPetrolPumps(), loadExpenseVouchers()]);
+  }
 
   async function loadLoadings() {
     const { data, error } = await supabase
@@ -166,9 +281,27 @@ export default function ExpensesPage() {
       return;
     }
 
-    if (data) {
-      setLoadings(data as LoadingRecord[]);
+    setLoadings((data ?? []) as LoadingRecord[]);
+  }
+
+  async function loadPetrolPumps() {
+    const { data, error } = await supabase
+      .from("petrol_pumps")
+      .select("id, pump_name, opening_balance")
+      .order("pump_name", { ascending: true });
+
+    if (error) {
+      alert(error.message);
+      return;
     }
+
+    setPetrolPumps(
+      (data ?? []).map((pump) => ({
+        id: String(pump.id),
+        pumpName: pump.pump_name ?? "-",
+        openingBalance: toNumber(pump.opening_balance),
+      }))
+    );
   }
 
   async function loadExpenseVouchers() {
@@ -192,347 +325,39 @@ export default function ExpensesPage() {
       return;
     }
 
-    if (data) {
-      setExpenseVouchers(data as ExpenseVoucherRecord[]);
-    }
-  }
+    const vouchers = (data ?? []) as ExpenseVoucher[];
+    const voucherIds = vouchers.map((voucher) => voucher.id);
 
-  function setReceiptState(
-    rowId: number,
-    values: Partial<
-      Pick<
-        ExpenseItemRow,
-        | "receiptUrl"
-        | "receiptName"
-        | "receiptFile"
-        | "receiptStatus"
-        | "receiptError"
-      >
-    >
-  ) {
-    setExpenseItems((currentItems) =>
-      currentItems.map((item) =>
-        item.rowId === rowId
-          ? {
-              ...item,
-              ...values,
-            }
-          : item
+    if (voucherIds.length === 0) {
+      setExpenseVouchers([]);
+      return;
+    }
+
+    const { data: dieselData, error: dieselError } = await supabase
+      .from("diesel_entries")
+      .select(
+        `
+        *,
+        petrol_pumps(pump_name)
+      `
       )
-    );
-  }
+      .in("expense_id", voucherIds);
 
-  function validateReceiptFile(file: File) {
-    const extension = getFileExtension(file.name);
-
-    if (!ALLOWED_RECEIPT_EXTENSIONS.includes(extension)) {
-      return "Only JPG, JPEG, PNG, WEBP and PDF files are allowed.";
-    }
-
-    if (file.size > MAX_RECEIPT_SIZE) {
-      return "Receipt file size must be 5 MB or less.";
-    }
-
-    return "";
-  }
-
-  function createReceiptFileName(file: File) {
-    const extension = getFileExtension(file.name);
-    return `expense-${Date.now()}-${Math.floor(
-      Math.random() * 100000
-    )}.${extension}`;
-  }
-
-  async function removeReceiptFromStorage(receiptUrl: string) {
-    const storagePath = getStoragePathFromPublicUrl(receiptUrl);
-
-    if (!storagePath) {
-      return {
-        ok: false,
-        message: "Receipt storage path could not be resolved.",
-      };
-    }
-
-    const { error } = await supabase.storage
-      .from(RECEIPT_BUCKET)
-      .remove([storagePath]);
-
-    if (error) {
-      return {
-        ok: false,
-        message: error.message,
-      };
-    }
-
-    return {
-      ok: true,
-      message: "",
-    };
-  }
-
-  async function uploadReceiptFile(file: File) {
-    const fileName = createReceiptFileName(file);
-
-    const { error: uploadError } = await supabase.storage
-      .from(RECEIPT_BUCKET)
-      .upload(fileName, file, {
-        cacheControl: "3600",
-        upsert: false,
-      });
-
-    if (uploadError) {
-      return {
-        ok: false,
-        url: "",
-        name: "",
-        message: uploadError.message,
-      };
-    }
-
-    const { data } = supabase.storage
-      .from(RECEIPT_BUCKET)
-      .getPublicUrl(fileName);
-
-    if (!data.publicUrl) {
-      return {
-        ok: false,
-        url: "",
-        name: "",
-        message: "Receipt uploaded but public URL was not generated.",
-      };
-    }
-
-    return {
-      ok: true,
-      url: data.publicUrl,
-      name: fileName,
-      message: "",
-    };
-  }
-
-  async function handleReceiptSelected(rowId: number, file: File) {
-    const validationMessage = validateReceiptFile(file);
-
-    if (validationMessage) {
-      setReceiptState(rowId, {
-        receiptError: validationMessage,
-      });
-      alert(validationMessage);
+    if (dieselError) {
+      alert(dieselError.message);
+      setExpenseVouchers(vouchers);
       return;
     }
 
-    const row = expenseItems.find((item) => item.rowId === rowId);
+    const dieselEntries = (dieselData ?? []) as DieselEntryRecord[];
 
-    if (!row) return;
-
-    if (!row.dbId) {
-      setReceiptState(rowId, {
-        receiptFile: file,
-        receiptUrl: null,
-        receiptName: null,
-        receiptError: "",
-      });
-      return;
-    }
-
-    setReceiptState(rowId, {
-      receiptStatus: row.receiptUrl ? "replacing" : "uploading",
-      receiptError: "",
-    });
-
-    if (row.receiptUrl) {
-      const removed = await removeReceiptFromStorage(row.receiptUrl);
-
-      if (!removed.ok) {
-        setReceiptState(rowId, {
-          receiptStatus: "idle",
-          receiptError: removed.message,
-        });
-        alert(removed.message);
-        return;
-      }
-    }
-
-    const uploaded = await uploadReceiptFile(file);
-
-    if (!uploaded.ok) {
-      setReceiptState(rowId, {
-        receiptStatus: "idle",
-        receiptError: uploaded.message,
-      });
-      alert(uploaded.message);
-      return;
-    }
-
-    const { error } = await supabase
-      .from("expense_items")
-      .update({
-        receipt_url: uploaded.url,
-        receipt_name: uploaded.name,
-      })
-      .eq("id", row.dbId);
-
-    if (error) {
-      await removeReceiptFromStorage(uploaded.url);
-
-      setReceiptState(rowId, {
-        receiptStatus: "idle",
-        receiptError: error.message,
-      });
-      alert(error.message);
-      return;
-    }
-
-    setReceiptState(rowId, {
-      receiptUrl: uploaded.url,
-      receiptName: uploaded.name,
-      receiptFile: null,
-      receiptStatus: "idle",
-      receiptError: "",
-    });
-
-    await loadExpenseVouchers();
-  }
-
-  async function handleReceiptDelete(rowId: number) {
-    const row = expenseItems.find((item) => item.rowId === rowId);
-
-    if (!row) return;
-
-    if (!row.receiptUrl) {
-      setReceiptState(rowId, {
-        receiptFile: null,
-        receiptUrl: null,
-        receiptName: null,
-        receiptError: "",
-      });
-      return;
-    }
-
-    const confirmed = window.confirm(`Delete receipt ${row.receiptName}?`);
-
-    if (!confirmed) return;
-
-    setReceiptState(rowId, {
-      receiptStatus: "deleting",
-      receiptError: "",
-    });
-
-    const removed = await removeReceiptFromStorage(row.receiptUrl);
-
-    if (!removed.ok) {
-      setReceiptState(rowId, {
-        receiptStatus: "idle",
-        receiptError: removed.message,
-      });
-      alert(removed.message);
-      return;
-    }
-
-    if (row.dbId) {
-      const { error } = await supabase
-        .from("expense_items")
-        .update({
-          receipt_url: null,
-          receipt_name: null,
-        })
-        .eq("id", row.dbId);
-
-      if (error) {
-        setReceiptState(rowId, {
-          receiptStatus: "idle",
-          receiptError: error.message,
-        });
-        alert(error.message);
-        return;
-      }
-    }
-
-    setReceiptState(rowId, {
-      receiptUrl: null,
-      receiptName: null,
-      receiptFile: null,
-      receiptStatus: "idle",
-      receiptError: "",
-    });
-
-    await loadExpenseVouchers();
-  }
-
-  function handlePreviewReceipt(url: string, name: string) {
-    if (isImageReceipt(name)) {
-      setPreviewReceipt({
-        url,
-        name,
-      });
-      return;
-    }
-
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
-
-  function handleAddExpenseItem() {
-    setExpenseItems((currentItems) => [...currentItems, createEmptyExpenseItem()]);
-  }
-
-  async function handleDeleteExpenseItem(rowId: number) {
-    const row = expenseItems.find((item) => item.rowId === rowId);
-
-    if (!row) return;
-
-    if (expenseItems.length === 1) return;
-
-    if (row.receiptUrl) {
-      const removed = await removeReceiptFromStorage(row.receiptUrl);
-
-      if (!removed.ok) {
-        setReceiptState(rowId, {
-          receiptError: removed.message,
-        });
-        alert(removed.message);
-        return;
-      }
-    }
-
-    if (row.dbId) {
-      const { error } = await supabase
-        .from("expense_items")
-        .delete()
-        .eq("id", row.dbId);
-
-      if (error) {
-        setReceiptState(rowId, {
-          receiptError: error.message,
-        });
-        alert(error.message);
-        return;
-      }
-    }
-
-    setExpenseItems((currentItems) =>
-      currentItems.filter((item) => item.rowId !== rowId)
-    );
-
-    await loadExpenseVouchers();
-  }
-
-  function handleExpenseItemChange(
-    rowId: number,
-    field: keyof Pick<
-      ExpenseItemRow,
-      "expenseType" | "amount" | "paymentMethod" | "remarks"
-    >,
-    value: string
-  ) {
-    setExpenseItems((currentItems) =>
-      currentItems.map((item) =>
-        item.rowId === rowId
-          ? {
-              ...item,
-              [field]: value,
-            }
-          : item
-      )
+    setExpenseVouchers(
+      vouchers.map((voucher) => ({
+        ...voucher,
+        diesel_entries: dieselEntries.filter(
+          (diesel) => diesel.expense_id === voucher.id
+        ),
+      }))
     );
   }
 
@@ -541,8 +366,160 @@ export default function ExpensesPage() {
     setExpenseDate("");
     setLoadingId("");
     setDescription("");
-    setEditingExpenseId(null);
     setExpenseItems([createEmptyExpenseItem()]);
+    setEditingId(null);
+  }
+
+  function handleAddExpenseItem() {
+    setExpenseItems((previous) => [...previous, createEmptyExpenseItem()]);
+  }
+
+  function handleDeleteExpenseItem(rowId: number) {
+    setExpenseItems((previous) =>
+      previous.length === 1
+        ? [createEmptyExpenseItem()]
+        : previous.filter((item) => item.rowId !== rowId)
+    );
+  }
+
+  function onExpenseItemChange(
+    rowId: number,
+    field: keyof ExpenseItemRow,
+    value: string
+  ) {
+    setExpenseItems((previous) =>
+      previous.map((item) => {
+        if (item.rowId !== rowId) return item;
+
+        const updated: ExpenseItemRow = {
+          ...item,
+          [field]: value,
+        };
+
+        if (field === "expenseType" && value !== "Fuel") {
+          updated.petrolPumpId = "";
+          updated.liters = "";
+          updated.rate = "";
+          updated.paidAmount = "";
+          updated.slipNo = "";
+        }
+
+        if (
+          updated.expenseType === "Fuel" &&
+          (field === "liters" || field === "rate")
+        ) {
+          const totalAmount = toNumber(updated.liters) * toNumber(updated.rate);
+          updated.amount = totalAmount > 0 ? String(totalAmount) : "";
+        }
+
+        return updated;
+      })
+    );
+  }
+
+  function handleReceiptSelected(rowId: number, file: File) {
+    setExpenseItems((previous) =>
+      previous.map((item) => {
+        if (item.rowId !== rowId) return item;
+
+        if (!isAllowedReceipt(file)) {
+          return {
+            ...item,
+            receiptFile: null,
+            receiptError: "Only JPG, PNG, WEBP and PDF files are allowed.",
+          };
+        }
+
+        if (file.size > 5 * 1024 * 1024) {
+          return {
+            ...item,
+            receiptFile: null,
+            receiptError: "Receipt file must be 5 MB or less.",
+          };
+        }
+
+        return {
+          ...item,
+          receiptFile: file,
+          receiptName: file.name,
+          receiptError: "",
+        };
+      })
+    );
+  }
+
+  async function handleReceiptDelete(rowId: number) {
+    const item = expenseItems.find((currentItem) => currentItem.rowId === rowId);
+
+    if (!item) return;
+
+    setExpenseItems((previous) =>
+      previous.map((currentItem) =>
+        currentItem.rowId === rowId
+          ? { ...currentItem, receiptStatus: "deleting", receiptError: "" }
+          : currentItem
+      )
+    );
+
+    try {
+      if (item.receiptUrl) {
+        const path = getReceiptPath(item.receiptUrl);
+
+        if (path) {
+          const { error } = await supabase.storage
+            .from("expense-receipts")
+            .remove([path]);
+
+          if (error) throw new Error(error.message);
+        }
+      }
+
+      if (item.dbId) {
+        const { error } = await supabase
+          .from("expense_items")
+          .update({
+            receipt_url: null,
+            receipt_name: null,
+          })
+          .eq("id", item.dbId);
+
+        if (error) throw new Error(error.message);
+      }
+
+      setExpenseItems((previous) =>
+        previous.map((currentItem) =>
+          currentItem.rowId === rowId
+            ? {
+                ...currentItem,
+                receiptUrl: null,
+                receiptName: null,
+                receiptFile: null,
+                receiptStatus: "idle",
+                receiptError: "",
+              }
+            : currentItem
+        )
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to delete receipt.";
+
+      setExpenseItems((previous) =>
+        previous.map((currentItem) =>
+          currentItem.rowId === rowId
+            ? {
+                ...currentItem,
+                receiptStatus: "idle",
+                receiptError: message,
+              }
+            : currentItem
+        )
+      );
+    }
+  }
+
+  function handlePreviewReceipt(receiptUrl: string) {
+    window.open(receiptUrl, "_blank");
   }
 
   function validateExpenseVoucher() {
@@ -562,7 +539,7 @@ export default function ExpensesPage() {
     }
 
     if (expenseItems.length === 0) {
-      alert("At least one Expense Item is required.");
+      alert("At least one expense item is required.");
       return false;
     }
 
@@ -572,8 +549,8 @@ export default function ExpensesPage() {
         return false;
       }
 
-      if (!item.amount || Number(item.amount) <= 0) {
-        alert("Amount must be greater than zero for every row.");
+      if (toNumber(item.amount) <= 0) {
+        alert("Amount must be greater than 0 for every row.");
         return false;
       }
 
@@ -582,11 +559,47 @@ export default function ExpensesPage() {
         return false;
       }
 
-      if (item.receiptFile) {
-        const receiptValidation = validateReceiptFile(item.receiptFile);
+      if (item.expenseType === "Fuel") {
+        if (!selectedLoading) {
+          alert("Loading must be selected for Fuel expense.");
+          return false;
+        }
 
-        if (receiptValidation) {
-          alert(receiptValidation);
+        if (!selectedLoading.vehicle_id) {
+          alert("Selected loading must contain vehicle for Fuel expense.");
+          return false;
+        }
+
+        if (!item.petrolPumpId) {
+          alert("Petrol Pump is required for Fuel expense.");
+          return false;
+        }
+
+        if (toNumber(item.liters) <= 0) {
+          alert("Litres must be greater than 0 for Fuel expense.");
+          return false;
+        }
+
+        if (toNumber(item.rate) <= 0) {
+          alert("Rate must be greater than 0 for Fuel expense.");
+          return false;
+        }
+
+        const totalAmount = toNumber(item.amount);
+        const paid = toNumber(item.paidAmount);
+
+        if (totalAmount <= 0) {
+          alert("Total amount must be greater than 0 for Fuel expense.");
+          return false;
+        }
+
+        if (paid < 0) {
+          alert("Paid amount cannot be negative for Fuel expense.");
+          return false;
+        }
+
+        if (paid > totalAmount) {
+          alert("Paid amount cannot exceed total amount for Fuel expense.");
           return false;
         }
       }
@@ -595,11 +608,185 @@ export default function ExpensesPage() {
     return true;
   }
 
+  async function uploadReceipt(
+    expenseId: number,
+    expenseItemId: number,
+    item: ExpenseItemRow
+  ) {
+    if (!item.receiptFile) {
+      return {
+        receiptUrl: item.receiptUrl,
+        receiptName: item.receiptName,
+      };
+    }
+
+    const extension = item.receiptFile.name.split(".").pop() ?? "file";
+    const filePath = `${expenseId}/${expenseItemId}-${Date.now()}.${extension}`;
+
+    setExpenseItems((previous) =>
+      previous.map((currentItem) =>
+        currentItem.rowId === item.rowId
+          ? {
+              ...currentItem,
+              receiptStatus: item.receiptUrl ? "replacing" : "uploading",
+              receiptError: "",
+            }
+          : currentItem
+      )
+    );
+
+    if (item.receiptUrl) {
+      const oldPath = getReceiptPath(item.receiptUrl);
+
+      if (oldPath) {
+        await supabase.storage.from("expense-receipts").remove([oldPath]);
+      }
+    }
+
+    const { error: uploadError } = await supabase.storage
+      .from("expense-receipts")
+      .upload(filePath, item.receiptFile, { upsert: true });
+
+    if (uploadError) throw new Error(uploadError.message);
+
+    const { data } = supabase.storage
+      .from("expense-receipts")
+      .getPublicUrl(filePath);
+
+    return {
+      receiptUrl: data.publicUrl,
+      receiptName: item.receiptFile.name,
+    };
+  }
+
+  async function deleteDieselCashbookEntries(expenseId: number) {
+    const { data, error } = await supabase
+      .from("diesel_entries")
+      .select("id")
+      .eq("expense_id", expenseId);
+
+    if (error) throw new Error(error.message);
+
+    const dieselIds = (data ?? []).map((row) => String(row.id));
+
+    if (dieselIds.length === 0) return;
+
+    const { error: cashbookError } = await supabase
+      .from("cashbook_entries")
+      .delete()
+      .eq("reference_type", "diesel")
+      .in("reference_id", dieselIds);
+
+    if (cashbookError) throw new Error(cashbookError.message);
+  }
+
+  async function syncDieselCashbookEntry(
+    dieselEntryId: number,
+    item: ExpenseItemRow,
+    currentLoading: LoadingRecord
+  ) {
+    const paidAmount = toNumber(item.paidAmount);
+
+    if (paidAmount <= 0) return;
+
+    const selectedPump = petrolPumps.find(
+      (pump) => pump.id === item.petrolPumpId
+    );
+    const pumpName = selectedPump?.pumpName ?? "Petrol Pump";
+
+    const { data: existingEntry, error: checkError } = await supabase
+      .from("cashbook_entries")
+      .select("id")
+      .eq("reference_type", "diesel")
+      .eq("reference_id", String(dieselEntryId))
+      .maybeSingle();
+
+    if (checkError) throw new Error(checkError.message);
+
+    const payload = {
+      entry_date: expenseDate,
+      entry_type: "Cash Out",
+      person_type: "Petrol Pump",
+      person_name: pumpName,
+      vehicle_id: currentLoading.vehicle_id,
+      driver_id: currentLoading.driver_id || null,
+      loading_id: currentLoading.id,
+      payment_method: mapCashbookPaymentMethod(item.paymentMethod),
+      amount: paidAmount,
+      description: `Diesel payment to ${pumpName} for vehicle ${
+        currentLoading.vehicles?.vehicle_no ?? "-"
+      }`,
+      reference_type: "diesel",
+      reference_id: String(dieselEntryId),
+    };
+
+    if (existingEntry) {
+      const { error } = await supabase
+        .from("cashbook_entries")
+        .update(payload)
+        .eq("id", existingEntry.id);
+
+      if (error) throw new Error(error.message);
+      return;
+    }
+
+    const { error } = await supabase.from("cashbook_entries").insert(payload);
+
+    if (error) throw new Error(error.message);
+  }
+
+  async function createDieselEntries(
+    expenseId: number,
+    insertedItems: ExpenseItemRecord[],
+    sourceItems: ExpenseItemRow[]
+  ) {
+    if (!selectedLoading) return;
+
+    for (let index = 0; index < sourceItems.length; index += 1) {
+      const sourceItem = sourceItems[index];
+      const insertedItem = insertedItems[index];
+
+      if (!insertedItem || sourceItem.expenseType !== "Fuel") continue;
+
+      const totalAmount = toNumber(sourceItem.amount);
+      const paid = toNumber(sourceItem.paidAmount);
+      const remaining = Math.max(totalAmount - paid, 0);
+
+      const { data, error } = await supabase
+        .from("diesel_entries")
+        .insert({
+          expense_id: expenseId,
+          expense_item_id: insertedItem.id,
+          entry_date: expenseDate,
+          petrol_pump_id: sourceItem.petrolPumpId,
+          vehicle_id: selectedLoading.vehicle_id,
+          driver_id: selectedLoading.driver_id || null,
+          loading_id: selectedLoading.id,
+          slip_no: sourceItem.slipNo.trim(),
+          liters: toNumber(sourceItem.liters),
+          rate: toNumber(sourceItem.rate),
+          total_amount: totalAmount,
+          paid_amount: paid,
+          remaining_amount: remaining,
+          payment_status: getDieselStatus(paid, totalAmount),
+          remarks: sourceItem.remarks.trim(),
+        })
+        .select("id")
+        .single();
+
+      if (error) throw new Error(`Diesel entry failed: ${error.message}`);
+
+      if (data?.id) {
+        await syncDieselCashbookEntry(Number(data.id), sourceItem, selectedLoading);
+      }
+    }
+  }
+
   async function insertExpenseItemsWithReceipts(expenseId: number) {
-    const itemsToInsert = expenseItems.map((item) => ({
+    const itemsPayload = expenseItems.map((item) => ({
       expense_id: expenseId,
       expense_type: item.expenseType,
-      amount: Number(item.amount),
+      amount: toNumber(item.amount),
       payment_method: item.paymentMethod,
       remarks: item.remarks.trim(),
       receipt_url: item.receiptUrl,
@@ -608,68 +795,38 @@ export default function ExpensesPage() {
 
     const { data, error } = await supabase
       .from("expense_items")
-      .insert(itemsToInsert)
-      .select();
+      .insert(itemsPayload)
+      .select("*");
 
-    if (error) {
-      alert(error.message);
-      return false;
-    }
+    if (error) throw new Error(error.message);
 
     const insertedItems = (data ?? []) as ExpenseItemRecord[];
 
-    for (let index = 0; index < expenseItems.length; index += 1) {
-      const sourceRow = expenseItems[index];
-      const insertedRow = insertedItems[index];
+    for (let index = 0; index < insertedItems.length; index += 1) {
+      const insertedItem = insertedItems[index];
+      const sourceItem = expenseItems[index];
 
-      if (!sourceRow.receiptFile || !insertedRow) continue;
+      if (!sourceItem) continue;
 
-      setReceiptState(sourceRow.rowId, {
-        receiptStatus: "uploading",
-        receiptError: "",
-      });
+      const receipt = await uploadReceipt(expenseId, insertedItem.id, sourceItem);
 
-      const uploaded = await uploadReceiptFile(sourceRow.receiptFile);
+      if (receipt.receiptUrl || receipt.receiptName) {
+        const { error: receiptError } = await supabase
+          .from("expense_items")
+          .update({
+            receipt_url: receipt.receiptUrl,
+            receipt_name: receipt.receiptName,
+          })
+          .eq("id", insertedItem.id);
 
-      if (!uploaded.ok) {
-        setReceiptState(sourceRow.rowId, {
-          receiptStatus: "idle",
-          receiptError: uploaded.message,
-        });
-        alert(uploaded.message);
-        return false;
+        if (receiptError) throw new Error(receiptError.message);
+
+        insertedItem.receipt_url = receipt.receiptUrl;
+        insertedItem.receipt_name = receipt.receiptName;
       }
-
-      const { error: updateError } = await supabase
-        .from("expense_items")
-        .update({
-          receipt_url: uploaded.url,
-          receipt_name: uploaded.name,
-        })
-        .eq("id", insertedRow.id);
-
-      if (updateError) {
-        await removeReceiptFromStorage(uploaded.url);
-
-        setReceiptState(sourceRow.rowId, {
-          receiptStatus: "idle",
-          receiptError: updateError.message,
-        });
-        alert(updateError.message);
-        return false;
-      }
-
-      setReceiptState(sourceRow.rowId, {
-        dbId: insertedRow.id,
-        receiptUrl: uploaded.url,
-        receiptName: uploaded.name,
-        receiptFile: null,
-        receiptStatus: "idle",
-        receiptError: "",
-      });
     }
 
-    return true;
+    await createDieselEntries(expenseId, insertedItems, expenseItems);
   }
 
   async function handleSaveExpenseVoucher() {
@@ -677,241 +834,217 @@ export default function ExpensesPage() {
 
     setIsSaving(true);
 
-    if (editingExpenseId) {
-      const oldVoucher = expenseVouchers.find(
-        (voucher) => voucher.id === editingExpenseId
-      );
+    try {
+      if (editingId) {
+        const { error } = await supabase
+          .from("expenses")
+          .update({
+            expense_no: expenseNo.trim(),
+            expense_date: expenseDate,
+            loading_id: Number(loadingId),
+            description: description.trim(),
+          })
+          .eq("id", editingId);
 
-      const oldReceiptUrls = oldVoucher?.expense_items
-        ?.map((item) => item.receipt_url)
-        .filter((url): url is string => Boolean(url));
+        if (error) throw new Error(error.message);
 
-      const activeReceiptUrls = expenseItems
-        .map((item) => item.receiptUrl)
-        .filter((url): url is string => Boolean(url));
+        await deleteDieselCashbookEntries(editingId);
 
-      const receiptsToDelete =
-        oldReceiptUrls?.filter((url) => !activeReceiptUrls.includes(url)) ?? [];
+        const { error: deleteItemsError } = await supabase
+          .from("expense_items")
+          .delete()
+          .eq("expense_id", editingId);
 
-      const { error: updateError } = await supabase
+        if (deleteItemsError) throw new Error(deleteItemsError.message);
+
+        await insertExpenseItemsWithReceipts(editingId);
+
+        alert("Expense voucher updated successfully!");
+        resetForm();
+        await loadExpenseVouchers();
+        return;
+      }
+
+      const { data, error } = await supabase
         .from("expenses")
-        .update({
+        .insert({
           expense_no: expenseNo.trim(),
           expense_date: expenseDate,
-          loading_id: loadingId,
+          loading_id: Number(loadingId),
           description: description.trim(),
         })
-        .eq("id", editingExpenseId);
+        .select("id")
+        .single();
 
-      if (updateError) {
-        setIsSaving(false);
-        alert(updateError.message);
-        return;
-      }
+      if (error) throw new Error(error.message);
 
-      const { error: deleteItemsError } = await supabase
-        .from("expense_items")
-        .delete()
-        .eq("expense_id", editingExpenseId);
+      const expenseId = Number(data.id);
+      await insertExpenseItemsWithReceipts(expenseId);
 
-      if (deleteItemsError) {
-        setIsSaving(false);
-        alert(deleteItemsError.message);
-        return;
-      }
-
-      const itemsSaved = await insertExpenseItemsWithReceipts(editingExpenseId);
-
-      if (!itemsSaved) {
-        setIsSaving(false);
-        return;
-      }
-
-      for (const receiptUrl of receiptsToDelete) {
-        await removeReceiptFromStorage(receiptUrl);
-      }
-
-      setIsSaving(false);
-      alert("Expense Voucher updated successfully!");
-      await loadExpenseVouchers();
+      alert("Expense voucher saved successfully!");
       resetForm();
-      return;
-    }
-
-    const { data: expenseData, error: expenseError } = await supabase
-      .from("expenses")
-      .insert({
-        expense_no: expenseNo.trim(),
-        expense_date: expenseDate,
-        loading_id: loadingId,
-        description: description.trim(),
-      })
-      .select();
-
-    if (expenseError) {
+      await loadExpenseVouchers();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to save expense voucher.";
+      alert(message);
+    } finally {
       setIsSaving(false);
-      alert(expenseError.message);
-      return;
+
+      setExpenseItems((previous) =>
+        previous.map((item) => ({
+          ...item,
+          receiptStatus: "idle",
+        }))
+      );
     }
-
-    if (!expenseData || expenseData.length === 0) {
-      setIsSaving(false);
-      alert("Expense Voucher was not saved.");
-      return;
-    }
-
-    const expenseId = expenseData[0].id as number;
-    const itemsSaved = await insertExpenseItemsWithReceipts(expenseId);
-
-    setIsSaving(false);
-
-    if (!itemsSaved) return;
-
-    alert("Expense Voucher saved successfully!");
-    await loadExpenseVouchers();
-    resetForm();
   }
 
-  function handleViewExpenseVoucher(voucher: ExpenseVoucherRecord) {
-    setViewingExpense(voucher);
-  }
-
-  function handleEditExpenseVoucher(voucher: ExpenseVoucherRecord) {
-    setEditingExpenseId(voucher.id);
+  function handleEditExpenseVoucher(voucher: ExpenseVoucher) {
+    setEditingId(voucher.id);
     setExpenseNo(voucher.expense_no ?? "");
     setExpenseDate(voucher.expense_date ?? "");
     setLoadingId(String(voucher.loading_id ?? ""));
     setDescription(voucher.description ?? "");
 
-    const rows =
-      voucher.expense_items && voucher.expense_items.length > 0
-        ? voucher.expense_items.map((item) => ({
-            rowId: item.id,
-            dbId: item.id,
-            expenseType: item.expense_type ?? "",
-            amount: String(item.amount ?? ""),
-            paymentMethod: item.payment_method ?? "",
-            remarks: item.remarks ?? "",
-            receiptUrl: item.receipt_url ?? null,
-            receiptName: item.receipt_name ?? null,
-            receiptFile: null,
-            receiptStatus: "idle" as const,
-            receiptError: "",
-          }))
-        : [createEmptyExpenseItem()];
+    const dieselByItemId = new Map<number, DieselEntryRecord>();
+    (voucher.diesel_entries ?? []).forEach((diesel) => {
+      dieselByItemId.set(diesel.expense_item_id, diesel);
+    });
 
-    setExpenseItems(rows);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const mappedItems =
+      voucher.expense_items?.map((item) => {
+        const diesel = dieselByItemId.get(item.id);
+
+        const row: ExpenseItemRow = {
+          rowId: nextExpenseItemRowId,
+          dbId: item.id,
+          expenseType: item.expense_type ?? "",
+          amount: String(item.amount ?? ""),
+          paymentMethod: item.payment_method ?? "Cash",
+          remarks: item.remarks ?? "",
+          receiptUrl: item.receipt_url,
+          receiptName: item.receipt_name,
+          receiptFile: null,
+          receiptStatus: "idle",
+          receiptError: "",
+          petrolPumpId: diesel?.petrol_pump_id ?? "",
+          liters: diesel ? String(diesel.liters ?? "") : "",
+          rate: diesel ? String(diesel.rate ?? "") : "",
+          paidAmount: diesel ? String(diesel.paid_amount ?? "") : "",
+          slipNo: diesel?.slip_no ?? "",
+        };
+
+        nextExpenseItemRowId += 1;
+        return row;
+      }) ?? [];
+
+    setExpenseItems(mappedItems.length > 0 ? mappedItems : [createEmptyExpenseItem()]);
   }
 
-  async function handleDeleteExpenseVoucher(voucher: ExpenseVoucherRecord) {
+  async function handleDeleteExpenseVoucher(voucher: ExpenseVoucher) {
     const confirmed = window.confirm(
-      `Delete Expense Voucher ${voucher.expense_no}? This will also delete all expense items and receipts.`
+      `Delete expense voucher ${voucher.expense_no}?`
     );
 
     if (!confirmed) return;
 
     setIsDeleting(true);
 
-    for (const item of voucher.expense_items ?? []) {
-      if (item.receipt_url) {
-        const removed = await removeReceiptFromStorage(item.receipt_url);
+    try {
+      for (const item of voucher.expense_items ?? []) {
+        if (item.receipt_url) {
+          const path = getReceiptPath(item.receipt_url);
 
-        if (!removed.ok) {
-          setIsDeleting(false);
-          alert(removed.message);
-          return;
+          if (path) {
+            await supabase.storage.from("expense-receipts").remove([path]);
+          }
         }
       }
-    }
 
-    const { error: itemsError } = await supabase
-      .from("expense_items")
-      .delete()
-      .eq("expense_id", voucher.id);
+      await deleteDieselCashbookEntries(voucher.id);
 
-    if (itemsError) {
+      const { error: itemDeleteError } = await supabase
+        .from("expense_items")
+        .delete()
+        .eq("expense_id", voucher.id);
+
+      if (itemDeleteError) throw new Error(itemDeleteError.message);
+
+      const { error } = await supabase
+        .from("expenses")
+        .delete()
+        .eq("id", voucher.id);
+
+      if (error) throw new Error(error.message);
+
+      if (editingId === voucher.id) resetForm();
+      if (viewingExpense?.id === voucher.id) setViewingExpense(null);
+
+      alert("Expense voucher deleted successfully!");
+      await loadExpenseVouchers();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to delete expense voucher.";
+      alert(message);
+    } finally {
       setIsDeleting(false);
-      alert(itemsError.message);
-      return;
     }
-
-    const { error: voucherError } = await supabase
-      .from("expenses")
-      .delete()
-      .eq("id", voucher.id);
-
-    setIsDeleting(false);
-
-    if (voucherError) {
-      alert(voucherError.message);
-      return;
-    }
-
-    if (editingExpenseId === voucher.id) {
-      resetForm();
-    }
-
-    if (viewingExpense?.id === voucher.id) {
-      setViewingExpense(null);
-    }
-
-    alert("Expense Voucher deleted successfully!");
-    await loadExpenseVouchers();
   }
 
-  function handlePrintExpenseVoucher(voucher: ExpenseVoucherRecord) {
-    const printWindow = window.open("", "_blank", "width=950,height=720");
+  function handlePrintExpenseVoucher(voucher: ExpenseVoucher) {
+    const printWindow = window.open("", "_blank", "width=1100,height=800");
 
     if (!printWindow) {
-      alert("Please allow popups to print the expense voucher.");
+      alert("Please allow popups to print expense voucher.");
       return;
     }
 
-    const items = voucher.expense_items ?? [];
-    const grandTotal = items.reduce(
-      (total, item) => total + Number(item.amount || 0),
+    const dieselByItemId = new Map<number, DieselEntryRecord>();
+    (voucher.diesel_entries ?? []).forEach((diesel) => {
+      dieselByItemId.set(diesel.expense_item_id, diesel);
+    });
+
+    const totalAmount = (voucher.expense_items ?? []).reduce(
+      (total, item) => total + toNumber(item.amount),
       0
     );
 
     const itemRows =
-      items.length > 0
-        ? items
-            .map(
-              (item, index) => `
+      voucher.expense_items && voucher.expense_items.length > 0
+        ? voucher.expense_items
+            .map((item, index) => {
+              const diesel = dieselByItemId.get(item.id);
+              const dieselDetails = diesel
+                ? `
+                  <div class="diesel">
+                    <strong>Petrol Pump:</strong> ${
+                      diesel.petrol_pumps?.pump_name ?? "-"
+                    } |
+                    <strong>Litres:</strong> ${diesel.liters} |
+                    <strong>Rate:</strong> ${diesel.rate} |
+                    <strong>Total:</strong> ${diesel.total_amount} |
+                    <strong>Paid:</strong> ${diesel.paid_amount} |
+                    <strong>Remaining:</strong> ${diesel.remaining_amount} |
+                    <strong>Status:</strong> ${diesel.payment_status} |
+                    <strong>Slip No:</strong> ${diesel.slip_no ?? "-"}
+                  </div>
+                `
+                : "";
+
+              return `
                 <tr>
                   <td>${index + 1}</td>
-                  <td>${item.expense_type ?? ""}</td>
+                  <td>${item.expense_type}</td>
                   <td>${Number(item.amount || 0).toLocaleString()}</td>
-                  <td>${item.payment_method ?? ""}</td>
-                 <td>
-${
-  item.receipt_url
-    ? (
-        item.receipt_name?.toLowerCase().endsWith(".pdf")
-          ? `<a href="${item.receipt_url}" target="_blank">View PDF</a>`
-          : `<img
-               src="${item.receipt_url}"
-               alt="${item.receipt_name ?? "Receipt"}"
-               style="
-                 width:90px;
-                 height:90px;
-                 object-fit:contain;
-                 border:1px solid #d1d5db;
-                 border-radius:6px;
-                 padding:4px;
-               "
-             />`
-      )
-    : "-"
-}
-</td>
-                  <td>${item.remarks ?? ""}</td>
+                  <td>${item.payment_method}</td>
+                  <td>${item.remarks ?? "-"}${dieselDetails}</td>
+                  <td>${item.receipt_name ?? "-"}</td>
                 </tr>
-              `
-            )
+              `;
+            })
             .join("")
-        : `<tr><td colspan="6" class="empty">No expense items found</td></tr>`;
+        : `<tr><td colspan="6" class="empty">No expense items found.</td></tr>`;
 
     printWindow.document.write(`
       <!doctype html>
@@ -922,48 +1055,33 @@ ${
             * { box-sizing: border-box; }
             body {
               margin: 0;
-              padding: 32px;
+              padding: 28px;
               color: #111827;
               font-family: Arial, sans-serif;
               background: #ffffff;
             }
             .voucher {
-              max-width: 950px;
+              max-width: 1000px;
               margin: 0 auto;
               border: 1px solid #d1d5db;
               border-radius: 10px;
-              padding: 28px;
+              padding: 24px;
             }
             .header {
               display: flex;
               justify-content: space-between;
               gap: 20px;
               border-bottom: 2px solid #111827;
-              padding-bottom: 18px;
-              margin-bottom: 22px;
+              padding-bottom: 16px;
+              margin-bottom: 18px;
             }
-            h1 {
-              margin: 0;
-              font-size: 28px;
-              color: #111827;
-            }
-            .subtitle {
-              margin-top: 6px;
-              font-size: 14px;
-              color: #111827;
-            }
-            .meta {
-              text-align: right;
-              font-size: 14px;
-              line-height: 1.7;
-              color: #111827;
-            }
+            h1 { margin: 0; font-size: 28px; color: #111827; }
+            .meta { text-align: right; line-height: 1.7; font-size: 14px; }
             .details {
               display: grid;
-              grid-template-columns: repeat(2, minmax(0, 1fr));
-              gap: 12px 24px;
-              margin-bottom: 24px;
-              font-size: 15px;
+              grid-template-columns: repeat(2, 1fr);
+              gap: 10px 24px;
+              margin-bottom: 20px;
             }
             .details div {
               border-bottom: 1px solid #e5e7eb;
@@ -972,61 +1090,43 @@ ${
             table {
               width: 100%;
               border-collapse: collapse;
-              font-size: 14px;
+              font-size: 13px;
             }
             th {
               background: #2563eb;
               color: #ffffff;
               text-align: left;
-              padding: 10px;
+              padding: 9px;
               border: 1px solid #2563eb;
             }
             td {
-              padding: 10px;
+              padding: 9px;
               border: 1px solid #d1d5db;
-              color: #111827;
-            }
-            a {
-              color: #2563eb;
-              font-weight: 700;
-              text-decoration: none;
+              vertical-align: top;
             }
             tfoot td {
-              font-weight: 700;
+              font-weight: 800;
               background: #f9fafb;
+            }
+            .diesel {
+              margin-top: 6px;
+              line-height: 1.6;
+              font-size: 12px;
             }
             .empty {
               text-align: center;
               font-weight: 700;
             }
-            .description {
-              margin: 20px 0;
-              min-height: 70px;
-              border: 1px solid #d1d5db;
-              border-radius: 10px;
-              padding: 14px;
-              font-size: 15px;
-              color: #111827;
-            }
             .signatures {
               display: grid;
               grid-template-columns: repeat(3, 1fr);
               gap: 24px;
-              margin-top: 52px;
-              font-size: 14px;
-              color: #111827;
+              margin-top: 48px;
             }
             .signature {
               border-top: 1px solid #111827;
               padding-top: 8px;
               text-align: center;
-            }
-            @media print {
-              body { padding: 0; }
-              .voucher {
-                border: none;
-                border-radius: 0;
-              }
             }
           </style>
         </head>
@@ -1034,36 +1134,23 @@ ${
           <div class="voucher">
             <div class="header">
               <div>
-                <h1>Company Header</h1>
-                <div class="subtitle">Professional Expense Voucher</div>
+                <h1>UT Software</h1>
+                <div>Expense Voucher</div>
               </div>
               <div class="meta">
-                <div><strong>Voucher No:</strong> ${voucher.expense_no}</div>
+                <div><strong>Voucher:</strong> ${voucher.expense_no}</div>
                 <div><strong>Date:</strong> ${voucher.expense_date}</div>
               </div>
             </div>
 
             <div class="details">
-              <div><strong>Loading Number:</strong> ${
-                voucher.loadings?.loading_no ?? "-"
-              }</div>
-              <div><strong>Vehicle:</strong> ${
-                voucher.loadings?.vehicles?.vehicle_no ?? "-"
-              }</div>
-              <div><strong>Driver:</strong> ${
-                voucher.loadings?.drivers?.name ?? "-"
-              }</div>
-              <div><strong>Route:</strong> ${
-                voucher.loadings?.route ?? "-"
-              }</div>
-              <div><strong>Loading Date:</strong> ${
-                voucher.loadings?.loading_date ?? "-"
-              }</div>
-              <div><strong>Total Items:</strong> ${items.length}</div>
+              <div><strong>Loading:</strong> ${voucher.loadings?.loading_no ?? "-"}</div>
+              <div><strong>Vehicle:</strong> ${voucher.loadings?.vehicles?.vehicle_no ?? "-"}</div>
+              <div><strong>Driver:</strong> ${voucher.loadings?.drivers?.name ?? "-"}</div>
+              <div><strong>Route:</strong> ${voucher.loadings?.route ?? "-"}</div>
+              <div><strong>Description:</strong> ${voucher.description ?? "-"}</div>
+              <div><strong>Total:</strong> Rs. ${totalAmount.toLocaleString()}</div>
             </div>
-
-            <strong>Description</strong>
-            <div class="description">${voucher.description || "-"}</div>
 
             <table>
               <thead>
@@ -1071,17 +1158,16 @@ ${
                   <th>#</th>
                   <th>Expense Type</th>
                   <th>Amount</th>
-                  <th>Payment Method</th>
+                  <th>Payment</th>
+                  <th>Remarks / Diesel Details</th>
                   <th>Receipt</th>
-                  <th>Remarks</th>
                 </tr>
               </thead>
               <tbody>${itemRows}</tbody>
               <tfoot>
                 <tr>
                   <td colspan="2">Grand Total</td>
-                  <td>${grandTotal.toLocaleString()}</td>
-                  <td colspan="3"></td>
+                  <td colspan="4">Rs. ${totalAmount.toLocaleString()}</td>
                 </tr>
               </tfoot>
             </table>
@@ -1095,6 +1181,7 @@ ${
 
           <script>
             window.onload = function () {
+              window.focus();
               window.print();
             };
           </script>
@@ -1108,17 +1195,15 @@ ${
   return (
     <div className="mx-auto max-w-7xl space-y-8">
       <div>
-        <h1 className="text-4xl font-bold text-gray-900">
-          Expense Voucher Management
-        </h1>
+        <h1 className="text-4xl font-bold text-gray-900">Expense Voucher</h1>
         <p className="mt-2 text-base font-medium text-gray-900">
-          Create expense vouchers against loadings and manage receipts for each
-          expense item.
+          Create expense vouchers, upload receipts, record diesel fuel and sync
+          paid diesel amounts with Cashbook.
         </p>
       </div>
 
       <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
-        <ExpenseForm
+        <ExpenseFormComponent
           expenseNo={expenseNo}
           setExpenseNo={setExpenseNo}
           expenseDate={expenseDate}
@@ -1129,32 +1214,25 @@ ${
           setDescription={setDescription}
           loadings={loadings}
           selectedLoading={selectedLoading}
+          onSave={handleSaveExpenseVoucher}
+          isSaving={isSaving}
+          isEditing={Boolean(editingId)}
+          onCancelEdit={resetForm}
         />
 
         <ExpenseItems
           expenseItems={expenseItems}
           grandTotal={grandTotal}
+          petrolPumps={petrolPumps}
           onAddExpenseItem={handleAddExpenseItem}
           onDeleteExpenseItem={handleDeleteExpenseItem}
-          onExpenseItemChange={handleExpenseItemChange}
+          onExpenseItemChange={onExpenseItemChange}
           onReceiptSelected={handleReceiptSelected}
           onReceiptDelete={handleReceiptDelete}
           onPreviewReceipt={handlePreviewReceipt}
           onSave={handleSaveExpenseVoucher}
           isSaving={isSaving}
         />
-
-        {editingExpenseId && (
-          <div className="mt-6">
-            <button
-              type="button"
-              onClick={resetForm}
-              className="rounded-lg border border-gray-300 bg-white px-6 py-3 font-semibold text-gray-900 transition hover:bg-gray-50"
-            >
-              Cancel Edit
-            </button>
-          </div>
-        )}
       </div>
 
       <ExpenseTable
@@ -1163,41 +1241,13 @@ ${
         setSearch={setSearch}
         viewingExpense={viewingExpense}
         onCloseView={() => setViewingExpense(null)}
-        onView={handleViewExpenseVoucher}
+        onView={setViewingExpense}
         onEdit={handleEditExpenseVoucher}
         onDelete={handleDeleteExpenseVoucher}
         onPrint={handlePrintExpenseVoucher}
         onPreviewReceipt={handlePreviewReceipt}
         isDeleting={isDeleting}
       />
-
-      {previewReceipt && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-5xl rounded-xl bg-white p-4 shadow-xl">
-            <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-              <h2 className="break-all text-xl font-bold text-gray-900">
-                {previewReceipt.name}
-              </h2>
-
-              <button
-                type="button"
-                onClick={() => setPreviewReceipt(null)}
-                className="rounded-lg border border-gray-300 bg-white px-5 py-3 font-semibold text-gray-900 transition hover:bg-gray-50"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="max-h-[75vh] overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <img
-                src={previewReceipt.url}
-                alt={previewReceipt.name}
-                className="mx-auto h-auto max-h-[70vh] max-w-full rounded-lg object-contain"
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

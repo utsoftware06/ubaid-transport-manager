@@ -1,6 +1,8 @@
-type ReceiptState = "idle" | "uploading" | "replacing" | "deleting";
+"use client";
 
-export type ExpenseItemRow = {
+type ReceiptStatus = "idle" | "uploading" | "replacing" | "deleting";
+
+type ExpenseItemRow = {
   rowId: number;
   dbId?: number;
   expenseType: string;
@@ -10,31 +12,40 @@ export type ExpenseItemRow = {
   receiptUrl: string | null;
   receiptName: string | null;
   receiptFile: File | null;
-  receiptStatus: ReceiptState;
+  receiptStatus: ReceiptStatus;
   receiptError: string;
+  petrolPumpId: string;
+  liters: string;
+  rate: string;
+  paidAmount: string;
+  slipNo: string;
 };
 
-type ExpenseItemsProps = {
+type PetrolPumpOption = {
+  id: string;
+  pumpName: string;
+  openingBalance: number;
+};
+
+type Props = {
   expenseItems: ExpenseItemRow[];
   grandTotal: number;
+  petrolPumps: PetrolPumpOption[];
   onAddExpenseItem: () => void;
-  onDeleteExpenseItem: (rowId: number) => void | Promise<void>;
+  onDeleteExpenseItem: (rowId: number) => void;
   onExpenseItemChange: (
     rowId: number,
-    field: keyof Pick<
-      ExpenseItemRow,
-      "expenseType" | "amount" | "paymentMethod" | "remarks"
-    >,
+    field: keyof ExpenseItemRow,
     value: string
   ) => void;
-  onReceiptSelected: (rowId: number, file: File) => void | Promise<void>;
-  onReceiptDelete: (rowId: number) => void | Promise<void>;
-  onPreviewReceipt: (url: string, name: string) => void;
+  onReceiptSelected: (rowId: number, file: File) => void;
+  onReceiptDelete: (rowId: number) => void;
+  onPreviewReceipt: (receiptUrl: string) => void;
   onSave: () => void;
-  isSaving?: boolean;
+  isSaving: boolean;
 };
 
-const expenseTypeOptions = [
+const expenseTypes = [
   "Fuel",
   "Toll Tax",
   "Food",
@@ -45,7 +56,7 @@ const expenseTypeOptions = [
   "Other",
 ];
 
-const paymentMethodOptions = [
+const paymentMethods = [
   "Cash",
   "Bank Transfer",
   "JazzCash",
@@ -53,17 +64,35 @@ const paymentMethodOptions = [
   "Cheque",
 ];
 
-function getReceiptButtonText(item: ExpenseItemRow) {
-  if (item.receiptStatus === "uploading") return "Uploading...";
-  if (item.receiptStatus === "replacing") return "Replacing...";
-  if (item.receiptStatus === "deleting") return "Deleting...";
-  if (item.receiptUrl) return "Replace";
-  return "Choose File";
+function toNumber(value: string) {
+  const numericValue = Number(value || 0);
+  return Number.isFinite(numericValue) ? numericValue : 0;
+}
+
+function formatAmount(value: number) {
+  return `Rs. ${Number(value || 0).toLocaleString("en-PK", {
+    maximumFractionDigits: 0,
+  })}`;
+}
+
+function getDieselStatus(paidAmount: number, totalAmount: number) {
+  if (paidAmount <= 0) return "Unpaid";
+  if (paidAmount >= totalAmount) return "Paid";
+  return "Partial";
+}
+
+function getStatusClass(status: string) {
+  if (status === "Paid") return "border-green-200 bg-green-100 text-green-700";
+  if (status === "Partial") {
+    return "border-yellow-200 bg-yellow-100 text-yellow-700";
+  }
+  return "border-red-200 bg-red-100 text-red-700";
 }
 
 export default function ExpenseItems({
   expenseItems,
   grandTotal,
+  petrolPumps,
   onAddExpenseItem,
   onDeleteExpenseItem,
   onExpenseItemChange,
@@ -71,241 +100,356 @@ export default function ExpenseItems({
   onReceiptDelete,
   onPreviewReceipt,
   onSave,
-  isSaving = false,
-}: ExpenseItemsProps) {
+  isSaving,
+}: Props) {
   return (
-    <div className="mt-10 rounded-xl border border-gray-200 bg-gray-50 p-6">
-      <div className="mb-6 flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
+    <div className="mt-10 rounded-xl border border-gray-200 bg-white p-5">
+      <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-center">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Expense Items</h2>
           <p className="mt-1 text-sm font-semibold text-gray-900">
-            Add multiple expense rows with one receipt per row.
+            Add expense rows, attach receipts, and enter diesel details for Fuel.
           </p>
         </div>
 
-        <div className="rounded-lg border border-gray-200 bg-white px-5 py-3 text-base font-bold text-gray-900">
-          Grand Total: RS. {grandTotal.toLocaleString()}
-        </div>
-      </div>
-
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        <table className="w-full min-w-[1180px] border-collapse text-sm text-gray-900">
-          <thead className="bg-blue-600 text-white">
-            <tr>
-              <th className="p-3 text-left font-bold">Expense Type</th>
-              <th className="p-3 text-right font-bold">Amount</th>
-              <th className="p-3 text-left font-bold">Payment Method</th>
-              <th className="p-3 text-left font-bold">Receipt</th>
-              <th className="p-3 text-left font-bold">Remarks</th>
-              <th className="w-[140px] p-3 text-left font-bold">Action</th>
-            </tr>
-          </thead>
-
-          <tbody className="bg-white text-gray-900">
-            {expenseItems.map((item) => {
-              const isProcessing = item.receiptStatus !== "idle";
-
-              return (
-                <tr
-                  key={item.rowId}
-                  className="border-b border-gray-200 hover:bg-gray-50"
-                >
-                  <td className="p-3 align-top">
-                    <select
-                      value={item.expenseType}
-                      onChange={(event) =>
-                        onExpenseItemChange(
-                          item.rowId,
-                          "expenseType",
-                          event.target.value
-                        )
-                      }
-                      className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    >
-                      <option value="">Select Expense Type</option>
-                      {expenseTypeOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-
-                  <td className="p-3 align-top">
-                    <input
-                     type="number"
-                     min="0"
-                     step="0.01"
-                     placeholder="Amount"
-                      value={item.amount}
-                      onChange={(event) =>
-                        onExpenseItemChange(
-                          item.rowId,
-                          "amount",
-                          event.target.value
-                        )
-                      }
-                      className="w-full rounded-lg border border-gray-300 bg-white p-3 text-right font-medium text-gray-900 placeholder:text-gray-600 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    />
-                  </td>
-
-                  <td className="p-3 align-top">
-                    <select
-                      value={item.paymentMethod}
-                      onChange={(event) =>
-                        onExpenseItemChange(
-                          item.rowId,
-                          "paymentMethod",
-                          event.target.value
-                        )
-                      }
-                      className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    >
-                      <option value="">Select Payment Method</option>
-                      {paymentMethodOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-
-                  <td className="min-w-[260px] p-3 align-top">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <label className="inline-flex cursor-pointer rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700">
-                          {getReceiptButtonText(item)}
-                          <input
-                            type="file"
-                            accept=".jpg,.jpeg,.png,.webp,.pdf"
-                            disabled={isProcessing}
-                            onChange={(event) => {
-                              const file = event.target.files?.[0];
-                              event.target.value = "";
-
-                              if (file) {
-                                onReceiptSelected(item.rowId, file);
-                              }
-                            }}
-                            className="hidden"
-                          />
-                        </label>
-
-                        {item.receiptUrl && item.receiptName && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onPreviewReceipt(
-                                  item.receiptUrl as string,
-                                  item.receiptName as string
-                                )
-                              }
-                              disabled={isProcessing}
-                              className="rounded-lg border border-gray-300 bg-white px-4 py-3 font-semibold text-gray-900 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100"
-                            >
-                              Preview
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => onReceiptDelete(item.rowId)}
-                              disabled={isProcessing}
-                              className="rounded-lg bg-red-600 px-4 py-3 font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-400"
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
-                      </div>
-
-                      {item.receiptUrl && item.receiptName && (
-                        <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2">
-                          <p className="text-sm font-bold text-green-700">
-                            Uploaded
-                          </p>
-                          <p className="break-all text-sm font-semibold text-gray-900">
-                            {item.receiptName}
-                          </p>
-                        </div>
-                      )}
-
-                      {!item.receiptUrl && item.receiptFile && (
-                        <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
-                          <p className="text-sm font-bold text-blue-700">
-                            Selected for upload
-                          </p>
-                          <p className="break-all text-sm font-semibold text-gray-900">
-                            {item.receiptFile.name}
-                          </p>
-                        </div>
-                      )}
-
-                      {item.receiptError && (
-                        <p className="text-sm font-bold text-red-600">
-                          {item.receiptError}
-                        </p>
-                      )}
-                    </div>
-                  </td>
-
-                  <td className="p-3 align-top">
-                    <input
-                      type="text"
-                      placeholder="Remarks"
-                      value={item.remarks}
-                      onChange={(event) =>
-                        onExpenseItemChange(
-                          item.rowId,
-                          "remarks",
-                          event.target.value
-                        )
-                      }
-                      className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 placeholder:text-gray-600 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    />
-                  </td>
-
-                  <td className="w-[140px] p-3 align-top">
-                    <button
-                      type="button"
-                      onClick={() => onDeleteExpenseItem(item.rowId)}
-                      disabled={expenseItems.length === 1 || isProcessing}
-                      className="w-full whitespace-nowrap rounded-lg bg-red-600 px-4 py-3 text-center font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-400"
-                    >
-                      Delete Row
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-
-          <tfoot className="bg-gray-50 text-gray-900">
-            <tr>
-              <td className="p-3 font-bold">Grand Total</td>
-              <td className="p-3 text-right font-bold">
-              RS.  {grandTotal.toLocaleString()}
-              </td>
-              <td className="p-3" colSpan={4}></td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row">
         <button
           type="button"
           onClick={onAddExpenseItem}
-          className="rounded-lg bg-green-600 px-6 py-3 font-semibold text-white transition hover:bg-green-700"
+          className="rounded-lg bg-green-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-green-700"
         >
           Add Expense Item
         </button>
+      </div>
+
+      <div className="space-y-5">
+        {expenseItems.map((item) => {
+          const totalAmount = toNumber(item.liters) * toNumber(item.rate);
+          const paidAmount = toNumber(item.paidAmount);
+          const remainingAmount = Math.max(totalAmount - paidAmount, 0);
+          const paymentStatus = getDieselStatus(paidAmount, totalAmount);
+
+          return (
+            <div
+              key={item.rowId}
+              className="rounded-xl border border-gray-200 bg-gray-50 p-4"
+            >
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-gray-900">
+                    Expense Type
+                  </label>
+                  <select
+                    value={item.expenseType}
+                    onChange={(event) =>
+                      onExpenseItemChange(
+                        item.rowId,
+                        "expenseType",
+                        event.target.value
+                      )
+                    }
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                  >
+                    <option value="">Select Type</option>
+                    {expenseTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-gray-900">
+                    Amount
+                  </label>
+                  <input
+                    type="number"
+                    value={item.amount}
+                    readOnly={item.expenseType === "Fuel"}
+                    onChange={(event) =>
+                      onExpenseItemChange(
+                        item.rowId,
+                        "amount",
+                        event.target.value
+                      )
+                    }
+                    placeholder="0"
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-gray-900">
+                    Payment Method
+                  </label>
+                  <select
+                    value={item.paymentMethod}
+                    onChange={(event) =>
+                      onExpenseItemChange(
+                        item.rowId,
+                        "paymentMethod",
+                        event.target.value
+                      )
+                    }
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                  >
+                    {paymentMethods.map((method) => (
+                      <option key={method} value={method}>
+                        {method}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-gray-900">
+                    Receipt
+                  </label>
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,.pdf"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) onReceiptSelected(item.rowId, file);
+                    }}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-3 file:py-2 file:text-sm file:font-bold file:text-white"
+                  />
+
+                  {(item.receiptName || item.receiptFile) && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold text-green-700">
+                        {item.receiptFile?.name ?? item.receiptName}
+                      </span>
+
+                      {item.receiptUrl && (
+                        <button
+                          type="button"
+                          onClick={() => onPreviewReceipt(item.receiptUrl ?? "")}
+                          className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-bold text-gray-900"
+                        >
+                          Preview
+                        </button>
+                      )}
+
+                      {(item.receiptUrl || item.receiptFile) && (
+                        <button
+                          type="button"
+                          onClick={() => onReceiptDelete(item.rowId)}
+                          disabled={item.receiptStatus !== "idle"}
+                          className="rounded bg-red-600 px-2 py-1 text-xs font-bold text-white disabled:cursor-not-allowed"
+                        >
+                          {item.receiptStatus === "deleting"
+                            ? "Deleting..."
+                            : "Delete"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {item.receiptStatus !== "idle" && (
+                    <p className="mt-2 text-xs font-bold text-blue-700">
+                      {item.receiptStatus === "uploading"
+                        ? "Uploading..."
+                        : item.receiptStatus === "replacing"
+                          ? "Replacing..."
+                          : "Deleting..."}
+                    </p>
+                  )}
+
+                  {item.receiptError && (
+                    <p className="mt-2 text-xs font-bold text-red-700">
+                      {item.receiptError}
+                    </p>
+                  )}
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="mb-2 block text-sm font-bold text-gray-900">
+                    Remarks
+                  </label>
+                  <input
+                    type="text"
+                    value={item.remarks}
+                    onChange={(event) =>
+                      onExpenseItemChange(
+                        item.rowId,
+                        "remarks",
+                        event.target.value
+                      )
+                    }
+                    placeholder="Remarks"
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => onDeleteExpenseItem(item.rowId)}
+                    className="w-full rounded-lg bg-red-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-red-700"
+                  >
+                    Delete Row
+                  </button>
+                </div>
+              </div>
+
+              {item.expenseType === "Fuel" && (
+                <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-4">
+                  <h3 className="mb-4 text-lg font-bold text-gray-900">
+                    Diesel Details
+                  </h3>
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div>
+                      <label className="mb-2 block text-sm font-bold text-gray-900">
+                        Petrol Pump
+                      </label>
+                      <select
+                        value={item.petrolPumpId}
+                        onChange={(event) =>
+                          onExpenseItemChange(
+                            item.rowId,
+                            "petrolPumpId",
+                            event.target.value
+                          )
+                        }
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                      >
+                        <option value="">Select Petrol Pump</option>
+                        {petrolPumps.map((pump) => (
+                          <option key={pump.id} value={pump.id}>
+                            {pump.pumpName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-bold text-gray-900">
+                        Litres
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.liters}
+                        onChange={(event) =>
+                          onExpenseItemChange(
+                            item.rowId,
+                            "liters",
+                            event.target.value
+                          )
+                        }
+                        placeholder="0"
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-bold text-gray-900">
+                        Rate
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.rate}
+                        onChange={(event) =>
+                          onExpenseItemChange(
+                            item.rowId,
+                            "rate",
+                            event.target.value
+                          )
+                        }
+                        placeholder="0"
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                      />
+                    </div>
+
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
+                      <p className="text-sm font-bold text-gray-900">Total</p>
+                      <p className="mt-2 text-xl font-extrabold text-gray-900">
+                        {formatAmount(totalAmount)}
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-bold text-gray-900">
+                        Paid Amount
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.paidAmount}
+                        onChange={(event) =>
+                          onExpenseItemChange(
+                            item.rowId,
+                            "paidAmount",
+                            event.target.value
+                          )
+                        }
+                        placeholder="0"
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                      />
+                    </div>
+
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
+                      <p className="text-sm font-bold text-gray-900">
+                        Remaining
+                      </p>
+                      <p className="mt-2 text-xl font-extrabold text-red-700">
+                        {formatAmount(remainingAmount)}
+                      </p>
+                    </div>
+
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
+                      <p className="text-sm font-bold text-gray-900">Status</p>
+                      <span
+                        className={`mt-3 inline-flex rounded-full border px-3 py-1 text-sm font-bold ${getStatusClass(
+                          paymentStatus
+                        )}`}
+                      >
+                        {paymentStatus}
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-bold text-gray-900">
+                        Slip No
+                      </label>
+                      <input
+                        type="text"
+                        value={item.slipNo}
+                        onChange={(event) =>
+                          onExpenseItemChange(
+                            item.rowId,
+                            "slipNo",
+                            event.target.value
+                          )
+                        }
+                        placeholder="Slip No"
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-6 flex flex-col justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 md:flex-row md:items-center">
+        <div>
+          <p className="text-sm font-bold text-gray-900">Grand Total</p>
+          <p className="mt-1 text-2xl font-extrabold text-gray-900">
+            {formatAmount(grandTotal)}
+          </p>
+        </div>
 
         <button
           type="button"
           onClick={onSave}
           disabled={isSaving}
-          className="rounded-lg bg-blue-600 px-8 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
+          className="rounded-lg bg-blue-600 px-8 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed"
         >
           {isSaving ? "Saving..." : "Save Expense Voucher"}
         </button>

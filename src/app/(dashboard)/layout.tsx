@@ -127,6 +127,28 @@ export default function DashboardLayout({
 >
   💵 Payment Receipts
 </Link>
+ 
+<Link
+  href="/cashbook"
+  className={`block p-3 rounded-lg font-medium ${
+    pathname === "/cashbook"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  💰 Cashbook
+</Link>
+ 
+<Link
+  href="/workshop"
+  className={`block rounded-lg p-3 font-medium ${
+    pathname === "/workshop"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  🔧 Workshop
+</Link>
 
          <Link
             href="/bookings"
@@ -160,6 +182,94 @@ export default function DashboardLayout({
           >
             📦 Packing Slip
           </Link>
+.
+<Link
+  href="/diesel"
+  className={`block rounded-lg p-3 font-medium ${
+    pathname === "/diesel"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  ⛽ Diesel
+</Link>
+
+<Link
+  href="/petrol-pumps"
+  className={`block rounded-lg p-3 font-medium ${
+    pathname === "/petrol-pumps"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  ⛽ Petrol Pumps
+</Link>
+
+<Link
+  href="/petrol-pump-payments"
+  className={`block rounded-lg p-3 font-medium ${
+    pathname === "/petrol-pump-payments"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  💳 Pump Payments
+</Link>
+
+<Link
+  href="/brokers"
+  className={`block rounded-lg p-3 font-medium ${
+    pathname === "/brokers"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  🤝 Brokers
+</Link>
+
+<Link
+  href="/employees"
+  className={`block rounded-lg p-3 font-medium ${
+    pathname === "/employees"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  👨‍💼 Employees
+</Link>
+
+<Link
+  href="/employee-salary"
+  className={`block rounded-lg p-3 font-medium ${
+    pathname === "/employee-salary"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  💰 Employee Salary
+</Link>
+
+<Link
+  href="/employee-ledger"
+  className={`block rounded-lg p-3 font-medium ${
+    pathname === "/employee-ledger"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  📒 Employee Ledger
+</Link>
+
+<Link
+  href="/employee-loans"
+  className={`block rounded-lg p-3 font-medium ${
+    pathname === "/employee-loans"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  💳 Employee Loans
+</Link>
 
           <Link
             href="/expenses"
