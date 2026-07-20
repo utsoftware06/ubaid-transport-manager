@@ -62,6 +62,17 @@ export default function DashboardLayout({
             🚚 Vehicles
           </Link>
 
+<Link
+  href="/trip-management"
+  className={`block rounded-lg p-3 font-medium ${
+    pathname === "/trip-management"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  🚚 Trip / Chakkar Management
+</Link>
+
           <Link
             href="/reports"
             className={`block p-3 rounded-lg font-medium ${
@@ -269,6 +280,17 @@ export default function DashboardLayout({
   }`}
 >
   💳 Employee Loans
+</Link>
+
+<Link
+  href="/vehicle-documents"
+  className={`block rounded-lg p-3 font-medium ${
+    pathname === "/vehicle-documents"
+      ? "border-2 border-black bg-blue-50 text-blue-600"
+      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
+  }`}
+>
+  📄 Vehicle Documents
 </Link>
 
           <Link
