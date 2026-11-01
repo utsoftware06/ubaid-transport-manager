@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import DieselCards from "@/components/diesel/DieselCards";
 import DieselFilters from "@/components/diesel/DieselFilters";
 import DieselTable from "@/components/diesel/DieselTable";
+import { useLanguage } from "@/contexts/LanguageContext";
+import ModulePageHeading from "@/components/shared/ModulePageHeading";
 import { supabase } from "@/lib/supabase/client";
 
 export type DieselPaymentStatus = "Paid" | "Partial" | "Unpaid";
@@ -151,18 +153,22 @@ function mapPaymentStatus(value: string | null): DieselPaymentStatus {
 }
 
 export default function Diesel() {
+  const { t, dir } = useLanguage();
+  const [addaId, setAddaId] = useState<string | null>(null);
   const [rows, setRows] = useState<DieselEntryRow[]>([]);
   const [filters, setFilters] = useState<DieselFilterValues>(defaultFilters);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
-  useEffect(() => {
-    loadDieselEntries();
-  }, []);
-
-  async function loadDieselEntries() {
+  const loadDieselEntries = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage("");
+
+    const auth = await supabase.auth.getUser();
+    if (!auth.data.user) { setErrorMessage(t("diesel.messages.loadFailed")); setRows([]); setIsLoading(false); return; }
+    const profile = await supabase.from("profiles").select("adda_id,is_active").eq("id", auth.data.user.id).maybeSingle();
+    if (profile.error || !profile.data?.is_active || !profile.data.adda_id) { setErrorMessage(t("diesel.messages.loadFailed")); setRows([]); setIsLoading(false); return; }
+    setAddaId(String(profile.data.adda_id));
 
     const { data, error } = await supabase
       .from("diesel_entries")
@@ -196,7 +202,8 @@ export default function Diesel() {
       .order("created_at", { ascending: false });
 
     if (error) {
-      setErrorMessage(error.message);
+      console.error("Unable to load Diesel entries:", error);
+      setErrorMessage(t("diesel.messages.loadFailed"));
       setRows([]);
       setIsLoading(false);
       return;
@@ -239,7 +246,15 @@ export default function Diesel() {
     );
 
     setIsLoading(false);
-  }
+  }, [t]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadDieselEntries();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadDieselEntries]);
 
   const petrolPumps = useMemo<PetrolPumpOption[]>(() => {
     const options = new Map<string, PetrolPumpOption>();
@@ -341,15 +356,10 @@ export default function Diesel() {
   }, [filteredRows]);
 
   return (
-    <div className="space-y-8">
-      <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Diesel Management
-        </h1>
-        <p className="mt-2 text-base font-medium text-gray-900">
-          View diesel records automatically created from Expense Vouchers.
-        </p>
-      </div>
+    <div dir={dir} className="ut-module-page space-y-6">
+      <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <ModulePageHeading icon="diesel" accent="green" title={t("diesel.title")} description={t("diesel.description")} />
+      </header>
 
       <DieselCards summary={summary} />
 
@@ -366,6 +376,7 @@ export default function Diesel() {
         isLoading={isLoading}
         errorMessage={errorMessage}
         filters={filters}
+        addaId={addaId}
       />
     </div>
   );

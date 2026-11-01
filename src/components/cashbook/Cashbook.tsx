@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import CashbookForm from "@/components/cashbook/CashbookForm";
 import CashbookCards from "@/components/cashbook/CashbookCards";
 import CashbookTable from "@/components/cashbook/CashbookTable";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { supabase } from "@/lib/supabase/client";
+import ModulePageHeading from "@/components/shared/ModulePageHeading";
 
 export type CashbookEntryType = "Cash In" | "Cash Out";
 
@@ -31,6 +33,8 @@ export type CashbookFilterValues = {
   entryType: string;
   personType: string;
   paymentMethod: string;
+  vehicleId: string;
+  driverId: string;
   search: string;
 };
 
@@ -54,6 +58,15 @@ export type CashbookEntryRow = {
   createdAt: string;
   runningBalance: number;
 };
+
+export function isManualCashbookEntry(
+  entry: Pick<CashbookEntryRow, "referenceType" | "referenceId">
+): boolean {
+  return (
+    entry.referenceId === null &&
+    (entry.referenceType === null || entry.referenceType === "manual")
+  );
+}
 
 export type CashbookSummary = {
   openingBalance: number;
@@ -104,36 +117,14 @@ type CashbookEntryRecord = {
   created_at: string;
 };
 
-type PaymentReceiptRecord = {
-  id: string;
-  receipt_no: string;
-  receipt_date: string;
-  loading_id: string | number | null;
-  amount: number;
-  payment_method: CashbookPaymentMethod;
-  remarks: string;
-};
-
-type ExpenseRecord = {
-  id: string;
-  loading_id: string | number | null;
-  expense_date: string;
-  created_at: string;
-};
-
-type ExpenseItemRecord = {
-  expense_id: string;
-  expense_type: string;
-  amount: number;
-  remarks: string;
-};
-
 const defaultFilters: CashbookFilterValues = {
   fromDate: "",
   toDate: "",
   entryType: "",
   personType: "",
   paymentMethod: "",
+  vehicleId: "",
+  driverId: "",
   search: "",
 };
 
@@ -157,15 +148,6 @@ function toStringValue(value: unknown) {
 function normalizeId(value: unknown) {
   const id = toStringValue(value);
   return id || null;
-}
-
-function toReferenceId(value: unknown) {
-  return toStringValue(value);
-}
-
-function toDatabaseRelationId(value: string) {
-  if (!value) return null;
-  return /^\d+$/.test(value) ? Number(value) : value;
 }
 
 function toEntryType(value: unknown): CashbookEntryType {
@@ -276,40 +258,8 @@ function mapLoading(row: DatabaseRow): LoadingOption {
   };
 }
 
-function mapPaymentReceipt(row: DatabaseRow): PaymentReceiptRecord {
-  return {
-    id: toStringValue(row.id),
-    receipt_no: toStringValue(row.receipt_no),
-    receipt_date: toStringValue(row.receipt_date),
-    loading_id: normalizeId(row.loading_id),
-    amount: toNumber(row.amount),
-    payment_method: toPaymentMethod(row.payment_method),
-    remarks: toStringValue(row.remarks),
-  };
-}
-
-function mapExpense(row: DatabaseRow): ExpenseRecord {
-  return {
-    id: toStringValue(row.id),
-    loading_id: normalizeId(row.loading_id),
-    expense_date:
-      toStringValue(row.expense_date) ||
-      toStringValue(row.date) ||
-      toStringValue(row.created_at),
-    created_at: toStringValue(row.created_at),
-  };
-}
-
-function mapExpenseItem(row: DatabaseRow): ExpenseItemRecord {
-  return {
-    expense_id: toStringValue(row.expense_id),
-    expense_type: toStringValue(row.expense_type) || "Expense",
-    amount: toNumber(row.amount),
-    remarks: toStringValue(row.remarks),
-  };
-}
-
 export default function Cashbook() {
+  const { t, dir } = useLanguage();
   const [entryDate, setEntryDate] = useState("");
   const [entryType, setEntryType] = useState<CashbookEntryType>("Cash In");
   const [personType, setPersonType] = useState<CashbookPersonType>("Customer");
@@ -326,40 +276,62 @@ export default function Cashbook() {
   const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
   const [drivers, setDrivers] = useState<DriverOption[]>([]);
   const [loadings, setLoadings] = useState<LoadingOption[]>([]);
+  const [currentAddaId, setCurrentAddaId] = useState<string | null>(null);
   const [filters, setFilters] = useState<CashbookFilterValues>(defaultFilters);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const saveInProgressRef = useRef(false);
+  const deleteInProgressRef = useRef(false);
+  const syncInProgressRef = useRef(false);
 
-  useEffect(() => {
-    loadInitialData();
-  }, []);
-
-  async function loadInitialData() {
+  const initialDataLoader = useEffectEvent(async () => {
     setIsLoading(true);
     setErrorMessage("");
+    try {
+      const addaId = await loadCurrentAddaId();
+      setCurrentAddaId(addaId);
+      const loadingIds = await loadLoadings(addaId);
+      await Promise.all([
+        loadCashbookEntries(addaId),
+        loadVehicles(addaId),
+        loadDrivers(addaId),
+      ]);
+      if (loadingIds.length === 0) setLoadings([]);
+    } catch (error) {
+      console.error("Unable to load Cashbook data:", error);
+      setErrorMessage(t("cashbook.messages.loadFailed"));
+    } finally {
+      setIsLoading(false);
+    }
+  });
 
-    await Promise.all([
-      loadCashbookEntries(),
-      loadVehicles(),
-      loadDrivers(),
-      loadLoadings(),
-    ]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void initialDataLoader(), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
-    setIsLoading(false);
+  async function loadCurrentAddaId() {
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) throw authError ?? new Error("No user.");
+    const { data, error } = await supabase
+      .from("profiles").select("adda_id").eq("id", authData.user.id).maybeSingle();
+    if (error || !data?.adda_id) throw error ?? new Error("No Adda.");
+    return String(data.adda_id);
   }
 
-  async function loadCashbookEntries() {
-    const { data, error } = await supabase
-      .from("cashbook_entries")
-      .select("*")
-      .order("entry_date", { ascending: true })
-      .order("created_at", { ascending: true });
+  async function loadCashbookEntries(addaId: string) {
+    const { data, error } = await supabase.rpc("get_cashbook_entries", {
+      p_adda_id: addaId,
+    });
 
     if (error) {
-      setErrorMessage(error.message);
+      console.error("Unable to load cashbook entries:", error);
+      setErrorMessage(t("cashbook.messages.loadFailed"));
       setEntries([]);
       return;
     }
@@ -367,14 +339,16 @@ export default function Cashbook() {
     setEntries(((data ?? []) as DatabaseRow[]).map(mapCashbookEntry));
   }
 
-  async function loadVehicles() {
+  async function loadVehicles(addaId: string) {
     const { data, error } = await supabase
       .from("vehicles")
       .select("id, vehicle_no, owner_name")
+      .eq("adda_id", addaId)
       .order("vehicle_no", { ascending: true });
 
     if (error) {
-      setErrorMessage(error.message);
+      console.error("Unable to load Cashbook vehicles:", error);
+      setErrorMessage(t("cashbook.messages.loadFailed"));
       setVehicles([]);
       return;
     }
@@ -382,14 +356,16 @@ export default function Cashbook() {
     setVehicles(((data ?? []) as DatabaseRow[]).map(mapVehicle));
   }
 
-  async function loadDrivers() {
+  async function loadDrivers(addaId: string) {
     const { data, error } = await supabase
       .from("drivers")
       .select("id, name")
+      .eq("adda_id", addaId)
       .order("name", { ascending: true });
 
     if (error) {
-      setErrorMessage(error.message);
+      console.error("Unable to load Cashbook drivers:", error);
+      setErrorMessage(t("cashbook.messages.loadFailed"));
       setDrivers([]);
       return;
     }
@@ -397,7 +373,15 @@ export default function Cashbook() {
     setDrivers(((data ?? []) as DatabaseRow[]).map(mapDriver));
   }
 
-  async function loadLoadings() {
+  async function loadLoadings(addaId: string): Promise<string[]> {
+    const { data: bookingRows, error: bookingError } = await supabase
+      .from("bookings").select("id").eq("adda_id", addaId);
+    if (bookingError) throw bookingError;
+    const bookingIds = (bookingRows ?? []).map((booking) => String(booking.id));
+    if (bookingIds.length === 0) {
+      setLoadings([]);
+      return [];
+    }
     const { data, error } = await supabase
       .from("loadings")
       .select(
@@ -413,18 +397,23 @@ export default function Cashbook() {
         bookings(sender_name)
       `
       )
+      .in("booking_id", bookingIds)
       .order("loading_no", { ascending: false });
 
     if (error) {
-      setErrorMessage(error.message);
+      console.error("Unable to load Cashbook loadings:", error);
+      setErrorMessage(t("cashbook.messages.loadFailed"));
       setLoadings([]);
-      return;
+      return [];
     }
 
-    setLoadings(((data ?? []) as DatabaseRow[]).map(mapLoading));
+    const rows = ((data ?? []) as DatabaseRow[]).map(mapLoading);
+    setLoadings(rows);
+    return rows.map((loading) => loading.id);
   }
 
   function resetForm() {
+    setEditingId(null);
     setEntryDate("");
     setEntryType("Cash In");
     setPersonType("Customer");
@@ -439,37 +428,38 @@ export default function Cashbook() {
 
   function validateForm() {
     if (!entryDate) {
-      alert("Date is required.");
+      alert(t("cashbook.validation.dateRequired"));
       return false;
     }
 
     if (!entryType) {
-      alert("Entry type is required.");
+      alert(t("cashbook.validation.entryTypeRequired"));
       return false;
     }
 
     if (!personType) {
-      alert("Person type is required.");
+      alert(t("cashbook.validation.personTypeRequired"));
       return false;
     }
 
     if (!personName.trim()) {
-      alert("Person name is required.");
+      alert(t("cashbook.validation.personNameRequired"));
       return false;
     }
 
     if (!paymentMethod) {
-      alert("Payment method is required.");
+      alert(t("cashbook.validation.paymentMethodRequired"));
       return false;
     }
 
-    if (!amount || Number(amount) <= 0) {
-      alert("Amount must be greater than 0.");
+    const numericAmount = Number(amount);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      alert(t("cashbook.validation.amountPositive"));
       return false;
     }
 
     if (!description.trim()) {
-      alert("Description is required.");
+      alert(t("cashbook.validation.descriptionRequired"));
       return false;
     }
 
@@ -477,197 +467,114 @@ export default function Cashbook() {
   }
 
   async function handleSaveEntry() {
-    if (!validateForm()) return;
+    if (saveInProgressRef.current || isSaving || !validateForm()) return;
 
+    saveInProgressRef.current = true;
     setIsSaving(true);
 
-    const { error } = await supabase.from("cashbook_entries").insert({
-      entry_date: entryDate,
-      entry_type: entryType,
-      person_type: personType,
-      person_name: personName.trim(),
-      vehicle_id: toDatabaseRelationId(vehicleId),
-      driver_id: toDatabaseRelationId(driverId),
-      loading_id: toDatabaseRelationId(loadingId),
-      payment_method: paymentMethod,
-      amount: Number(amount),
-      description: description.trim(),
-      reference_type: "manual",
-      reference_id: null,
-    });
+    const values = {
+      p_entry_date: entryDate,
+      p_entry_type: entryType,
+      p_person_type: personType,
+      p_person_name: personName.trim(),
+      p_vehicle_id: vehicleId || null,
+      p_driver_id: driverId || null,
+      p_loading_id: loadingId ? Number(loadingId) : null,
+      p_payment_method: paymentMethod,
+      p_amount: Number(amount),
+      p_description: description.trim(),
+      p_adda_id: currentAddaId,
+      p_id: editingId ? Number(editingId) : null,
+    };
+    try {
+      if (!currentAddaId) throw new Error("No Adda.");
+      const { error } = await supabase.rpc("save_manual_cashbook_entry", values);
 
-    setIsSaving(false);
+      if (error) {
+        console.error("Unable to save Cashbook entry:", error);
+        alert(t("cashbook.messages.saveFailed"));
+        return;
+      }
 
-    if (error) {
-      alert(error.message);
+      alert(t(editingId ? "cashbook.messages.updated" : "cashbook.messages.saved"));
+      resetForm();
+      await loadCashbookEntries(currentAddaId);
+    } catch (error) {
+      console.error("Unable to save Cashbook entry:", error);
+      alert(t("cashbook.messages.saveFailed"));
+    } finally {
+      saveInProgressRef.current = false;
+      setIsSaving(false);
+    }
+  }
+
+  function handleEditEntry(row: CashbookEntryRow) {
+    if (!isManualCashbookEntry(row)) {
+      alert(t("cashbook.messages.syncedEntryLocked"));
       return;
     }
-
-    alert("Cashbook entry saved successfully!");
-    resetForm();
-    await loadCashbookEntries();
+    setEditingId(row.id);
+    setEntryDate(row.entryDate);
+    setEntryType(row.entryType);
+    setPersonType(row.personType);
+    setPersonName(row.personName);
+    setVehicleId(row.vehicleId ?? "");
+    setDriverId(row.driverId ?? "");
+    setLoadingId(row.loadingId ?? "");
+    setPaymentMethod(row.paymentMethod);
+    setAmount(String(row.amount));
+    setDescription(row.description);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function fetchPaymentReceipts() {
-    const { data, error } = await supabase
-      .from("payment_receipts")
-      .select("id, receipt_no, receipt_date, loading_id, amount, payment_method, remarks");
-
-    if (error) {
-      throw new Error(error.message);
+  async function handleDeleteEntry(row: CashbookEntryRow) {
+    if (deleteInProgressRef.current || deletingId || !isManualCashbookEntry(row)) {
+      if (!isManualCashbookEntry(row)) alert(t("cashbook.messages.syncedEntryLocked"));
+      return;
     }
-
-    return ((data ?? []) as DatabaseRow[]).map(mapPaymentReceipt);
-  }
-
-  async function fetchExpenses() {
-    const { data, error } = await supabase
-      .from("expenses")
-      .select("*");
-
-    if (error) {
-      throw new Error(error.message);
+    if (!window.confirm(t("cashbook.messages.deleteConfirm"))) return;
+    deleteInProgressRef.current = true;
+    setDeletingId(row.id);
+    try {
+      if (!currentAddaId) throw new Error("No Adda.");
+      const { error } = await supabase.rpc("delete_manual_cashbook_entry", {
+        p_id: Number(row.id),
+        p_adda_id: currentAddaId,
+      });
+      if (error) {
+        console.error("Unable to delete Cashbook entry:", error);
+        alert(t(error.code === "23503" ? "cashbook.messages.linkedRecords" : "cashbook.messages.deleteFailed"));
+      } else {
+        setEntries((current) => current.filter((entry) => entry.id !== row.id));
+        if (editingId === row.id) resetForm();
+        alert(t("cashbook.messages.deleted"));
+      }
+    } catch (error) {
+      console.error("Unable to delete Cashbook entry:", error);
+      alert(t("cashbook.messages.deleteFailed"));
+    } finally {
+      deleteInProgressRef.current = false;
+      setDeletingId(null);
     }
-
-    return ((data ?? []) as DatabaseRow[]).map(mapExpense);
-  }
-
-  async function fetchExpenseItems() {
-    const { data, error } = await supabase
-      .from("expense_items")
-      .select("expense_id, expense_type, amount, remarks");
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return ((data ?? []) as DatabaseRow[]).map(mapExpenseItem);
-  }
-
-  async function fetchExistingReferences() {
-    const { data, error } = await supabase
-      .from("cashbook_entries")
-      .select("reference_type, reference_id")
-      .not("reference_type", "is", null)
-      .not("reference_id", "is", null);
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return new Set(
-      ((data ?? []) as DatabaseRow[]).map(
-        (row) =>
-          `${toStringValue(row.reference_type)}:${toStringValue(
-            row.reference_id
-          )}`
-      )
-    );
   }
 
   async function handleSyncAutoEntries() {
+    if (syncInProgressRef.current) return;
+    syncInProgressRef.current = true;
     setIsSyncing(true);
     setErrorMessage("");
 
     try {
-      const [paymentReceipts, expenses, expenseItems, existingReferences] =
-        await Promise.all([
-          fetchPaymentReceipts(),
-          fetchExpenses(),
-          fetchExpenseItems(),
-          fetchExistingReferences(),
-        ]);
-
-      const entriesToInsert: DatabaseRow[] = [];
-
-      paymentReceipts.forEach((receipt) => {
-        const referenceId = toReferenceId(receipt.id);
-        const referenceKey = `payment_receipt:${referenceId}`;
-
-        if (existingReferences.has(referenceKey)) return;
-
-        const loading = loadings.find(
-          (item) => item.id === normalizeId(receipt.loading_id)
-        );
-
-        entriesToInsert.push({
-          entry_date: receipt.receipt_date,
-          entry_type: "Cash In",
-          person_type: "Customer",
-          person_name: loading?.senderName || "Customer",
-          vehicle_id: toDatabaseRelationId(loading?.vehicleId ?? ""),
-          driver_id: toDatabaseRelationId(loading?.driverId ?? ""),
-          loading_id: toDatabaseRelationId(normalizeId(receipt.loading_id) ?? ""),
-          payment_method: receipt.payment_method,
-          amount: receipt.amount,
-          description: `Freight payment received against receipt ${
-            receipt.receipt_no || referenceId
-          }`,
-          reference_type: "payment_receipt",
-          reference_id: referenceId,
-        });
-      });
-
-      expenses.forEach((expense) => {
-        const referenceId = toReferenceId(expense.id);
-        const referenceKey = `expense:${referenceId}`;
-
-        if (existingReferences.has(referenceKey)) return;
-
-        const loading = loadings.find(
-          (item) => item.id === normalizeId(expense.loading_id)
-        );
-        const items = expenseItems.filter(
-          (item) => item.expense_id === expense.id
-        );
-
-        const totalExpense = items.reduce(
-          (total, item) => total + item.amount,
-          0
-        );
-
-        if (totalExpense <= 0) return;
-
-        const expenseNames = Array.from(
-          new Set(items.map((item) => item.expense_type).filter(Boolean))
-        ).join(", ");
-
-        entriesToInsert.push({
-          entry_date: expense.expense_date || expense.created_at,
-          entry_type: "Cash Out",
-          person_type: "Other",
-          person_name: expenseNames || "Expense",
-          vehicle_id: toDatabaseRelationId(loading?.vehicleId ?? ""),
-          driver_id: toDatabaseRelationId(loading?.driverId ?? ""),
-          loading_id: toDatabaseRelationId(normalizeId(expense.loading_id) ?? ""),
-          payment_method: "Cash",
-          amount: totalExpense,
-          description: `${expenseNames || "Expense"}${
-            loading?.loadingNo ? ` against loading ${loading.loadingNo}` : ""
-          }`,
-          reference_type: "expense",
-          reference_id: referenceId,
-        });
-      });
-
-      if (entriesToInsert.length > 0) {
-        const { error } = await supabase
-          .from("cashbook_entries")
-          .insert(entriesToInsert);
-
-        if (error) {
-          throw new Error(error.message);
-        }
-      }
-
-      await loadCashbookEntries();
-      alert("Cashbook auto entries synced successfully!");
+      if (!currentAddaId) throw new Error("No Adda.");
+      await loadCashbookEntries(currentAddaId);
+      alert(t("cashbook.messages.synced"));
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to sync cashbook.";
+      console.error("Unable to sync Cashbook:", error);
+      const message = t("cashbook.messages.syncFailed");
       setErrorMessage(message);
       alert(message);
     } finally {
+      syncInProgressRef.current = false;
       setIsSyncing(false);
     }
   }
@@ -713,14 +620,23 @@ export default function Cashbook() {
         loadingNo: loading?.loadingNo ?? "-",
         paymentMethod: entry.payment_method,
         amount: entry.amount,
-        description: entry.description,
+        description:
+          entry.reference_type === "payment_receipt"
+            ? t("cashbook.sources.partyPayment")
+            : entry.reference_type === "loading_advance"
+              ? t("cashbook.sources.loadingAdvance")
+              : entry.reference_type === "voucher"
+                ? t("cashbook.sources.voucher")
+                : entry.reference_type === "petrol_pump_payment"
+                  ? t("cashbook.sources.petrolPumpPayment")
+                  : entry.description,
         referenceType: entry.reference_type,
         referenceId: entry.reference_id,
         createdAt: entry.created_at,
         runningBalance,
       };
     });
-  }, [drivers, entries, loadings, vehicles]);
+  }, [drivers, entries, loadings, t, vehicles]);
 
   const filteredRows = useMemo(() => {
     const keyword = filters.search.trim().toLowerCase();
@@ -748,6 +664,8 @@ export default function Cashbook() {
       ) {
         return false;
       }
+      if (filters.vehicleId && row.vehicleId !== filters.vehicleId) return false;
+      if (filters.driverId && row.driverId !== filters.driverId) return false;
 
       if (!keyword) {
         return true;
@@ -788,16 +706,10 @@ export default function Cashbook() {
   }, [filteredRows]);
 
   return (
-    <div className="space-y-8">
+    <div dir={dir} className="ut-module-page space-y-6">
       <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Cashbook</h1>
-            <p className="mt-2 text-base font-medium text-gray-900">
-              Complete daily office cash khata for cash received, cash paid,
-              advances, expenses and automatic freight receipts.
-            </p>
-          </div>
+          <ModulePageHeading icon="cashbook" accent="gold" title={t("cashbook.title")} description={t("cashbook.description")} />
 
           <button
             type="button"
@@ -805,7 +717,9 @@ export default function Cashbook() {
             disabled={isSyncing}
             className="rounded-lg bg-blue-600 px-6 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed"
           >
-            {isSyncing ? "Syncing..." : "Sync Auto Entries"}
+            {isSyncing
+              ? t("cashbook.states.syncing")
+              : t("cashbook.actions.syncAutoEntries")}
           </button>
         </div>
       </div>
@@ -813,6 +727,7 @@ export default function Cashbook() {
       <CashbookCards summary={summary} />
 
       <CashbookForm
+        voiceContextKey={`${currentAddaId ?? ""}:${editingId ?? "new"}`}
         entryDate={entryDate}
         setEntryDate={setEntryDate}
         entryType={entryType}
@@ -837,11 +752,14 @@ export default function Cashbook() {
         drivers={drivers}
         loadings={loadings}
         onSave={handleSaveEntry}
+        onCancel={resetForm}
+        isEditing={Boolean(editingId)}
         isSaving={isSaving}
       />
 
       <CashbookTable
         rows={filteredRows}
+        addaId={currentAddaId}
         filters={filters}
         setFilters={setFilters}
         onReset={handleResetFilters}
@@ -849,6 +767,11 @@ export default function Cashbook() {
         isSyncing={isSyncing}
         isLoading={isLoading}
         errorMessage={errorMessage}
+        vehicles={vehicles}
+        drivers={drivers}
+        deletingId={deletingId}
+        onEdit={handleEditEntry}
+        onDelete={handleDeleteEntry}
       />
     </div>
   );

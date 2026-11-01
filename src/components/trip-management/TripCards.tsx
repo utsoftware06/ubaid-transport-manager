@@ -1,6 +1,7 @@
 "use client";
 
 import { type TripSummary, formatAmount } from "./TripManagement";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 type Props = {
   summary: TripSummary;
@@ -16,74 +17,75 @@ type CardItem = {
 };
 
 export default function TripCards({ summary, loading }: Props) {
+  const { t, dir } = useLanguage();
   const cards: CardItem[] = [
     {
-      label: "Total Trips",
+      label: t("tripManagement.cards.totalTrips"),
       value: summary.totalTrips,
-      helper: "All filtered trips",
+      helper: t("tripManagement.cards.totalTripsHelp"),
       className: "border-blue-200 bg-blue-50",
       valueClass: "text-blue-700",
     },
     {
-      label: "Planned",
+      label: t("tripManagement.cards.planned"),
       value: summary.plannedTrips,
-      helper: "Trips waiting to start",
+      helper: t("tripManagement.cards.plannedHelp"),
       className: "border-gray-200 bg-gray-50",
       valueClass: "text-gray-900",
     },
     {
-      label: "Active",
+      label: t("tripManagement.cards.active"),
       value: summary.activeTrips,
-      helper: "Loading, transit or delivered",
+      helper: t("tripManagement.cards.activeHelp"),
       className: "border-indigo-200 bg-indigo-50",
       valueClass: "text-indigo-700",
     },
     {
-      label: "Completed",
+      label: t("tripManagement.cards.completed"),
       value: summary.completedTrips,
-      helper: "Closed trips",
+      helper: t("tripManagement.cards.completedHelp"),
       className: "border-green-200 bg-green-50",
       valueClass: "text-green-700",
     },
     {
-      label: "Cancelled",
+      label: t("tripManagement.cards.cancelled"),
       value: summary.cancelledTrips,
-      helper: "Cancelled trips",
+      helper: t("tripManagement.cards.cancelledHelp"),
       className: "border-red-200 bg-red-50",
       valueClass: "text-red-700",
     },
     {
-      label: "Total Freight",
+      label: t("tripManagement.cards.totalFreight"),
       value: formatAmount(summary.totalFreight),
-      helper: "Booked freight amount",
+      helper: t("tripManagement.cards.totalFreightHelp"),
       className: "border-purple-200 bg-purple-50",
       valueClass: "text-purple-700",
     },
     {
-      label: "Total Received",
+      label: t("tripManagement.cards.totalReceived"),
       value: formatAmount(summary.totalReceived),
-      helper: "Customer received amount",
+      helper: t("tripManagement.cards.totalReceivedHelp"),
       className: "border-green-200 bg-green-50",
       valueClass: "text-green-700",
     },
     {
-      label: "Total Balance",
+      label: t("tripManagement.cards.totalBalance"),
       value: formatAmount(summary.totalBalance),
-      helper: "Pending customer balance",
+      helper: t("tripManagement.cards.totalBalanceHelp"),
       className: "border-amber-200 bg-amber-50",
       valueClass: "text-amber-700",
     },
     {
-      label: "Total Expenses",
+      label: t("tripManagement.cards.totalExpenses"),
       value: formatAmount(summary.totalExpenses),
-      helper: "Trip expense amount",
+      helper: t("tripManagement.cards.totalExpensesHelp"),
       className: "border-red-200 bg-red-50",
       valueClass: "text-red-700",
     },
     {
-      label: "Net Profit",
+      label: t("tripManagement.cards.netProfit"),
       value: formatAmount(summary.totalProfit),
-      helper: "Freight minus expenses",
+      helper: t("tripManagement.cards.netProfitHelp"),
       className:
         summary.totalProfit >= 0
           ? "border-green-200 bg-green-50"
@@ -93,11 +95,13 @@ export default function TripCards({ summary, loading }: Props) {
   ];
 
   return (
-    <section className="rounded-xl bg-white p-6 shadow-md md:p-8">
+    <section dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Trip Summary</h2>
+        <h2 className="text-2xl font-bold text-gray-900">
+          {t("tripManagement.cards.title")}
+        </h2>
         <p className="mt-2 text-sm font-medium text-gray-900">
-          Overview of trip count, revenue, balances, expenses and profit.
+          {t("tripManagement.cards.description")}
         </p>
       </div>
 
@@ -125,6 +129,7 @@ export default function TripCards({ summary, loading }: Props) {
                 {card.label}
               </p>
               <p
+                dir="ltr"
                 className={`mt-3 break-words text-2xl font-extrabold ${card.valueClass}`}
               >
                 {card.value}

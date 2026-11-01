@@ -7,6 +7,7 @@ import LoadingItemsTable from "@/components/loadingDetails/LoadingItemsTable";
 import ExpenseBreakdown from "@/components/loadingDetails/ExpenseBreakdown";
 import LoadingSummary from "@/components/loadingDetails/LoadingSummary";
 import LoadingPrint from "@/components/loadingDetails/LoadingPrint";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { supabase } from "@/lib/supabase/client";
 
 type Props = {
@@ -26,6 +27,9 @@ type DriverRelation = {
 
 type BookingRelation = {
   freight: number | string | null;
+  sender_name: string | null;
+  adda_id: string | null;
+  parties: RelatedRecord<{ name: string | null }>;
 };
 
 type LoadingItemRelation = {
@@ -82,12 +86,13 @@ export type LoadingExpenseItem = {
 
 export type LoadingDetailsData = {
   id: string;
+  addaId: string | null;
   loadingNo: string;
   loadingDate: string;
   vehicleNo: string;
   ownerName: string;
   driverName: string;
-  customerName: string;
+  partyName: string;
   route: string;
   freight: number;
   totalIncome: number;
@@ -114,6 +119,7 @@ function toNumber(value: number | string | null | undefined) {
 }
 
 export default function LoadingDetails({ loadingId }: Props) {
+  const { t, dir } = useLanguage();
   const [loading, setLoading] = useState<LoadingRelationRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -122,13 +128,32 @@ export default function LoadingDetails({ loadingId }: Props) {
     async function loadLoadingDetails() {
       if (!loadingId) {
         setLoading(null);
-        setErrorMessage("Loading ID is required.");
+        setErrorMessage(t("loadings.details.idRequired"));
         setIsLoading(false);
         return;
       }
 
       setIsLoading(true);
       setErrorMessage("");
+
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        console.error("Unable to verify loading details user:", authError);
+        setErrorMessage(t("loadings.details.loadErrorHint"));
+        setIsLoading(false);
+        return;
+      }
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("adda_id")
+        .eq("id", authData.user.id)
+        .maybeSingle();
+      if (profileError || !profile?.adda_id) {
+        console.error("Unable to resolve loading details tenant:", profileError);
+        setErrorMessage(t("loadings.details.loadErrorHint"));
+        setIsLoading(false);
+        return;
+      }
 
       const { data, error } = await supabase
         .from("loadings")
@@ -143,7 +168,7 @@ export default function LoadingDetails({ loadingId }: Props) {
           booking_id,
           vehicles(vehicle_no, owner_name),
           drivers(name),
-          bookings(freight),
+          bookings!inner(freight, sender_name, adda_id, parties(name)),
           loading_items(
             id,
             item_name,
@@ -164,11 +189,13 @@ export default function LoadingDetails({ loadingId }: Props) {
         `
         )
         .eq("id", loadingId)
+        .eq("bookings.adda_id", profile.adda_id)
         .single();
 
       if (error) {
+        console.error("Unable to load loading details:", error);
         setLoading(null);
-        setErrorMessage(error.message);
+        setErrorMessage(t("loadings.details.loadErrorHint"));
         setIsLoading(false);
         return;
       }
@@ -178,7 +205,7 @@ export default function LoadingDetails({ loadingId }: Props) {
     }
 
     void loadLoadingDetails();
-  }, [loadingId]);
+  }, [loadingId, t]);
 
   const loadingDetails = useMemo<LoadingDetailsData | null>(() => {
     if (!loading) return null;
@@ -199,7 +226,8 @@ export default function LoadingDetails({ loadingId }: Props) {
     const expenses = (loading.expenses ?? []).flatMap((expense) =>
       (expense.expense_items ?? []).map((item) => ({
         id: String(item.id),
-        expenseName: item.expense_type?.trim() || "Expense",
+        expenseName:
+          item.expense_type?.trim() || t("loadings.details.genericExpense"),
         amount: toNumber(item.amount),
         remarks: item.remarks?.trim() || "-",
       }))
@@ -214,12 +242,16 @@ export default function LoadingDetails({ loadingId }: Props) {
 
     return {
       id: loading.id,
+      addaId: booking?.adda_id ?? null,
       loadingNo: loading.loading_no ?? "-",
       loadingDate: loading.loading_date?.slice(0, 10) ?? "-",
       vehicleNo: vehicle?.vehicle_no ?? "-",
       ownerName: vehicle?.owner_name ?? "-",
       driverName: driver?.name ?? "-",
-      customerName: "-",
+      partyName:
+        getSingleRelation(booking?.parties ?? null)?.name ??
+        booking?.sender_name ??
+        "-",
       route: loading.route ?? "-",
       freight,
       totalIncome: freight,
@@ -228,16 +260,16 @@ export default function LoadingDetails({ loadingId }: Props) {
       items,
       expenses,
     };
-  }, [loading]);
+  }, [loading, t]);
 
   if (isLoading) {
     return (
-      <div className="rounded-xl bg-white p-8 shadow-md">
+      <div dir={dir} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="text-lg font-bold text-gray-900">
-          Loading details...
+          {t("loadings.details.loading")}
         </div>
         <p className="mt-2 text-sm font-medium text-gray-900">
-          Please wait while loading information is being fetched.
+          {t("loadings.details.loadingHint")}
         </p>
       </div>
     );
@@ -245,9 +277,9 @@ export default function LoadingDetails({ loadingId }: Props) {
 
   if (errorMessage) {
     return (
-      <div className="rounded-xl bg-white p-8 shadow-md">
+      <div dir={dir} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="text-lg font-bold text-red-600">
-          Unable to load details
+          {t("loadings.details.loadError")}
         </div>
         <p className="mt-2 text-sm font-medium text-gray-900">
           {errorMessage}
@@ -258,20 +290,20 @@ export default function LoadingDetails({ loadingId }: Props) {
 
   if (!loadingDetails) {
     return (
-      <div className="rounded-xl bg-white p-8 shadow-md">
+      <div dir={dir} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="text-lg font-bold text-gray-900">
-          Loading not found
+          {t("loadings.details.notFound")}
         </div>
         <p className="mt-2 text-sm font-medium text-gray-900">
-          No loading record is available for this ID.
+          {t("loadings.details.notFoundHint")}
         </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8">
-      <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+    <div dir={dir} className="space-y-5">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <LoadingHeader loading={loadingDetails} />
 

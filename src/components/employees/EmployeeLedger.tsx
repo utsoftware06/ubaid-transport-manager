@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import EmployeeLedgerCards from "@/components/employees/EmployeeLedgerCards";
 import EmployeeLedgerFilters from "@/components/employees/EmployeeLedgerFilters";
 import EmployeeLedgerTable from "@/components/employees/EmployeeLedgerTable";
+import { USER_ROLES } from "@/config/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/contexts/LanguageContext";
+import ModulePageHeading from "@/components/shared/ModulePageHeading";
 
 export type EmployeeLedgerFilterValues = {
   employeeId: string;
@@ -68,6 +71,17 @@ type EmployeeTransactionDbRow = {
   salary_record_id: number | null;
   loan_id: number | null;
   created_at: string | null;
+};
+
+type EmployeeProfileContext = {
+  role: string | null;
+  adda_id: string | null;
+  is_active: boolean | null;
+};
+
+type AddaOption = {
+  id: string;
+  name: string;
 };
 
 export function formatAmount(value: number) {
@@ -148,10 +162,17 @@ function sortTransactionsForLedger(
 }
 
 export default function EmployeeLedger() {
+  const { t, dir } = useLanguage();
   const [employees, setEmployees] = useState<EmployeeLedgerEmployeeOption[]>([]);
   const [transactions, setTransactions] = useState<EmployeeTransactionDbRow[]>(
     []
   );
+  const [profileAddaId, setProfileAddaId] = useState<string | null>(null);
+  const [selectedAddaId, setSelectedAddaId] = useState("");
+  const [addas, setAddas] = useState<AddaOption[]>([]);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isContextLoading, setIsContextLoading] = useState(true);
+  const [contextError, setContextError] = useState("");
   const [filters, setFilters] = useState<EmployeeLedgerFilterValues>({
     employeeId: "",
     fromDate: "",
@@ -159,8 +180,78 @@ export default function EmployeeLedger() {
     transactionType: "",
     search: "",
   });
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [page, setPage] = useState(1);
+  const loadRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadTenantContext() {
+      setIsContextLoading(true);
+      setContextError("");
+
+      try {
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        if (authError || !authData.user) {
+          throw authError ?? new Error("No authenticated user.");
+        }
+
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("role, adda_id, is_active")
+          .eq("id", authData.user.id)
+          .maybeSingle();
+        if (profileError) throw profileError;
+
+        const profile = profileData as EmployeeProfileContext | null;
+        if (
+          !profile ||
+          profile.is_active !== true ||
+          (profile.role !== USER_ROLES.superAdmin &&
+            profile.role !== USER_ROLES.addaAdmin)
+        ) {
+          throw new Error("An active Employee administrator profile is required.");
+        }
+
+        if (profile.role === USER_ROLES.superAdmin) {
+          const { data: addaData, error: addaError } = await supabase
+            .from("addas")
+            .select("id, name")
+            .order("name");
+          if (addaError) throw addaError;
+          if (!isMounted) return;
+
+          setAddas((addaData ?? []) as AddaOption[]);
+          setIsSuperAdmin(true);
+          setProfileAddaId(null);
+          setSelectedAddaId("");
+        } else {
+          if (!profile.adda_id) {
+            throw new Error("The current profile has no assigned Adda.");
+          }
+          if (!isMounted) return;
+
+          setIsSuperAdmin(false);
+          setProfileAddaId(profile.adda_id);
+          setSelectedAddaId("");
+          setAddas([]);
+        }
+      } catch (error) {
+        if (!isMounted) return;
+        console.error("Unable to load Employee Ledger tenant context:", error);
+        setContextError(t("employeeLedger.messages.loadFailed"));
+      } finally {
+        if (isMounted) setIsContextLoading(false);
+      }
+    }
+
+    void loadTenantContext();
+    return () => {
+      isMounted = false;
+    };
+  }, [t]);
 
   const employeeLookup = useMemo(() => {
     return new Map(employees.map((employee) => [employee.id, employee]));
@@ -185,7 +276,7 @@ export default function EmployeeLedger() {
       return {
         id: transaction.id,
         employeeId: transaction.employee_id,
-        employeeName: employee?.employeeName ?? "Unknown Employee",
+        employeeName: employee?.employeeName ?? t("employeeLedger.unknownEmployee"),
         employeeType: employee?.employeeType ?? "-",
         transactionDate: transaction.transaction_date ?? "",
         transactionType,
@@ -202,7 +293,7 @@ export default function EmployeeLedger() {
         createdAt: transaction.created_at ?? "",
       };
     });
-  }, [employeeLookup, transactions]);
+  }, [employeeLookup, transactions, t]);
 
   const filteredRows = useMemo(() => {
     const keyword = filters.search.trim().toLowerCase();
@@ -283,38 +374,41 @@ export default function EmployeeLedger() {
     };
   }, [filteredRows]);
 
-  useEffect(() => {
-    loadLedgerData();
-  }, []);
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / 10));
+  const currentPage = Math.min(Math.max(page, 1), totalPages);
+  const paginatedRows = useMemo(
+    () => filteredRows.slice((currentPage - 1) * 10, currentPage * 10),
+    [currentPage, filteredRows]
+  );
 
-  async function loadLedgerData() {
+  const loadLedgerData = useCallback(async (addaId: string) => {
+    const requestId = ++loadRequestIdRef.current;
     setIsLoading(true);
     setErrorMessage("");
 
     const [employeesResponse, transactionsResponse] = await Promise.all([
-      supabase
-        .from("employees")
-        .select("id, employee_name, employee_type")
-        .order("employee_name", { ascending: true }),
-      supabase
-        .from("employee_transactions")
-        .select(
-          "id, employee_id, transaction_date, transaction_type, amount, payment_method, reference_no, description, remarks, salary_record_id, loan_id, created_at"
-        )
-        .order("employee_id", { ascending: true })
-        .order("transaction_date", { ascending: true })
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true }),
+      supabase.rpc("get_employees", { p_adda_id: addaId }),
+      supabase.rpc("get_employee_transactions_for_adda", {
+        p_adda_id: addaId,
+      }),
     ]);
 
+    if (requestId !== loadRequestIdRef.current) return;
+
     if (employeesResponse.error) {
-      setErrorMessage(employeesResponse.error.message);
+      console.error("Failed to load employee ledger employees:", employeesResponse.error);
+      setErrorMessage(t("employeeLedger.messages.loadFailed"));
+      setEmployees([]);
+      setTransactions([]);
       setIsLoading(false);
       return;
     }
 
     if (transactionsResponse.error) {
-      setErrorMessage(transactionsResponse.error.message);
+      console.error("Failed to load employee ledger transactions:", transactionsResponse.error);
+      setErrorMessage(t("employeeLedger.messages.loadFailed"));
+      setEmployees([]);
+      setTransactions([]);
       setIsLoading(false);
       return;
     }
@@ -332,6 +426,32 @@ export default function EmployeeLedger() {
     );
     setTransactions(transactionRows);
     setIsLoading(false);
+  }, [t]);
+
+  useEffect(() => {
+    if (isContextLoading) return;
+
+    const addaId = isSuperAdmin ? selectedAddaId : profileAddaId;
+    if (contextError || !addaId) {
+      loadRequestIdRef.current += 1;
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void loadLedgerData(addaId);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [contextError, isContextLoading, isSuperAdmin, loadLedgerData, profileAddaId, selectedAddaId]);
+
+  function handleAddaChange(value: string) {
+    loadRequestIdRef.current += 1;
+    setSelectedAddaId(value);
+    setEmployees([]);
+    setTransactions([]);
+    handleResetFilters();
+    setErrorMessage("");
+    setIsLoading(Boolean(value));
   }
 
   function handleResetFilters() {
@@ -342,33 +462,63 @@ export default function EmployeeLedger() {
       transactionType: "",
       search: "",
     });
+    setPage(1);
   }
 
   return (
-    <div className="space-y-8">
-      <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
-        <h1 className="text-3xl font-bold text-gray-900">Employee Ledger</h1>
-        <p className="mt-2 text-base font-medium text-gray-900">
-          Review employee salary, loan, recovery and adjustment transactions
-          with running balances.
-        </p>
-      </div>
+    <div dir={dir} className="ut-module-page space-y-6">
+      <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <ModulePageHeading icon="employeeLedger" accent="cyan" title={t("employeeLedger.title")} description={t("employeeLedger.description")} />
+      </header>
+
+      {isSuperAdmin && !isContextLoading && (
+        <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+          <label
+            htmlFor="employee-ledger-adda"
+            className="mb-2 block text-sm font-bold text-gray-900"
+          >
+            Adda
+          </label>
+          <select
+            id="employee-ledger-adda"
+            name="addaId"
+            value={selectedAddaId}
+            onChange={(event) => handleAddaChange(event.target.value)}
+            className="w-full max-w-md rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+          >
+            <option value="">{t("drivers.selectAdda")}</option>
+            {addas.map((adda) => (
+              <option key={adda.id} value={adda.id}>
+                {adda.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <EmployeeLedgerCards summary={summary} />
 
       <EmployeeLedgerFilters
         filters={filters}
-        setFilters={setFilters}
+        setFilters={(value) => {
+          setFilters(value);
+          setPage(1);
+        }}
         employees={employees}
         transactionTypes={transactionTypes}
         onReset={handleResetFilters}
       />
 
       <EmployeeLedgerTable
-        rows={filteredRows}
-        isLoading={isLoading}
-        errorMessage={errorMessage}
+        addaId={isSuperAdmin ? selectedAddaId : profileAddaId}
+        rows={paginatedRows}
+        reportRows={filteredRows}
+        isLoading={isLoading || isContextLoading}
+        errorMessage={contextError || errorMessage}
         filters={filters}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        setPage={setPage}
       />
     </div>
   );

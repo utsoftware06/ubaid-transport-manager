@@ -4,6 +4,7 @@ import {
   type VehicleDocumentSummary,
   formatAmount,
 } from "./VehicleDocuments";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 type Props = {
   summary: VehicleDocumentSummary;
@@ -19,59 +20,60 @@ type CardItem = {
 };
 
 export default function VehicleDocumentCards({ summary, loading }: Props) {
+  const { t, dir } = useLanguage();
   const cards: CardItem[] = [
     {
-      label: "Total Documents",
+      label: t("vehicleDocuments.cards.totalDocuments"),
       value: summary.totalDocuments,
-      helperText: "All recorded vehicle documents",
+      helperText: t("vehicleDocuments.cards.allRecorded"),
       accentClass: "border-blue-200 bg-blue-50",
       valueClass: "text-blue-700",
     },
     {
-      label: "Active",
+      label: t("vehicleDocuments.statuses.active"),
       value: summary.activeDocuments,
-      helperText: "Currently valid documents",
+      helperText: t("vehicleDocuments.cards.currentlyValid"),
       accentClass: "border-green-200 bg-green-50",
       valueClass: "text-green-700",
     },
     {
-      label: "Expiring Soon",
+      label: t("vehicleDocuments.statuses.expiringSoon"),
       value: summary.expiringSoonDocuments,
-      helperText: "Documents needing attention",
+      helperText: t("vehicleDocuments.cards.needingAttention"),
       accentClass: "border-amber-200 bg-amber-50",
       valueClass: "text-amber-700",
     },
     {
-      label: "Expired",
+      label: t("vehicleDocuments.statuses.expired"),
       value: summary.expiredDocuments,
-      helperText: "Renewal required",
+      helperText: t("vehicleDocuments.cards.renewalRequired"),
       accentClass: "border-red-200 bg-red-50",
       valueClass: "text-red-700",
     },
     {
-      label: "Permanent",
+      label: t("vehicleDocuments.statuses.permanent"),
       value: summary.permanentDocuments,
-      helperText: "No expiry date",
+      helperText: t("vehicleDocuments.cards.noExpiry"),
       accentClass: "border-gray-200 bg-gray-50",
       valueClass: "text-gray-900",
     },
     {
-      label: "Total Fees",
+      label: t("vehicleDocuments.cards.totalFees"),
       value: formatAmount(summary.totalFees),
-      helperText: "Total recorded document cost",
+      helperText: t("vehicleDocuments.cards.totalCost"),
       accentClass: "border-indigo-200 bg-indigo-50",
       valueClass: "text-indigo-700",
     },
   ];
 
   return (
-    <section className="rounded-xl bg-white p-6 shadow-md md:p-8">
+    <section dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-900">
-          Vehicle Document Summary
+          {t("vehicleDocuments.cards.title")}
         </h2>
         <p className="mt-2 text-sm font-medium text-gray-900">
-          Overview of document status, expiry and recorded fees.
+          {t("vehicleDocuments.cards.description")}
         </p>
       </div>
 
@@ -100,7 +102,7 @@ export default function VehicleDocumentCards({ summary, loading }: Props) {
                 {card.label}
               </p>
 
-              <p className={`mt-3 text-3xl font-extrabold ${card.valueClass}`}>
+              <p dir="ltr" className={`mt-3 text-3xl font-extrabold ${card.valueClass}`}>
                 {card.value}
               </p>
 

@@ -9,6 +9,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { type EmployeeLoanSummary, formatAmount } from "./EmployeeLoans";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 type Props = {
   summary: EmployeeLoanSummary;
@@ -24,9 +25,10 @@ type CardItem = {
 };
 
 export default function EmployeeLoanCards({ summary }: Props) {
+  const { t, dir } = useLanguage();
   const cards: CardItem[] = [
     {
-      title: "Total Loans",
+      title: t("employeeLoans.cards.totalLoans"),
       value: summary.totalLoans,
       icon: ReceiptText,
       iconBgClass: "bg-blue-100",
@@ -34,7 +36,7 @@ export default function EmployeeLoanCards({ summary }: Props) {
       valueClass: "text-gray-900",
     },
     {
-      title: "Total Loan Amount",
+      title: t("employeeLoans.cards.totalLoanAmount"),
       value: formatAmount(summary.totalLoanAmount),
       icon: CreditCard,
       iconBgClass: "bg-purple-100",
@@ -42,7 +44,7 @@ export default function EmployeeLoanCards({ summary }: Props) {
       valueClass: "text-purple-700",
     },
     {
-      title: "Total Recovered",
+      title: t("employeeLoans.cards.totalRecovered"),
       value: formatAmount(summary.totalRecovered),
       icon: Banknote,
       iconBgClass: "bg-green-100",
@@ -50,7 +52,7 @@ export default function EmployeeLoanCards({ summary }: Props) {
       valueClass: "text-green-700",
     },
     {
-      title: "Total Remaining",
+      title: t("employeeLoans.cards.totalRemaining"),
       value: formatAmount(summary.totalRemaining),
       icon: TrendingDown,
       iconBgClass: "bg-red-100",
@@ -58,7 +60,7 @@ export default function EmployeeLoanCards({ summary }: Props) {
       valueClass: "text-red-700",
     },
     {
-      title: "Active Loans",
+      title: t("employeeLoans.cards.activeLoans"),
       value: summary.activeLoans,
       icon: Wallet,
       iconBgClass: "bg-orange-100",
@@ -66,7 +68,7 @@ export default function EmployeeLoanCards({ summary }: Props) {
       valueClass: "text-orange-700",
     },
     {
-      title: "Completed Loans",
+      title: t("employeeLoans.cards.completedLoans"),
       value: summary.completedLoans,
       icon: CheckCircle2,
       iconBgClass: "bg-green-100",
@@ -76,14 +78,14 @@ export default function EmployeeLoanCards({ summary }: Props) {
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-6">
+    <div dir={dir} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
       {cards.map((card) => {
         const Icon = card.icon;
 
         return (
-          <div key={card.title} className="rounded-xl bg-white p-6 shadow-md">
+          <div key={card.title} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div
-              className={`flex h-12 w-12 items-center justify-center rounded-full ${card.iconBgClass}`}
+                className={`flex h-11 w-11 items-center justify-center rounded-xl ${card.iconBgClass}`}
             >
               <Icon className={`h-6 w-6 ${card.iconTextClass}`} />
             </div>
@@ -92,7 +94,7 @@ export default function EmployeeLoanCards({ summary }: Props) {
               {card.title}
             </p>
 
-            <p className={`mt-3 text-xl font-extrabold ${card.valueClass}`}>
+            <p dir="ltr" className={`mt-3 text-xl font-extrabold ${card.valueClass}`}>
               {card.value}
             </p>
           </div>

@@ -10,7 +10,10 @@ import {
   type TripStatus,
   type VehicleOption,
   formatAmount,
+  tripStatusTranslationKey,
 } from "./TripManagement";
+import { useLanguage } from "@/contexts/LanguageContext";
+import VoiceTypingField from "@/components/shared/VoiceTypingField";
 
 type Props = {
   vehicles: VehicleOption[];
@@ -56,6 +59,7 @@ export default function TripForm({
   onUpdate,
   onCancel,
 }: Props) {
+  const { t, dir } = useLanguage();
   const [tripNo, setTripNo] = useState("");
   const [tripDate, setTripDate] = useState("");
   const [vehicleId, setVehicleId] = useState("");
@@ -85,31 +89,35 @@ export default function TripForm({
   const estimatedProfit = freight - expense;
 
   useEffect(() => {
-    if (!selectedTrip) {
-      resetForm();
-      return;
-    }
+    const syncTimer = window.setTimeout(() => {
+      if (!selectedTrip) {
+        resetForm();
+        return;
+      }
 
-    setTripNo(selectedTrip.trip_no);
-    setTripDate(selectedTrip.trip_date);
-    setVehicleId(selectedTrip.vehicle_id);
-    setDriverId(selectedTrip.driver_id ?? "");
-    setBookingId(selectedTrip.booking_id ?? "");
-    setCustomerName(selectedTrip.customer_name ?? "");
-    setCustomerPhone(selectedTrip.customer_phone ?? "");
-    setLoadingFrom(selectedTrip.loading_from);
-    setDeliveryTo(selectedTrip.delivery_to);
-    setGoodsDescription(selectedTrip.goods_description ?? "");
-    setFreightAmount(String(selectedTrip.freight_amount));
-    setCustomerAdvance(String(selectedTrip.customer_advance));
-    setDriverAdvance(String(selectedTrip.driver_advance));
-    setTotalExpense(String(selectedTrip.total_expense));
-    setReceivedAmount(String(selectedTrip.received_amount));
-    setTripStatus(selectedTrip.trip_status);
-    setStartDate(selectedTrip.start_date ?? "");
-    setCompletionDate(selectedTrip.completion_date ?? "");
-    setRemarks(selectedTrip.remarks ?? "");
-    setFormErrors({});
+      setTripNo(selectedTrip.trip_no);
+      setTripDate(selectedTrip.trip_date);
+      setVehicleId(selectedTrip.vehicle_id);
+      setDriverId(selectedTrip.driver_id ?? "");
+      setBookingId(selectedTrip.booking_id ?? "");
+      setCustomerName(selectedTrip.customer_name ?? "");
+      setCustomerPhone(selectedTrip.customer_phone ?? "");
+      setLoadingFrom(selectedTrip.loading_from);
+      setDeliveryTo(selectedTrip.delivery_to);
+      setGoodsDescription(selectedTrip.goods_description ?? "");
+      setFreightAmount(String(selectedTrip.freight_amount));
+      setCustomerAdvance(String(selectedTrip.customer_advance));
+      setDriverAdvance(String(selectedTrip.driver_advance));
+      setTotalExpense(String(selectedTrip.total_expense));
+      setReceivedAmount(String(selectedTrip.received_amount));
+      setTripStatus(selectedTrip.trip_status);
+      setStartDate(selectedTrip.start_date ?? "");
+      setCompletionDate(selectedTrip.completion_date ?? "");
+      setRemarks(selectedTrip.remarks ?? "");
+      setFormErrors({});
+    }, 0);
+
+    return () => window.clearTimeout(syncTimer);
   }, [selectedTrip]);
 
   function resetForm() {
@@ -140,18 +148,22 @@ export default function TripForm({
 
     const booking = bookings.find((item) => item.id === value);
 
-    if (!booking) return;
+    if (!booking) {
+      setCustomerName("");
+      setCustomerPhone("");
+      setLoadingFrom("");
+      setDeliveryTo("");
+      setGoodsDescription("");
+      setFreightAmount("0");
+      return;
+    }
 
-    if (!customerName.trim()) setCustomerName(booking.customerName);
-    if (!customerPhone.trim()) setCustomerPhone(booking.customerPhone);
-    if (!loadingFrom.trim()) setLoadingFrom(booking.loadingFrom);
-    if (!deliveryTo.trim()) setDeliveryTo(booking.deliveryTo);
-    if (!goodsDescription.trim()) {
-      setGoodsDescription(booking.goodsDescription);
-    }
-    if (!freightAmount || toNumber(freightAmount) === 0) {
-      setFreightAmount(String(booking.freightAmount));
-    }
+    setCustomerName(booking.customerName);
+    setCustomerPhone(booking.customerPhone);
+    setLoadingFrom(booking.loadingFrom);
+    setDeliveryTo(booking.deliveryTo);
+    setGoodsDescription(booking.goodsDescription);
+    setFreightAmount(String(booking.freightAmount));
   }
 
   function validateForm() {
@@ -166,27 +178,27 @@ export default function TripForm({
       receivedAmount,
     ].map(toNumber);
 
-    if (!tripNo.trim()) nextErrors.tripNo = "Trip Number is required.";
-    if (!tripDate) nextErrors.tripDate = "Trip Date is required.";
-    if (!vehicleId) nextErrors.vehicleId = "Vehicle is required.";
-    if (!loadingFrom.trim()) nextErrors.loadingFrom = "Loading From is required.";
-    if (!deliveryTo.trim()) nextErrors.deliveryTo = "Delivery To is required.";
-    if (!tripStatus) nextErrors.tripStatus = "Trip Status is required.";
+    if (!tripNo.trim()) nextErrors.tripNo = t("tripManagement.validation.tripNumberRequired");
+    if (!tripDate) nextErrors.tripDate = t("tripManagement.validation.tripDateRequired");
+    if (!vehicleId) nextErrors.vehicleId = t("tripManagement.validation.vehicleRequired");
+    if (!loadingFrom.trim()) nextErrors.loadingFrom = t("tripManagement.validation.loadingFromRequired");
+    if (!deliveryTo.trim()) nextErrors.deliveryTo = t("tripManagement.validation.deliveryToRequired");
+    if (!tripStatus) nextErrors.tripStatus = t("tripManagement.validation.statusRequired");
 
     if (amounts.some((value) => value < 0)) {
-      nextErrors.amounts = "All amounts must be zero or greater.";
+      nextErrors.amounts = t("tripManagement.validation.amountsNonNegative");
     }
 
     if (customerAdvanceValue > freight) {
-      nextErrors.amounts = "Customer advance cannot exceed freight amount.";
+      nextErrors.amounts = t("tripManagement.validation.customerAdvanceLimit");
     }
 
     if (receivedValue > freight) {
-      nextErrors.amounts = "Received amount cannot exceed freight amount.";
+      nextErrors.amounts = t("tripManagement.validation.receivedLimit");
     }
 
     if (startDate && completionDate && completionDate < startDate) {
-      nextErrors.dates = "Completion date cannot be before start date.";
+      nextErrors.dates = t("tripManagement.validation.completionDate");
     }
 
     setFormErrors(nextErrors);
@@ -234,13 +246,15 @@ export default function TripForm({
   }
 
   return (
-    <section className="rounded-xl bg-white p-6 shadow-md md:p-8">
+    <section dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-900">
-          {isEditing ? "Edit Trip / Chakkar" : "Create Trip / Chakkar"}
+          {isEditing
+            ? t("tripManagement.form.editTitle")
+            : t("tripManagement.form.createTitle")}
         </h2>
         <p className="mt-2 text-sm font-medium text-gray-900">
-          Enter trip route, freight, advances, expenses and current status.
+          {t("tripManagement.form.description")}
         </p>
       </div>
 
@@ -251,49 +265,56 @@ export default function TripForm({
       )}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <Field label="Trip Number" error={formErrors.tripNo}>
+        <Field label={t("tripManagement.form.tripNumber")} error={formErrors.tripNo}>
+          <VoiceTypingField fieldLabel={t("tripManagement.form.tripNumber")} value={tripNo} onValueChange={setTripNo} mode="identifier" contextKey={selectedTrip?.id ?? "new"}>
           <input
+            dir="ltr"
             value={tripNo}
             onChange={(event) => setTripNo(event.target.value)}
             disabled={saving}
             className="input"
           />
+          </VoiceTypingField>
         </Field>
 
-        <Field label="Trip Date" error={formErrors.tripDate}>
+        <Field label={t("tripManagement.form.tripDate")} error={formErrors.tripDate}>
+          <VoiceTypingField fieldLabel={t("tripManagement.form.tripDate")} mode="date" contextKey={selectedTrip?.id ?? "new"}>
           <input
             type="date"
+            dir="ltr"
             value={tripDate}
             onChange={(event) => setTripDate(event.target.value)}
             disabled={saving}
             className="input"
           />
+          </VoiceTypingField>
         </Field>
 
-        <Field label="Vehicle" error={formErrors.vehicleId}>
+        <Field label={t("common.vehicle")} error={formErrors.vehicleId}>
           <select
             value={vehicleId}
             onChange={(event) => setVehicleId(event.target.value)}
             disabled={saving}
             className="input"
           >
-            <option value="">Select Vehicle</option>
+            <option value="">{t("tripManagement.form.selectVehicle")}</option>
             {vehicles.map((vehicle) => (
               <option key={vehicle.id} value={vehicle.id}>
-                {vehicle.vehicleNo} - {vehicle.ownerName || "No Owner"}
+                {vehicle.vehicleNo} -{" "}
+                {vehicle.ownerName || t("tripManagement.filters.noOwner")}
               </option>
             ))}
           </select>
         </Field>
 
-        <Field label="Driver">
+        <Field label={t("common.driver")}>
           <select
             value={driverId}
             onChange={(event) => setDriverId(event.target.value)}
             disabled={saving}
             className="input"
           >
-            <option value="">Select Driver</option>
+            <option value="">{t("tripManagement.form.selectDriver")}</option>
             {drivers.map((driver) => (
               <option key={driver.id} value={driver.id}>
                 {driver.name}
@@ -302,115 +323,140 @@ export default function TripForm({
           </select>
         </Field>
 
-        <Field label="Booking">
+        <Field label={t("common.booking")}>
           <select
             value={bookingId}
             onChange={(event) => handleBookingChange(event.target.value)}
             disabled={saving}
             className="input"
           >
-            <option value="">Select Booking</option>
+            <option value="">{t("tripManagement.form.selectBooking")}</option>
             {bookings.map((booking) => (
               <option key={booking.id} value={booking.id}>
-                {booking.customerName} - {booking.loadingFrom} to{" "}
+                {booking.customerName} - {booking.loadingFrom}{" "}
+                {t("tripManagement.form.to")}{" "}
                 {booking.deliveryTo} - {formatAmount(booking.freightAmount)}
               </option>
             ))}
           </select>
         </Field>
 
-        <Field label="Customer Name">
+        <Field label={t("tripManagement.form.customerName")}>
+          <VoiceTypingField fieldLabel={t("tripManagement.form.customerName")} value={customerName} onValueChange={setCustomerName} contextKey={selectedTrip?.id ?? "new"}>
           <input
             value={customerName}
             onChange={(event) => setCustomerName(event.target.value)}
             disabled={saving}
             className="input"
           />
+          </VoiceTypingField>
         </Field>
 
-        <Field label="Customer Phone">
-          <input
+
+        <Field label={t("tripManagement.form.customerPhone")}>
+          <VoiceTypingField fieldLabel={t("tripManagement.form.customerPhone")} mode="phone" contextKey={selectedTrip?.id ?? "new"}><input
+            dir="ltr"
             value={customerPhone}
             onChange={(event) => setCustomerPhone(event.target.value)}
             disabled={saving}
             className="input"
-          />
+          /></VoiceTypingField>
         </Field>
 
-        <Field label="Loading From" error={formErrors.loadingFrom}>
-          <input
+
+
+        <Field label={t("tripManagement.form.loadingFrom")} error={formErrors.loadingFrom}>
+          <VoiceTypingField fieldLabel={t("tripManagement.form.loadingFrom")} mode="text" contextKey={selectedTrip?.id ?? "new"}><input
             value={loadingFrom}
             onChange={(event) => setLoadingFrom(event.target.value)}
             disabled={saving}
             className="input"
-          />
+          /></VoiceTypingField>
         </Field>
 
-        <Field label="Delivery To" error={formErrors.deliveryTo}>
-          <input
+
+
+        <Field label={t("tripManagement.form.deliveryTo")} error={formErrors.deliveryTo}>
+          <VoiceTypingField fieldLabel={t("tripManagement.form.deliveryTo")} mode="text" contextKey={selectedTrip?.id ?? "new"}><input
             value={deliveryTo}
             onChange={(event) => setDeliveryTo(event.target.value)}
             disabled={saving}
             className="input"
-          />
+          /></VoiceTypingField>
         </Field>
 
-        <Field label="Freight Amount">
-          <input
+
+
+        <Field label={t("tripManagement.form.freightAmount")}>
+          <VoiceTypingField fieldLabel={t("tripManagement.form.freightAmount")} mode="amount" contextKey={selectedTrip?.id ?? "new"}><input
             type="number"
+            dir="ltr"
             min="0"
             value={freightAmount}
             onChange={(event) => setFreightAmount(event.target.value)}
             disabled={saving}
             className="input"
-          />
+          /></VoiceTypingField>
         </Field>
 
-        <Field label="Customer Advance">
-          <input
+
+
+        <Field label={t("tripManagement.form.customerAdvance")}>
+          <VoiceTypingField fieldLabel={t("tripManagement.form.customerAdvance")} mode="amount" contextKey={selectedTrip?.id ?? "new"}><input
             type="number"
+            dir="ltr"
             min="0"
             value={customerAdvance}
             onChange={(event) => setCustomerAdvance(event.target.value)}
             disabled={saving}
             className="input"
-          />
+          /></VoiceTypingField>
         </Field>
 
-        <Field label="Driver Advance">
-          <input
+
+
+        <Field label={t("tripManagement.form.driverAdvance")}>
+          <VoiceTypingField fieldLabel={t("tripManagement.form.driverAdvance")} mode="amount" contextKey={selectedTrip?.id ?? "new"}><input
             type="number"
+            dir="ltr"
             min="0"
             value={driverAdvance}
             onChange={(event) => setDriverAdvance(event.target.value)}
             disabled={saving}
             className="input"
-          />
+          /></VoiceTypingField>
         </Field>
 
-        <Field label="Total Expense">
-          <input
+
+
+        <Field label={t("tripManagement.form.totalExpense")}>
+          <VoiceTypingField fieldLabel={t("tripManagement.form.totalExpense")} mode="amount" contextKey={selectedTrip?.id ?? "new"}><input
             type="number"
+            dir="ltr"
             min="0"
             value={totalExpense}
             onChange={(event) => setTotalExpense(event.target.value)}
             disabled={saving}
             className="input"
-          />
+          /></VoiceTypingField>
         </Field>
 
-        <Field label="Received Amount">
-          <input
+
+
+        <Field label={t("tripManagement.form.receivedAmount")}>
+          <VoiceTypingField fieldLabel={t("tripManagement.form.receivedAmount")} mode="amount" contextKey={selectedTrip?.id ?? "new"}><input
             type="number"
+            dir="ltr"
             min="0"
             value={receivedAmount}
             onChange={(event) => setReceivedAmount(event.target.value)}
             disabled={saving}
             className="input"
-          />
+          /></VoiceTypingField>
         </Field>
 
-        <Field label="Trip Status" error={formErrors.tripStatus}>
+
+        <Field label={t("tripManagement.form.tripStatus")} error={formErrors.tripStatus}>
           <select
             value={tripStatus}
             onChange={(event) => setTripStatus(event.target.value as TripStatus)}
@@ -419,56 +465,68 @@ export default function TripForm({
           >
             {TRIP_STATUSES.map((status) => (
               <option key={status} value={status}>
-                {status}
+                {t(tripStatusTranslationKey(status))}
               </option>
             ))}
           </select>
         </Field>
 
-        <Field label="Start Date" error={formErrors.dates}>
-          <input
+
+        <Field label={t("tripManagement.form.startDate")} error={formErrors.dates}>
+          <VoiceTypingField fieldLabel={t("tripManagement.form.startDate")} mode="date" contextKey={selectedTrip?.id ?? "new"}><input
             type="date"
+            dir="ltr"
             value={startDate}
             onChange={(event) => setStartDate(event.target.value)}
             disabled={saving}
             className="input"
-          />
+          /></VoiceTypingField>
         </Field>
 
-        <Field label="Completion Date">
-          <input
+
+
+        <Field label={t("tripManagement.form.completionDate")}>
+          <VoiceTypingField fieldLabel={t("tripManagement.form.completionDate")} mode="date" contextKey={selectedTrip?.id ?? "new"}><input
             type="date"
+            dir="ltr"
             value={completionDate}
             onChange={(event) => setCompletionDate(event.target.value)}
             disabled={saving}
             className="input"
-          />
+          /></VoiceTypingField>
         </Field>
+
 
         <div className="lg:col-span-2">
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Goods Description
+            {t("tripManagement.form.goodsDescription")}
           </label>
+          <VoiceTypingField fieldLabel={t("tripManagement.form.goodsDescription")} value={goodsDescription} onValueChange={setGoodsDescription} contextKey={selectedTrip?.id ?? "new"}>
           <textarea
+            aria-label={t("tripManagement.form.goodsDescription")}
             value={goodsDescription}
             onChange={(event) => setGoodsDescription(event.target.value)}
             disabled={saving}
             rows={3}
             className="input resize-none"
           />
+          </VoiceTypingField>
         </div>
 
         <div className="lg:col-span-2">
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Remarks
+            {t("common.remarks")}
           </label>
+          <VoiceTypingField fieldLabel={t("common.remarks")} value={remarks} onValueChange={setRemarks} contextKey={selectedTrip?.id ?? "new"}>
           <textarea
+            aria-label={t("common.remarks")}
             value={remarks}
             onChange={(event) => setRemarks(event.target.value)}
             disabled={saving}
             rows={3}
             className="input resize-none"
           />
+          </VoiceTypingField>
         </div>
       </div>
 
@@ -480,8 +538,10 @@ export default function TripForm({
 
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
-          <p className="text-sm font-bold text-gray-900">Payment Balance</p>
-          <p className="mt-2 text-2xl font-extrabold text-amber-700">
+          <p className="text-sm font-bold text-gray-900">
+            {t("tripManagement.form.paymentBalance")}
+          </p>
+          <p className="mt-2 text-2xl font-extrabold text-amber-700" dir="ltr">
             {formatAmount(paymentBalance)}
           </p>
         </div>
@@ -493,8 +553,11 @@ export default function TripForm({
               : "border-red-200 bg-red-50"
           }`}
         >
-          <p className="text-sm font-bold text-gray-900">Estimated Profit</p>
+          <p className="text-sm font-bold text-gray-900">
+            {t("tripManagement.form.estimatedProfit")}
+          </p>
           <p
+            dir="ltr"
             className={`mt-2 text-2xl font-extrabold ${
               estimatedProfit >= 0 ? "text-green-700" : "text-red-700"
             }`}
@@ -511,7 +574,11 @@ export default function TripForm({
           disabled={saving}
           className="rounded-lg bg-blue-600 px-8 py-3 font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed"
         >
-          {saving ? "Saving..." : isEditing ? "Update Trip" : "Save Trip"}
+          {saving
+            ? t("common.saving")
+            : isEditing
+              ? t("tripManagement.form.updateTrip")
+              : t("tripManagement.form.saveTrip")}
         </button>
 
         {isEditing && (
@@ -521,7 +588,7 @@ export default function TripForm({
             disabled={saving}
             className="rounded-lg border border-gray-300 bg-white px-8 py-3 font-bold text-gray-900 hover:bg-gray-100 disabled:cursor-not-allowed"
           >
-            Cancel
+            {t("common.actions.cancel")}
           </button>
         )}
       </div>
@@ -562,10 +629,12 @@ function Field({
 }) {
   return (
     <div>
-      <label className="mb-2 block text-sm font-bold text-gray-900">
-        {label}
+      <label className="block">
+        <span className="mb-2 block text-sm font-bold text-gray-900">
+          {label}
+        </span>
+        {children}
       </label>
-      {children}
       {error && <p className="mt-2 text-sm font-bold text-red-700">{error}</p>}
     </div>
   );

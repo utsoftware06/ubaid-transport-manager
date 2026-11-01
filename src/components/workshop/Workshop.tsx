@@ -1,10 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import WorkshopForm from "@/components/workshop/WorkshopForm";
 import WorkshopCards from "@/components/workshop/WorkshopCards";
 import WorkshopTable from "@/components/workshop/WorkshopTable";
+import WorkshopMaster from "@/components/workshop/WorkshopMaster";
+import WorkshopAccount from "@/components/workshop/WorkshopAccount";
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/contexts/LanguageContext";
+import ModulePageHeading from "@/components/shared/ModulePageHeading";
+import { WORKSHOP_WORK_TYPE_GROUPS, createWorkshopWorkItem, getWorkTypeLabel, type WorkshopWorkItem } from "./workshopWorkTypes";
+import {
+  readManualVoucherSourceEditContext,
+  returnToManualVoucherAfterSourceEdit,
+  type ManualVoucherSourceEditContext,
+} from "@/lib/manualVoucherSourceEdit";
 
 export type WorkshopPaymentStatus = "Paid" | "Partial" | "Unpaid";
 
@@ -16,13 +26,16 @@ export type VehicleOption = {
 
 export type WorkshopEntryRow = {
   id: number;
+  addaId: string | null;
   workDate: string;
   vehicleId: string;
   vehicleNo: string;
   ownerName: string;
   workshopName: string;
+  workshopId: string;
   mechanicName: string;
   workType: string;
+  workItems: WorkshopWorkItem[];
   billNo: string;
   partsCost: number;
   labourCost: number;
@@ -34,6 +47,19 @@ export type WorkshopEntryRow = {
   odometer: number;
   remarks: string;
   createdAt: string;
+  voucherId: number | null;
+  voucherNo: string;
+  voucherDate: string;
+};
+
+export type WorkshopOption = {
+  id: string;
+  addaId: string;
+  workshopName: string;
+  ownerName: string;
+  phone: string;
+  address: string;
+  openingBalance: number;
 };
 
 export type WorkshopSummary = {
@@ -60,9 +86,11 @@ type RelatedRecord<T> = T | T[] | null;
 
 type WorkshopDatabaseRow = {
   id: number;
+  adda_id: string | null;
   work_date: string | null;
   vehicle_id: string | null;
   workshop_name: string | null;
+  workshop_id: string | null;
   mechanic_name: string | null;
   work_type: string | null;
   bill_no: string | null;
@@ -77,23 +105,28 @@ type WorkshopDatabaseRow = {
   remarks: string | null;
   created_at: string | null;
   vehicles: RelatedRecord<VehicleRelation>;
+  workshop_entry_items: Array<{ id: number; line_no: number; work_type: string; category: string | null; quantity: number | string; rate: number | string; amount: number | string; remarks: string | null }> | null;
 };
 
-type WorkshopInsertResult = {
+type WorkshopVoucherLinkRow = {
+  workshop_entry_id: number;
+  voucher_id: number;
+};
+
+type WorkshopVoucherRecord = {
   id: number;
+  expense_no: string | null;
+  expense_date: string | null;
 };
 
-type CashbookEntryRecord = {
-  id: string | number;
-};
-
-type CashbookSyncPayload = {
-  workshopEntryId: number;
-  workDate: string;
-  vehicleId: string;
-  workshopName: string;
-  workType: string;
-  paidAmount: number;
+type WorkshopDatabaseMasterRow = {
+  id: string;
+  adda_id: string;
+  workshop_name: string | null;
+  owner_name: string | null;
+  phone: string | null;
+  address: string | null;
+  opening_balance: number | string | null;
 };
 
 const defaultFilters: WorkshopFilterValues = {
@@ -120,15 +153,6 @@ function toNumber(value: number | string | null | undefined) {
   return Number.isFinite(numericValue) ? numericValue : 0;
 }
 
-function getPaymentStatus(
-  paidAmount: number,
-  totalCost: number
-): WorkshopPaymentStatus {
-  if (paidAmount <= 0) return "Unpaid";
-  if (paidAmount >= totalCost) return "Paid";
-  return "Partial";
-}
-
 function mapPaymentStatus(value: string | null): WorkshopPaymentStatus {
   if (value === "Paid" || value === "Partial" || value === "Unpaid") {
     return value;
@@ -138,11 +162,13 @@ function mapPaymentStatus(value: string | null): WorkshopPaymentStatus {
 }
 
 export default function Workshop() {
+  const { t, dir } = useLanguage();
   const [workDate, setWorkDate] = useState("");
   const [vehicleId, setVehicleId] = useState("");
   const [workshopName, setWorkshopName] = useState("");
+  const [workshopId, setWorkshopId] = useState("");
   const [mechanicName, setMechanicName] = useState("");
-  const [workType, setWorkType] = useState("");
+  const [workItems, setWorkItems] = useState<WorkshopWorkItem[]>([createWorkshopWorkItem()]);
   const [billNo, setBillNo] = useState("");
   const [partsCost, setPartsCost] = useState("");
   const [labourCost, setLabourCost] = useState("");
@@ -152,6 +178,9 @@ export default function Workshop() {
   const [remarks, setRemarks] = useState("");
 
   const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
+  const [workshops, setWorkshops] = useState<WorkshopOption[]>([]);
+  const [profileAddaId, setProfileAddaId] = useState("");
+  const [activeSection, setActiveSection] = useState<"entries" | "master" | "account">("entries");
   const [entries, setEntries] = useState<WorkshopEntryRow[]>([]);
   const [filters, setFilters] =
     useState<WorkshopFilterValues>(defaultFilters);
@@ -160,28 +189,27 @@ export default function Workshop() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [manualSourceEditContext, setManualSourceEditContext] = useState<ManualVoucherSourceEditContext | null>(null);
+  const manualSourceEditAppliedRef = useRef(false);
+  const saveLockRef = useRef(false);
+  const deleteLockRef = useRef(false);
 
   useEffect(() => {
-    loadInitialData();
+    const timer = window.setTimeout(() => {
+      setManualSourceEditContext(readManualVoucherSourceEditContext("workshop"));
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
-  async function loadInitialData() {
-    setIsLoading(true);
-    setErrorMessage("");
-
-    await Promise.all([loadVehicles(), loadEntries()]);
-
-    setIsLoading(false);
-  }
-
-  async function loadVehicles() {
+  const loadVehicles = useCallback(async () => {
     const { data, error } = await supabase
       .from("vehicles")
       .select("id, vehicle_no, owner_name")
       .order("vehicle_no", { ascending: true });
 
     if (error) {
-      setErrorMessage(error.message);
+      console.error("Failed to load workshop vehicles:", error);
+      setErrorMessage(t("workshop.messages.loadFailed"));
       setVehicles([]);
       return;
     }
@@ -193,16 +221,61 @@ export default function Workshop() {
         ownerName: vehicle.owner_name ?? "-",
       }))
     );
-  }
+  }, [t]);
 
-  async function loadEntries() {
+  const loadWorkshops = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("workshops")
+      .select("id, adda_id, workshop_name, owner_name, phone, address, opening_balance")
+      .order("workshop_name", { ascending: true });
+
+    if (error) {
+      console.error("Failed to load Workshop Master:", error);
+      setErrorMessage(t("workshop.messages.loadFailed"));
+      setWorkshops([]);
+      return;
+    }
+
+    setWorkshops(
+      ((data ?? []) as WorkshopDatabaseMasterRow[]).map((workshop) => ({
+        id: workshop.id,
+        addaId: workshop.adda_id,
+        workshopName: workshop.workshop_name ?? "-",
+        ownerName: workshop.owner_name ?? "",
+        phone: workshop.phone ?? "",
+        address: workshop.address ?? "",
+        openingBalance: toNumber(workshop.opening_balance),
+      }))
+    );
+  }, [t]);
+
+  const loadProfileAdda = useCallback(async () => {
+    const { data: authData } = await supabase.auth.getUser();
+    if (!authData.user) return;
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("adda_id, is_active")
+      .eq("id", authData.user.id)
+      .maybeSingle();
+
+    if (error || data?.is_active !== true) {
+      if (error) console.error("Failed to resolve Workshop Adda:", error);
+      setProfileAddaId("");
+      return;
+    }
+    setProfileAddaId(data.adda_id ?? "");
+  }, []);
+
+  const loadEntries = useCallback(async () => {
     const { data, error } = await supabase
       .from("workshop_entries")
       .select(
         `
         id,
+        adda_id,
         work_date,
         vehicle_id,
+        workshop_id,
         workshop_name,
         mechanic_name,
         work_type,
@@ -217,36 +290,92 @@ export default function Workshop() {
         odometer,
         remarks,
         created_at,
-        vehicles(vehicle_no, owner_name)
+        vehicles(vehicle_no, owner_name),
+        workshop_entry_items(id, line_no, work_type, category, quantity, rate, amount, remarks)
       `
       )
       .order("work_date", { ascending: false })
       .order("created_at", { ascending: false });
 
     if (error) {
-      setErrorMessage(error.message);
+      console.error("Failed to load workshop entries:", error);
+      setErrorMessage(t("workshop.messages.loadFailed"));
       setEntries([]);
       return;
     }
 
+    const workshopRows = (data ?? []) as WorkshopDatabaseRow[];
+    const workshopEntryIds = workshopRows.map((entry) => entry.id);
+    const { data: linkData, error: linkError } = workshopEntryIds.length === 0
+      ? { data: [] as WorkshopVoucherLinkRow[], error: null }
+      : await supabase
+          .from("voucher_workshop_entries")
+          .select("workshop_entry_id, voucher_id")
+          .in("workshop_entry_id", workshopEntryIds);
+    if (linkError) {
+      console.error("Failed to resolve Workshop Voucher attachments:", linkError);
+      setErrorMessage(t("workshop.messages.loadFailed"));
+      setEntries([]);
+      return;
+    }
+
+    const links = (linkData ?? []) as WorkshopVoucherLinkRow[];
+    const voucherIds = Array.from(new Set(links.map((link) => link.voucher_id)));
+    const { data: voucherData, error: voucherError } = voucherIds.length === 0
+      ? { data: [] as WorkshopVoucherRecord[], error: null }
+      : await supabase
+          .from("expenses")
+          .select("id, expense_no, expense_date")
+          .in("id", voucherIds);
+    if (voucherError) {
+      console.error("Failed to resolve attached Voucher metadata:", voucherError);
+      setErrorMessage(t("workshop.messages.loadFailed"));
+      setEntries([]);
+      return;
+    }
+
+    const linksByWorkshopEntry = new Map(links.map((link) => [link.workshop_entry_id, link]));
+    const vouchersById = new Map(
+      ((voucherData ?? []) as WorkshopVoucherRecord[]).map((voucher) => [voucher.id, voucher])
+    );
+
+    if (process.env.NODE_ENV === "development") {
+      console.debug("Resolved Workshop Voucher attachments", links.map((link) => {
+        const voucher = vouchersById.get(link.voucher_id);
+        return {
+          workshopEntryId: link.workshop_entry_id,
+          linkRow: link,
+          voucherId: link.voucher_id,
+          voucherNo: voucher?.expense_no ?? null,
+          voucherDate: voucher?.expense_date ?? null,
+          resolvedStatus: "attached",
+        };
+      }));
+    }
+
     setEntries(
-      ((data ?? []) as WorkshopDatabaseRow[]).map((entry) => {
+      workshopRows.map((entry) => {
         const vehicle = getSingleRelation(entry.vehicles);
         const totalCost =
           toNumber(entry.total_cost) ||
           toNumber(entry.parts_cost) + toNumber(entry.labour_cost);
         const paid = toNumber(entry.paid_amount);
         const remaining = Math.max(totalCost - paid, 0);
+        const voucherLink = linksByWorkshopEntry.get(entry.id);
+        const voucher = voucherLink ? vouchersById.get(voucherLink.voucher_id) : undefined;
 
         return {
           id: entry.id,
+          addaId: entry.adda_id ?? null,
           workDate: entry.work_date ?? "",
           vehicleId: entry.vehicle_id ?? "",
           vehicleNo: vehicle?.vehicle_no ?? "-",
           ownerName: vehicle?.owner_name ?? "-",
           workshopName: entry.workshop_name ?? "",
+          workshopId: entry.workshop_id ?? "",
           mechanicName: entry.mechanic_name ?? "",
           workType: entry.work_type ?? "",
+          workItems: (entry.workshop_entry_items ?? []).sort((a,b)=>a.line_no-b.line_no).map((item) => ({ id:item.id, clientId:String(item.id), workType:item.work_type, category:item.category ?? "", quantity:String(item.quantity), rate:String(item.rate), amount:toNumber(item.amount), remarks:item.remarks ?? "" })),
           billNo: entry.bill_no ?? "",
           partsCost: toNumber(entry.parts_cost),
           labourCost: toNumber(entry.labour_cost),
@@ -258,102 +387,53 @@ export default function Workshop() {
           odometer: toNumber(entry.odometer),
           remarks: entry.remarks ?? "",
           createdAt: entry.created_at ?? "",
+          voucherId: voucherLink?.voucher_id ?? null,
+          voucherNo: voucher?.expense_no ?? "",
+          voucherDate: voucher?.expense_date ?? "",
         };
       })
     );
-  }
+  }, [t]);
 
-  function getVehicleNumber(currentVehicleId: string) {
-    return (
-      vehicles.find((vehicle) => vehicle.id === currentVehicleId)?.vehicleNo ??
-      "-"
-    );
-  }
+  const loadInitialData = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage("");
+    await Promise.all([loadVehicles(), loadWorkshops(), loadProfileAdda(), loadEntries()]);
+    setIsLoading(false);
+  }, [loadEntries, loadProfileAdda, loadVehicles, loadWorkshops]);
 
-  async function findLinkedCashbookEntry(workshopEntryId: number) {
-    const { data, error } = await supabase
-      .from("cashbook_entries")
-      .select("id")
-      .eq("reference_type", "workshop")
-      .eq("reference_id", String(workshopEntryId))
-      .maybeSingle();
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadInitialData(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadInitialData]);
 
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return data as CashbookEntryRecord | null;
-  }
-
-  async function deleteLinkedCashbookEntry(workshopEntryId: number) {
-    const { error } = await supabase
-      .from("cashbook_entries")
-      .delete()
-      .eq("reference_type", "workshop")
-      .eq("reference_id", String(workshopEntryId));
-
-    if (error) {
-      throw new Error(error.message);
-    }
-  }
-
-  async function syncWorkshopCashbookEntry(payload: CashbookSyncPayload) {
-    const linkedCashbookEntry = await findLinkedCashbookEntry(
-      payload.workshopEntryId
-    );
-
-    if (payload.paidAmount <= 0) {
-      if (linkedCashbookEntry) {
-        await deleteLinkedCashbookEntry(payload.workshopEntryId);
+  const applyManualSourceEditContext = useEffectEvent(() => {
+    if (isLoading || !manualSourceEditContext || manualSourceEditAppliedRef.current) return;
+    manualSourceEditAppliedRef.current = true;
+    const timer = window.setTimeout(() => {
+      const sourceEntryId = Number(manualSourceEditContext.sourceEntryId);
+      const sourceEntry = entries.find((entry) => entry.id === sourceEntryId);
+      if (!sourceEntry || sourceEntry.voucherId !== manualSourceEditContext.voucherId) {
+        setErrorMessage(t("workshop.messages.manualSourceUnavailable"));
+        return;
       }
+      setActiveSection("entries");
+      handleEdit(sourceEntry);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  });
 
-      return;
-    }
-
-    const vehicleNo = getVehicleNumber(payload.vehicleId);
-    const cashbookPayload = {
-      entry_date: payload.workDate,
-      entry_type: "Cash Out",
-      person_type: "Workshop",
-      person_name: payload.workshopName,
-      vehicle_id: payload.vehicleId,
-      driver_id: null,
-      loading_id: null,
-      payment_method: "Cash",
-      amount: payload.paidAmount,
-      description: `Workshop payment for ${vehicleNo} - ${payload.workType}`,
-      reference_type: "workshop",
-      reference_id: String(payload.workshopEntryId),
-    };
-
-    if (linkedCashbookEntry) {
-      const { error } = await supabase
-        .from("cashbook_entries")
-        .update(cashbookPayload)
-        .eq("id", linkedCashbookEntry.id);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      return;
-    }
-
-    const { error } = await supabase
-      .from("cashbook_entries")
-      .insert(cashbookPayload);
-
-    if (error) {
-      throw new Error(error.message);
-    }
-  }
+  useEffect(() => {
+    applyManualSourceEditContext();
+  }, [entries, isLoading, manualSourceEditContext]);
 
   function resetForm() {
     setWorkDate("");
     setVehicleId("");
+    setWorkshopId("");
     setWorkshopName("");
     setMechanicName("");
-    setWorkType("");
+    setWorkItems([createWorkshopWorkItem()]);
     setBillNo("");
     setPartsCost("");
     setLabourCost("");
@@ -365,54 +445,50 @@ export default function Workshop() {
   }
 
   function validateForm() {
-    const parts = Number(partsCost || 0);
-    const labour = Number(labourCost || 0);
     const paid = Number(paidAmount || 0);
     const meter = Number(odometer || 0);
-    const total = parts + labour;
+    const total = workItems.reduce((sum, item) => sum + item.amount, 0);
 
     if (!workDate) {
-      alert("Work date is required.");
+      alert(t("workshop.validation.dateRequired"));
       return false;
     }
 
     if (!vehicleId) {
-      alert("Vehicle is required.");
+      alert(t("workshop.validation.vehicleRequired"));
       return false;
     }
 
-    if (!workshopName.trim()) {
-      alert("Workshop name is required.");
+    if (!workshopId || !workshopName.trim()) {
+      alert(t("workshop.validation.workshopRequired"));
       return false;
     }
 
-    if (!workType.trim()) {
-      alert("Work type is required.");
+    if (workItems.length === 0) {
+      alert(t("workshop.workItems.validation.atLeastOne"));
       return false;
     }
-
-    if (parts < 0) {
-      alert("Parts cost cannot be negative.");
-      return false;
+    const supportedTypes = new Set(WORKSHOP_WORK_TYPE_GROUPS.flatMap(([, types]) => [...types]));
+    for (const item of workItems) {
+      const quantity=Number(item.quantity); const rate=Number(item.rate); const amount=quantity*rate;
+      if (!supportedTypes.has(item.workType as never)) { alert(t("workshop.workItems.validation.workType")); return false; }
+      if (!Number.isFinite(quantity) || quantity<=0) { alert(t("workshop.workItems.validation.quantity")); return false; }
+      if (!Number.isFinite(rate) || rate<0 || !Number.isFinite(amount)) { alert(t("workshop.workItems.validation.rate")); return false; }
     }
+    if (!Number.isFinite(total) || total<=0) { alert(t("workshop.workItems.validation.total")); return false; }
 
-    if (labour < 0) {
-      alert("Labour cost cannot be negative.");
-      return false;
-    }
-
-    if (paid < 0) {
-      alert("Paid amount cannot be negative.");
+    if (!Number.isFinite(paid) || paid < 0) {
+      alert(t("workshop.validation.paidNonNegative"));
       return false;
     }
 
     if (paid > total) {
-      alert("Paid amount cannot be greater than total cost.");
+      alert(t("workshop.validation.paidExceedsTotal"));
       return false;
     }
 
-    if (meter < 0) {
-      alert("Odometer cannot be negative.");
+    if (!Number.isFinite(meter) || meter < 0) {
+      alert(t("workshop.validation.odometerNonNegative"));
       return false;
     }
 
@@ -420,123 +496,57 @@ export default function Workshop() {
   }
 
   async function handleSave() {
+    if (saveLockRef.current) return;
     if (!validateForm()) return;
 
-    const parts = Number(partsCost || 0);
-    const labour = Number(labourCost || 0);
     const paid = Number(paidAmount || 0);
-    const total = parts + labour;
-    const remaining = Math.max(total - paid, 0);
-    const paymentStatus = getPaymentStatus(paid, total);
-
+    saveLockRef.current = true;
     setIsSaving(true);
 
-    const payload = {
-      work_date: workDate,
-      vehicle_id: vehicleId,
-      workshop_name: workshopName.trim(),
-      mechanic_name: mechanicName.trim(),
-      work_type: workType.trim(),
-      bill_no: billNo.trim(),
-      parts_cost: parts,
-      labour_cost: labour,
-      total_cost: total,
-      paid_amount: paid,
-      remaining_amount: remaining,
-      payment_status: paymentStatus,
-      next_service_date: nextServiceDate || null,
-      odometer: odometer ? Number(odometer) : null,
-      remarks: remarks.trim(),
-    };
-
-    if (editingId) {
-      const { error } = await supabase
-        .from("workshop_entries")
-        .update(payload)
-        .eq("id", editingId);
-
-      setIsSaving(false);
-
+    try {
+      const payload = { p_entry_id:editingId, p_work_date:workDate, p_vehicle_id:vehicleId, p_workshop_id:workshopId, p_mechanic_name:mechanicName.trim()||null, p_bill_no:billNo.trim()||null, p_paid_amount:paid, p_next_service_date:nextServiceDate||null, p_odometer:odometer?Number(odometer):null, p_remarks:remarks.trim()||null, p_parts_cost:editingId?Number(partsCost||0):0, p_labour_cost:editingId?Number(labourCost||0):0, p_items:workItems.map((item)=>({work_type:item.workType,category:item.category,quantity:Number(item.quantity),rate:Number(item.rate),remarks:item.remarks.trim()||null})) };
+      const isManualSourceEdit = Boolean(
+        manualSourceEditContext && editingId === Number(manualSourceEditContext.sourceEntryId)
+      );
+      const { data, error } = isManualSourceEdit
+        ? await supabase.rpc("save_manual_voucher_workshop_source_entry", {
+            p_voucher_id: manualSourceEditContext!.voucherId,
+            ...payload,
+          })
+        : await supabase.rpc("save_workshop_entry_with_items", payload);
       if (error) {
-        alert(error.message);
+        console.error("Failed to save Workshop Entry items:",error);
+        const message = t(editingId?"workshop.messages.updateFailed":"workshop.messages.saveFailed");
+        alert(isManualSourceEdit ? `${message}\n${error.message}` : message);
         return;
       }
-
-      try {
-        await syncWorkshopCashbookEntry({
-          workshopEntryId: editingId,
-          workDate,
-          vehicleId,
-          workshopName: workshopName.trim(),
-          workType: workType.trim(),
-          paidAmount: paid,
-        });
-
-        alert("Workshop entry updated successfully!");
-      } catch (cashbookError) {
-        const message =
-          cashbookError instanceof Error
-            ? cashbookError.message
-            : "Cashbook sync failed after workshop update.";
-        alert(`Workshop entry updated, but Cashbook sync failed: ${message}`);
-      }
+      const savedEntryId=Number(data);
+      if (!Number.isSafeInteger(savedEntryId)) { alert(t("workshop.messages.idMissing")); return; }
+      alert(t(editingId ? "workshop.messages.updated" : "workshop.messages.saved"));
 
       resetForm();
+      if (isManualSourceEdit && manualSourceEditContext) {
+        returnToManualVoucherAfterSourceEdit(manualSourceEditContext);
+        return;
+      }
       await loadEntries();
-      return;
+    } catch (error) {
+      console.error("Unexpected error while saving workshop entry:", error);
+      alert(t("workshop.messages.saveFailed"));
+    } finally {
+      saveLockRef.current = false;
+      setIsSaving(false);
     }
-
-    const { data, error } = await supabase
-      .from("workshop_entries")
-      .insert(payload)
-      .select("id")
-      .single();
-
-    setIsSaving(false);
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    const insertedEntry = data as WorkshopInsertResult | null;
-
-    if (!insertedEntry) {
-      alert("Workshop entry saved, but returned ID was not found.");
-      await loadEntries();
-      return;
-    }
-
-    try {
-      await syncWorkshopCashbookEntry({
-        workshopEntryId: insertedEntry.id,
-        workDate,
-        vehicleId,
-        workshopName: workshopName.trim(),
-        workType: workType.trim(),
-        paidAmount: paid,
-      });
-
-      alert("Workshop entry saved successfully!");
-    } catch (cashbookError) {
-      const message =
-        cashbookError instanceof Error
-          ? cashbookError.message
-          : "Cashbook sync failed after workshop save.";
-      alert(`Workshop entry saved, but Cashbook sync failed: ${message}`);
-    }
-
-    resetForm();
-    await loadEntries();
   }
 
   function handleEdit(row: WorkshopEntryRow) {
     setEditingId(row.id);
     setWorkDate(row.workDate);
     setVehicleId(row.vehicleId);
+    setWorkshopId(row.workshopId);
     setWorkshopName(row.workshopName);
     setMechanicName(row.mechanicName);
-    setWorkType(row.workType);
+    setWorkItems(row.workItems.length ? row.workItems : [{ ...createWorkshopWorkItem(), workType:"other_work", category:"other", quantity:"1", rate:String(row.totalCost), amount:row.totalCost, remarks:row.workType }]);
     setBillNo(row.billNo);
     setPartsCost(String(row.partsCost));
     setLabourCost(String(row.labourCost));
@@ -547,42 +557,38 @@ export default function Workshop() {
   }
 
   async function handleDelete(row: WorkshopEntryRow) {
+    if (deleteLockRef.current) return;
     const confirmed = window.confirm(
-      `Delete workshop entry for ${row.vehicleNo}?`
+      `${t("workshop.messages.deleteConfirm")} ${row.vehicleNo}?`
     );
 
     if (!confirmed) return;
 
+    deleteLockRef.current = true;
     setIsDeleting(true);
 
     try {
-      await deleteLinkedCashbookEntry(row.id);
-    } catch (cashbookError) {
+      const { error } = await supabase.rpc("delete_workshop_entry_with_cashbook", {
+        p_entry_id: row.id,
+      });
+
+      if (error) {
+        console.error("Failed to delete workshop entry:", error);
+        alert(t("workshop.messages.deleteFailed"));
+        return;
+      }
+
+      if (editingId === row.id) resetForm();
+
+      alert(t("workshop.messages.deleted"));
+      await loadEntries();
+    } catch (error) {
+      console.error("Unexpected error while deleting workshop entry:", error);
+      alert(t("workshop.messages.deleteFailed"));
+    } finally {
+      deleteLockRef.current = false;
       setIsDeleting(false);
-      const message =
-        cashbookError instanceof Error
-          ? cashbookError.message
-          : "Unable to delete linked Cashbook entry.";
-      alert(`Cashbook delete failed: ${message}`);
-      return;
     }
-
-    const { error } = await supabase
-      .from("workshop_entries")
-      .delete()
-      .eq("id", row.id);
-
-    setIsDeleting(false);
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    if (editingId === row.id) resetForm();
-
-    alert("Workshop entry deleted successfully!");
-    await loadEntries();
   }
 
   const filteredRows = useMemo(() => {
@@ -609,6 +615,7 @@ export default function Workshop() {
         row.workshopName,
         row.mechanicName,
         row.workType,
+        row.workItems.map((item) => getWorkTypeLabel(item.workType, t)).join(" "),
         row.billNo,
         row.remarks,
       ]
@@ -616,7 +623,7 @@ export default function Workshop() {
         .toLowerCase()
         .includes(keyword);
     });
-  }, [entries, filters]);
+  }, [entries, filters, t]);
 
   const summary = useMemo<WorkshopSummary>(() => {
     return filteredRows.reduce(
@@ -635,19 +642,18 @@ export default function Workshop() {
     );
   }, [filteredRows]);
 
+  function handleWorkshopChange(nextWorkshopId: string) {
+    setWorkshopId(nextWorkshopId);
+    setWorkshopName(
+      workshops.find((workshop) => workshop.id === nextWorkshopId)?.workshopName ?? ""
+    );
+  }
+
   return (
-    <div className="space-y-8">
+    <div dir={dir} className="ut-module-page space-y-6">
       <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              Workshop Management
-            </h1>
-            <p className="mt-2 text-base font-medium text-gray-900">
-              Track vehicle repair work, parts cost, labour cost, payments and
-              upcoming service dates.
-            </p>
-          </div>
+          <ModulePageHeading icon="workshop" accent="red" title={t("workshop.title")} description={t("workshop.description")} />
 
           {editingId && (
             <button
@@ -655,11 +661,46 @@ export default function Workshop() {
               onClick={resetForm}
               className="rounded-lg bg-gray-200 px-5 py-3 text-sm font-bold text-gray-900 transition hover:bg-gray-300"
             >
-              Cancel Edit
+              {t("common.cancelEdit")}
             </button>
           )}
         </div>
       </div>
+
+      <nav className="flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-3 shadow-sm" aria-label={t("workshop.sections.navigation")}>
+        {(["entries", "master", "account"] as const).map((section) => (
+          <button
+            key={section}
+            type="button"
+            onClick={() => setActiveSection(section)}
+            aria-current={activeSection === section ? "page" : undefined}
+            className={`rounded-lg px-5 py-3 text-sm font-bold transition ${activeSection === section ? "bg-blue-600 text-white" : "border border-gray-300 bg-white text-gray-900 hover:bg-blue-50"}`}
+          >
+            {t(`workshop.sections.${section}`)}
+          </button>
+        ))}
+      </nav>
+
+      {activeSection === "master" && (
+        <WorkshopMaster
+          workshops={workshops}
+          profileAddaId={profileAddaId}
+          onChanged={loadWorkshops}
+        />
+      )}
+
+      {activeSection === "account" && (
+        <WorkshopAccount
+          workshops={workshops}
+          entries={entries}
+          onAccountingChanged={async () => {
+            await Promise.all([loadEntries(), loadWorkshops()]);
+          }}
+        />
+      )}
+
+      {activeSection === "entries" && (
+        <>
 
       <WorkshopCards summary={summary} />
 
@@ -669,17 +710,15 @@ export default function Workshop() {
         vehicleId={vehicleId}
         setVehicleId={setVehicleId}
         workshopName={workshopName}
-        setWorkshopName={setWorkshopName}
+        workshopId={workshopId}
+        onWorkshopChange={handleWorkshopChange}
+        workshops={workshops}
         mechanicName={mechanicName}
         setMechanicName={setMechanicName}
-        workType={workType}
-        setWorkType={setWorkType}
+        workItems={workItems}
+        setWorkItems={setWorkItems}
         billNo={billNo}
         setBillNo={setBillNo}
-        partsCost={partsCost}
-        setPartsCost={setPartsCost}
-        labourCost={labourCost}
-        setLabourCost={setLabourCost}
         paidAmount={paidAmount}
         setPaidAmount={setPaidAmount}
         nextServiceDate={nextServiceDate}
@@ -697,6 +736,7 @@ export default function Workshop() {
 
       <WorkshopTable
         rows={filteredRows}
+        addaId={profileAddaId || null}
         filters={filters}
         setFilters={setFilters}
         vehicles={vehicles}
@@ -707,6 +747,8 @@ export default function Workshop() {
         isLoading={isLoading}
         errorMessage={errorMessage}
       />
+        </>
+      )}
     </div>
   );
 }

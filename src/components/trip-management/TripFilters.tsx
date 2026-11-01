@@ -3,10 +3,13 @@
 import type { Dispatch, SetStateAction } from "react";
 import {
   TRIP_STATUSES,
+  tripStatusTranslationKey,
   type DriverOption,
   type TripDateFilter,
   type VehicleOption,
 } from "./TripManagement";
+import { useLanguage } from "@/contexts/LanguageContext";
+import VoiceTypingField from "@/components/shared/VoiceTypingField";
 
 type Props = {
   search: string;
@@ -28,14 +31,14 @@ type Props = {
   onReset: () => void;
 };
 
-const dateFilters: { value: TripDateFilter; label: string }[] = [
-  { value: "all", label: "All Time" },
-  { value: "today", label: "Today" },
-  { value: "last7Days", label: "Last 7 Days" },
-  { value: "thisMonth", label: "This Month" },
-  { value: "last6Months", label: "Last 6 Months" },
-  { value: "thisYear", label: "This Year" },
-  { value: "custom", label: "Custom" },
+const dateFilters: { value: TripDateFilter; key: string }[] = [
+  { value: "all", key: "allTime" },
+  { value: "today", key: "today" },
+  { value: "last7Days", key: "last7Days" },
+  { value: "thisMonth", key: "thisMonth" },
+  { value: "last6Months", key: "last6Months" },
+  { value: "thisYear", key: "thisYear" },
+  { value: "custom", key: "custom" },
 ];
 
 export default function TripFilters({
@@ -57,37 +60,43 @@ export default function TripFilters({
   setCustomToDate,
   onReset,
 }: Props) {
+  const { t, dir } = useLanguage();
   return (
-    <section className="rounded-xl bg-white p-6 shadow-md md:p-8">
-      <h2 className="text-2xl font-bold text-gray-900">Trip Filters</h2>
+    <section dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
+      <h2 className="text-2xl font-bold text-gray-900">
+        {t("tripManagement.filters.title")}
+      </h2>
 
       <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-5">
+
         <div className="xl:col-span-2">
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Search
+            {t("tripManagement.filters.search")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel={t("tripManagement.filters.searchPlaceholder")} mode="text"><input
             type="text"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search trip no, vehicle, driver, customer or route..."
+            placeholder={t("tripManagement.filters.searchPlaceholder")}
             className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none placeholder:text-gray-600 focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
+
 
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Vehicle
+            {t("common.vehicle")}
           </label>
           <select
             value={selectedVehicle}
             onChange={(event) => setSelectedVehicle(event.target.value)}
             className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
           >
-            <option value="">All Vehicles</option>
+            <option value="">{t("tripManagement.filters.allVehicles")}</option>
             {vehicles.map((vehicle) => (
               <option key={vehicle.id} value={vehicle.id}>
-                {vehicle.vehicleNo} - {vehicle.ownerName || "No Owner"}
+                {vehicle.vehicleNo} -{" "}
+                {vehicle.ownerName || t("tripManagement.filters.noOwner")}
               </option>
             ))}
           </select>
@@ -95,14 +104,14 @@ export default function TripFilters({
 
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Driver
+            {t("common.driver")}
           </label>
           <select
             value={selectedDriver}
             onChange={(event) => setSelectedDriver(event.target.value)}
             className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
           >
-            <option value="">All Drivers</option>
+            <option value="">{t("tripManagement.filters.allDrivers")}</option>
             {drivers.map((driver) => (
               <option key={driver.id} value={driver.id}>
                 {driver.name}
@@ -113,17 +122,17 @@ export default function TripFilters({
 
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Trip Status
+            {t("tripManagement.filters.tripStatus")}
           </label>
           <select
             value={selectedStatus}
             onChange={(event) => setSelectedStatus(event.target.value)}
             className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
           >
-            <option value="">All Status</option>
+            <option value="">{t("tripManagement.filters.allStatuses")}</option>
             {TRIP_STATUSES.map((status) => (
               <option key={status} value={status}>
-                {status}
+                {t(tripStatusTranslationKey(status))}
               </option>
             ))}
           </select>
@@ -131,7 +140,7 @@ export default function TripFilters({
 
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Date Filter
+            {t("tripManagement.filters.dateFilter")}
           </label>
           <select
             value={selectedTripDateFilter}
@@ -142,7 +151,7 @@ export default function TripFilters({
           >
             {dateFilters.map((filter) => (
               <option key={filter.value} value={filter.value}>
-                {filter.label}
+                {t(`common.dateFilters.${filter.key}`)}
               </option>
             ))}
           </select>
@@ -150,29 +159,35 @@ export default function TripFilters({
 
         {selectedTripDateFilter === "custom" && (
           <>
-            <div>
-              <label className="mb-2 block text-sm font-bold text-gray-900">
-                From Date
-              </label>
-              <input
-                type="date"
-                value={customFromDate}
-                onChange={(event) => setCustomFromDate(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-              />
-            </div>
 
             <div>
               <label className="mb-2 block text-sm font-bold text-gray-900">
-                To Date
+                {t("common.fromDate")}
               </label>
-              <input
+              <VoiceTypingField fieldLabel={t("common.fromDate")} mode="date"><input
                 type="date"
+                dir="ltr"
+                value={customFromDate}
+                onChange={(event) => setCustomFromDate(event.target.value)}
+                className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+              /></VoiceTypingField>
+            </div>
+
+
+
+            <div>
+              <label className="mb-2 block text-sm font-bold text-gray-900">
+                {t("common.toDate")}
+              </label>
+              <VoiceTypingField fieldLabel={t("common.toDate")} mode="date"><input
+                type="date"
+                dir="ltr"
                 value={customToDate}
                 onChange={(event) => setCustomToDate(event.target.value)}
                 className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-              />
+              /></VoiceTypingField>
             </div>
+
           </>
         )}
       </div>
@@ -183,7 +198,7 @@ export default function TripFilters({
           onClick={onReset}
           className="rounded-lg bg-gray-800 px-6 py-3 font-bold text-white hover:bg-gray-900"
         >
-          Reset Filters
+          {t("tripManagement.filters.reset")}
         </button>
       </div>
     </section>

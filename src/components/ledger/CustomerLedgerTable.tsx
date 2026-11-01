@@ -1,17 +1,27 @@
 "use client";
 
-import type { Dispatch, SetStateAction } from "react";
+import { useMemo, useState } from "react";
 import {
   type CustomerLedgerRow,
-  formatAmount,
+  formatCurrency,
 } from "./CustomerLedger";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { escapeHtml } from "@/lib/print/escapeHtml";
+import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
+import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
+import { singleResolvedAddaId } from "@/components/print/LedgerStatementPrint";
+import { printLabel, printValue, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
+import type { CustomerLedgerSummary } from "./CustomerLedger";
 type Props = {
   rows: CustomerLedgerRow[];
-  search: string;
-  setSearch: Dispatch<SetStateAction<string>>;
+  summary: CustomerLedgerSummary;
+  fromDate: string;
+  toDate: string;
   isLoading: boolean;
   errorMessage: string;
 };
+
+const PAGE_SIZE = 10;
 
 function getStatusClass(status: CustomerLedgerRow["paymentStatus"]) {
   if (status === "Paid") {
@@ -27,35 +37,123 @@ function getStatusClass(status: CustomerLedgerRow["paymentStatus"]) {
 
 export default function CustomerLedgerTable({
   rows,
-  search,
-  setSearch,
+  summary,
+  fromDate,
+  toDate,
   isLoading,
   errorMessage,
 }: Props) {
+  const { t, dir, language } = useLanguage();
+  const ownerAddaId = singleResolvedAddaId(rows.map((row) => row.addaId));
+  const modulePrint = useModuleTransportPrint("customer_ledger", ownerAddaId, language === "ur" ? "ur" : "en");
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const visibleRows = useMemo(
+    () =>
+      rows.slice(
+        (safeCurrentPage - 1) * PAGE_SIZE,
+        safeCurrentPage * PAGE_SIZE
+      ),
+    [rows, safeCurrentPage]
+  );
+
+  function handlePrintLegacy() {
+    if (rows.length === 0) return;
+    const printWindow = window.open("", "_blank", "width=1100,height=800");
+    if (!printWindow) {
+      window.alert(t("reports.messages.allowPopups"));
+      return;
+    }
+    const rowHtml = rows
+      .map(
+        (row) => `<tr>
+          <td class="technical">${escapeHtml(row.date)}</td>
+          <td class="technical">${escapeHtml(row.bookingNo)}</td>
+          <td>${escapeHtml(row.sender)}</td>
+          <td>${escapeHtml(row.receiver)}</td>
+          <td>${escapeHtml(row.route)}</td>
+          <td class="technical">${escapeHtml(formatCurrency(row.freight))}</td>
+          <td class="technical">${escapeHtml(formatCurrency(row.totalReceived))}</td>
+          <td class="technical">${escapeHtml(formatCurrency(row.remainingAmount))}</td>
+        </tr>`
+      )
+      .join("");
+    const addaIds = Array.from(new Set(rows.map((row) => row.addaId).filter((id): id is string => Boolean(id))));
+    void writeAddaBrandedPrintDocument(printWindow, `<!doctype html>
+      <html lang="${escapeHtml(language)}" dir="${escapeHtml(dir)}">
+      <head><title>${escapeHtml(t("customerLedger.title"))}</title>
+      <style>
+        @page { size: A4 landscape; margin: 10mm; }
+        body { font-family: Arial,sans-serif; color:#111827; direction:${dir}; }
+        h1,h2 { text-align:center; }
+        table { width:100%; border-collapse:collapse; font-size:12px; }
+        th,td { border:1px solid #d1d5db; padding:8px; text-align:start; }
+        th { background:#2563eb; color:white; }
+        .technical { direction:ltr; unicode-bidi:isolate; text-align:end; }
+      </style></head><body>
+      <h1>${PRINT_ADDA_NAME_TOKEN}</h1><h2>${escapeHtml(t("customerLedger.title"))}</h2>
+      <table><thead><tr>
+        <th>${escapeHtml(t("common.date"))}</th>
+        <th>${escapeHtml(t("common.bookingNo"))}</th>
+        <th>${escapeHtml(t("common.sender"))}</th>
+        <th>${escapeHtml(t("common.receiver"))}</th>
+        <th>${escapeHtml(t("common.route"))}</th>
+        <th>${escapeHtml(t("common.freight"))}</th>
+        <th>${escapeHtml(t("customerLedger.table.totalReceived"))}</th>
+        <th>${escapeHtml(t("common.remaining"))}</th>
+      </tr></thead><tbody>${rowHtml}</tbody></table>
+      <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};</script>
+      </body></html>`, addaIds.length === 1 ? addaIds[0] : null, language === "ur" ? "ur" : "en");
+  }
+  function handlePrint() {
+    const statusKeys: Record<CustomerLedgerRow["paymentStatus"], string> = { Paid: "common.paymentStatus.paid", Partial: "common.paymentStatus.partial", Unpaid: "common.paymentStatus.unpaid" };
+    const presentation: ModulePrintPresentation = {
+      documentType: "customer_ledger",
+      title: printLabel("customerLedger.table.title"),
+      subtitle: printLabel("customerLedger.description"),
+      fields: [
+        { label: printLabel("common.fromDate"), value: printValue(fromDate) },
+        { label: printLabel("common.toDate"), value: printValue(toDate) },
+        { label: printLabel("customerLedger.summary.totalBookings"), value: printValue(summary.totalBookings) },
+      ],
+      totals: [
+        { label: printLabel("customerLedger.summary.totalFreight"), value: formatCurrency(summary.totalFreight) },
+        { label: printLabel("customerLedger.summary.receivedAmount"), value: formatCurrency(summary.receivedAmount) },
+        { label: printLabel("customerLedger.summary.pendingAmount"), value: formatCurrency(summary.pendingAmount) },
+      ],
+      tables: [{
+        columns: ["common.date", "common.bookingNo", "common.sender", "common.receiver", "common.route", "common.freight", "customerLedger.table.totalReceived", "common.remaining", "common.status"].map(printLabel),
+        rows: rows.map((row) => [printValue(row.date), printValue(row.bookingNo), printValue(row.sender), printValue(row.receiver), printValue(row.route), formatCurrency(row.freight), formatCurrency(row.totalReceived), formatCurrency(row.remainingAmount), printLabel(statusKeys[row.paymentStatus])]),
+      }],
+    };
+    modulePrint.openPresentation(presentation, handlePrintLegacy, ownerAddaId);
+  }
   return (
-    <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+    <div dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
-            Customer Payment Ledger
+            {t("customerLedger.table.title")}
           </h2>
           <p className="mt-1 text-sm font-medium text-gray-900">
-            Booking-wise freight recovery and pending balance.
+            {t("customerLedger.table.description")}
           </p>
         </div>
 
-        <input
-          type="text"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search customer ledger..."
-          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100 lg:max-w-sm"
-        />
+        <button
+          type="button"
+          onClick={handlePrint}
+          disabled={rows.length === 0}
+          className="rounded-lg bg-blue-600 px-5 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+        >
+          {t("common.actions.printReport")}
+        </button>
       </div>
 
       {isLoading && (
         <div className="mt-6 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm font-bold text-blue-700">
-          Loading customer ledger...
+          {t("customerLedger.loading")}
         </div>
       )}
 
@@ -67,7 +165,7 @@ export default function CustomerLedgerTable({
 
       {!isLoading && !errorMessage && rows.length === 0 && (
         <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-6 text-center text-sm font-bold text-gray-900">
-          No customer ledger records found.
+          {t("customerLedger.table.empty")}
         </div>
       )}
 
@@ -77,43 +175,43 @@ export default function CustomerLedgerTable({
             <thead>
               <tr className="bg-blue-600 text-white">
                 <th className="whitespace-nowrap px-4 py-3 text-sm font-bold">
-                  Date
+                  {t("common.date")}
                 </th>
                 <th className="whitespace-nowrap px-4 py-3 text-sm font-bold">
-                  Booking No
+                  {t("common.bookingNo")}
                 </th>
                 <th className="whitespace-nowrap px-4 py-3 text-sm font-bold">
-                  Sender
+                  {t("common.sender")}
                 </th>
                 <th className="whitespace-nowrap px-4 py-3 text-sm font-bold">
-                  Receiver
+                  {t("common.receiver")}
                 </th>
                 <th className="whitespace-nowrap px-4 py-3 text-sm font-bold">
-                  Route
+                  {t("common.route")}
                 </th>
                 <th className="whitespace-nowrap px-4 py-3 text-right text-sm font-bold">
-                  Freight
+                  {t("common.freight")}
                 </th>
                 <th className="whitespace-nowrap px-4 py-3 text-right text-sm font-bold">
-                  Advance
+                  {t("common.advance")}
                 </th>
                 <th className="whitespace-nowrap px-4 py-3 text-right text-sm font-bold">
-                  Receipts
+                  {t("common.receipts")}
                 </th>
                 <th className="whitespace-nowrap px-4 py-3 text-right text-sm font-bold">
-                  Total Received
+                  {t("customerLedger.table.totalReceived")}
                 </th>
                 <th className="whitespace-nowrap px-4 py-3 text-right text-sm font-bold">
-                  Remaining
+                  {t("common.remaining")}
                 </th>
                 <th className="whitespace-nowrap px-4 py-3 text-center text-sm font-bold">
-                  Status
+                  {t("common.status")}
                 </th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-gray-200">
-              {rows.map((row) => (
+              {visibleRows.map((row) => (
                 <tr
                   key={row.bookingId}
                   className="bg-white text-gray-900 hover:bg-gray-50"
@@ -134,19 +232,19 @@ export default function CustomerLedgerTable({
                     {row.route}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-bold">
-                    {formatAmount(row.freight)}
+                    {formatCurrency(row.freight)}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-bold">
-                    {formatAmount(row.advanceAmount)}
+                    {formatCurrency(row.advanceAmount)}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-bold">
-                    {formatAmount(row.receiptAmount)}
+                    {formatCurrency(row.receiptAmount)}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-bold text-green-700">
-                    {formatAmount(row.totalReceived)}
+                    {formatCurrency(row.totalReceived)}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-bold text-red-700">
-                    {formatAmount(row.remainingAmount)}
+                    {formatCurrency(row.remainingAmount)}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-center">
                     <span
@@ -154,7 +252,7 @@ export default function CustomerLedgerTable({
                         row.paymentStatus
                       )}`}
                     >
-                      {row.paymentStatus}
+                      {t(`common.paymentStatus.${row.paymentStatus.toLowerCase()}`)}
                     </span>
                   </td>
                 </tr>
@@ -167,30 +265,30 @@ export default function CustomerLedgerTable({
                   colSpan={5}
                   className="px-4 py-4 text-sm font-extrabold"
                 >
-                  Total
+                  {t("common.total")}
                 </td>
                 <td className="px-4 py-4 text-right text-sm font-extrabold">
-                  {formatAmount(
+                  {formatCurrency(
                     rows.reduce((total, row) => total + row.freight, 0)
                   )}
                 </td>
                 <td className="px-4 py-4 text-right text-sm font-extrabold">
-                  {formatAmount(
+                  {formatCurrency(
                     rows.reduce((total, row) => total + row.advanceAmount, 0)
                   )}
                 </td>
                 <td className="px-4 py-4 text-right text-sm font-extrabold">
-                  {formatAmount(
+                  {formatCurrency(
                     rows.reduce((total, row) => total + row.receiptAmount, 0)
                   )}
                 </td>
                 <td className="px-4 py-4 text-right text-sm font-extrabold text-green-700">
-                  {formatAmount(
+                  {formatCurrency(
                     rows.reduce((total, row) => total + row.totalReceived, 0)
                   )}
                 </td>
                 <td className="px-4 py-4 text-right text-sm font-extrabold text-red-700">
-                  {formatAmount(
+                  {formatCurrency(
                     rows.reduce((total, row) => total + row.remainingAmount, 0)
                   )}
                 </td>
@@ -200,6 +298,36 @@ export default function CustomerLedgerTable({
           </table>
         </div>
       )}
+
+      {!isLoading && !errorMessage && rows.length > 0 && (
+        <nav
+          aria-label={t("common.pagination.page")}
+          className="mt-5 flex flex-wrap items-center justify-center gap-3"
+        >
+          <button
+            type="button"
+            onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+            disabled={safeCurrentPage === 1}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-bold text-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600"
+          >
+            {t("common.pagination.previous")}
+          </button>
+          <span dir="ltr" aria-current="page" className="font-bold text-gray-900">
+            {t("common.pagination.page")} {safeCurrentPage} {t("common.pagination.of")} {totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              setCurrentPage((page) => Math.min(totalPages, page + 1))
+            }
+            disabled={safeCurrentPage === totalPages}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-bold text-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600"
+          >
+            {t("common.pagination.next")}
+          </button>
+        </nav>
+      )}
+      {modulePrint.dialog}
     </div>
   );
 }

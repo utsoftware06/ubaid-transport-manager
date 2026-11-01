@@ -2,36 +2,50 @@
 
 import { useEffect } from "react";
 import { type EmployeeSalaryRow, formatAmount } from "./EmployeeSalary";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { escapeHtml } from "@/lib/print/escapeHtml";
+import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
+import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
+import { printLabel, printValue, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
 
 type Props = {
   row: EmployeeSalaryRow;
+  addaId: string | null;
   onClose: () => void;
 };
 
-function escapeHtml(value: string | number) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+export default function EmployeeSalarySlip({ row, addaId, onClose }: Props) {
+  const { t, dir, language } = useLanguage();
+  const modulePrint = useModuleTransportPrint("employee", addaId, language === "ur" ? "ur" : "en");
+  const statusLabel = t(
+    `common.paymentStatus.${row.paymentStatus.toLowerCase()}`
+  );
+  const paymentMethodKeys: Record<string, string> = {
+    Cash: "cash",
+    Bank: "bank",
+    Cheque: "cheque",
+    "Online Transfer": "onlineTransfer",
+    Account: "account",
+  };
+  const paymentMethodKey = paymentMethodKeys[row.paymentMethod];
+  const paymentMethodLabel = paymentMethodKey
+    ? t(`employeeSalary.paymentMethods.${paymentMethodKey}`)
+    : row.paymentMethod;
 
-export default function EmployeeSalarySlip({ row, onClose }: Props) {
-  useEffect(() => {
+  function printLegacy() {
     const printWindow = window.open("", "_blank", "width=900,height=700");
 
     if (!printWindow) {
-      alert("Please allow popups to print the salary slip.");
+      alert(t("employeeSalary.messages.allowSlipPopups"));
       onClose();
       return;
     }
 
-    printWindow.document.write(`
+    void writeAddaBrandedPrintDocument(printWindow, `
       <!doctype html>
-      <html>
+      <html lang="${language}" dir="${dir}">
         <head>
-          <title>Salary Slip - ${escapeHtml(row.employeeName)}</title>
+          <title>${escapeHtml(t("employeeSalary.print.slipTitle"))} - ${escapeHtml(row.employeeName)}</title>
           <style>
             * { box-sizing: border-box; }
             body {
@@ -40,6 +54,8 @@ export default function EmployeeSalarySlip({ row, onClose }: Props) {
               background: #ffffff;
               color: #111827;
               font-family: Arial, sans-serif;
+              direction: ${dir};
+              text-align: start;
             }
             .slip {
               max-width: 850px;
@@ -69,7 +85,7 @@ export default function EmployeeSalarySlip({ row, onClose }: Props) {
               font-weight: 700;
             }
             .meta {
-              text-align: right;
+              text-align: end;
               color: #111827;
               font-size: 14px;
               font-weight: 700;
@@ -129,6 +145,7 @@ export default function EmployeeSalarySlip({ row, onClose }: Props) {
               font-weight: 700;
               color: #111827;
             }
+            .technical { direction: ltr; unicode-bidi: isolate; }
             @media print {
               body { padding: 0; }
               .slip { border: none; border-radius: 0; }
@@ -139,81 +156,81 @@ export default function EmployeeSalarySlip({ row, onClose }: Props) {
           <div class="slip">
             <div class="header">
               <div>
-                <h1>UT Software</h1>
-                <div class="subtitle">Employee Salary Slip</div>
+                <h1>${PRINT_ADDA_NAME_TOKEN}</h1>
+                <div class="subtitle">${escapeHtml(t("employeeSalary.print.slipTitle"))}</div>
               </div>
               <div class="meta">
-                <div><strong>Salary Month:</strong> ${escapeHtml(row.salaryMonth)}</div>
-                <div><strong>Reference:</strong> ${escapeHtml(row.referenceNo || "-")}</div>
+                <div><strong>${escapeHtml(t("employeeSalary.fields.salaryMonth"))}:</strong> <span class="technical">${escapeHtml(row.salaryMonth)}</span></div>
+                <div><strong>${escapeHtml(t("employeeSalary.fields.referenceNo"))}:</strong> <span class="technical">${escapeHtml(row.referenceNo || "-")}</span></div>
               </div>
             </div>
 
             <div class="grid">
               <div class="field">
-                <div class="label">Employee</div>
+                <div class="label">${escapeHtml(t("employeeSalary.fields.employee"))}</div>
                 <div class="value">${escapeHtml(row.employeeName)}</div>
               </div>
               <div class="field">
-                <div class="label">Employee Type</div>
+                <div class="label">${escapeHtml(t("employeeSalary.fields.type"))}</div>
                 <div class="value">${escapeHtml(row.employeeType)}</div>
               </div>
               <div class="field">
-                <div class="label">Salary Month</div>
-                <div class="value">${escapeHtml(row.salaryMonth)}</div>
+                <div class="label">${escapeHtml(t("employeeSalary.fields.salaryMonth"))}</div>
+                <div class="value technical">${escapeHtml(row.salaryMonth)}</div>
               </div>
               <div class="field">
-                <div class="label">Basic Salary</div>
-                <div class="value">${escapeHtml(formatAmount(row.basicSalary))}</div>
+                <div class="label">${escapeHtml(t("employeeSalary.fields.basicSalary"))}</div>
+                <div class="value technical">${escapeHtml(formatAmount(row.basicSalary))}</div>
               </div>
               <div class="field">
-                <div class="label">Bonus</div>
-                <div class="value">${escapeHtml(formatAmount(row.bonus))}</div>
+                <div class="label">${escapeHtml(t("employeeSalary.fields.bonus"))}</div>
+                <div class="value technical">${escapeHtml(formatAmount(row.bonus))}</div>
               </div>
               <div class="field">
-                <div class="label">Deduction</div>
-                <div class="value">${escapeHtml(formatAmount(row.deduction))}</div>
+                <div class="label">${escapeHtml(t("employeeSalary.fields.deduction"))}</div>
+                <div class="value technical">${escapeHtml(formatAmount(row.deduction))}</div>
               </div>
               <div class="field">
-                <div class="label">Loan Recovery</div>
-                <div class="value">${escapeHtml(formatAmount(row.loanRecovery))}</div>
+                <div class="label">${escapeHtml(t("employeeSalary.fields.loanRecovery"))}</div>
+                <div class="value technical">${escapeHtml(formatAmount(row.loanRecovery))}</div>
               </div>
               <div class="field">
-                <div class="label">Advance Recovery</div>
-                <div class="value">${escapeHtml(formatAmount(row.advanceRecovery))}</div>
+                <div class="label">${escapeHtml(t("employeeSalary.fields.advanceRecovery"))}</div>
+                <div class="value technical">${escapeHtml(formatAmount(row.advanceRecovery))}</div>
               </div>
               <div class="field">
-                <div class="label">Net Salary</div>
-                <div class="value">${escapeHtml(formatAmount(row.netSalary))}</div>
+                <div class="label">${escapeHtml(t("employeeSalary.fields.netSalary"))}</div>
+                <div class="value technical">${escapeHtml(formatAmount(row.netSalary))}</div>
               </div>
               <div class="field">
-                <div class="label">Paid</div>
-                <div class="value">${escapeHtml(formatAmount(row.paidAmount))}</div>
+                <div class="label">${escapeHtml(t("common.paid"))}</div>
+                <div class="value technical">${escapeHtml(formatAmount(row.paidAmount))}</div>
               </div>
               <div class="field">
-                <div class="label">Remaining</div>
-                <div class="value">${escapeHtml(formatAmount(row.remainingAmount))}</div>
+                <div class="label">${escapeHtml(t("common.remaining"))}</div>
+                <div class="value technical">${escapeHtml(formatAmount(row.remainingAmount))}</div>
               </div>
               <div class="field">
-                <div class="label">Status</div>
-                <div class="value"><span class="status">${escapeHtml(row.paymentStatus)}</span></div>
+                <div class="label">${escapeHtml(t("common.status"))}</div>
+                <div class="value"><span class="status">${escapeHtml(statusLabel)}</span></div>
               </div>
               <div class="field">
-                <div class="label">Payment Method</div>
-                <div class="value">${escapeHtml(row.paymentMethod)}</div>
+                <div class="label">${escapeHtml(t("employeeSalary.fields.paymentMethod"))}</div>
+                <div class="value">${escapeHtml(paymentMethodLabel)}</div>
               </div>
               <div class="field">
-                <div class="label">Reference</div>
-                <div class="value">${escapeHtml(row.referenceNo || "-")}</div>
+                <div class="label">${escapeHtml(t("employeeSalary.fields.referenceNo"))}</div>
+                <div class="value technical">${escapeHtml(row.referenceNo || "-")}</div>
               </div>
               <div class="field remarks">
-                <div class="label">Remarks</div>
+                <div class="label">${escapeHtml(t("common.remarks"))}</div>
                 <div class="value">${escapeHtml(row.remarks || "-")}</div>
               </div>
             </div>
 
             <div class="signatures">
-              <div class="signature">Prepared By</div>
-              <div class="signature">Received By</div>
+              <div class="signature">${escapeHtml(t("employeeSalary.print.preparedBy"))}</div>
+              <div class="signature">${escapeHtml(t("employeeSalary.print.receivedBy"))}</div>
             </div>
           </div>
 
@@ -223,11 +240,38 @@ export default function EmployeeSalarySlip({ row, onClose }: Props) {
           </script>
         </body>
       </html>
-    `);
-
-    printWindow.document.close();
+    `, addaId, language === "ur" ? "ur" : "en");
     onClose();
-  }, [row, onClose]);
+  }
 
-  return null;
+  useEffect(() => {
+    const presentation: ModulePrintPresentation = {
+      documentType: "employee",
+      title: printLabel("employeeSalary.print.slipTitle"),
+      documentNo: printValue(row.referenceNo),
+      documentDate: printValue(row.salaryMonth),
+      fields: [
+        { label: printLabel("employeeSalary.fields.employee"), value: printValue(row.employeeName) },
+        { label: printLabel("employeeSalary.fields.type"), value: printValue(row.employeeType) },
+        { label: printLabel("employeeSalary.fields.salaryMonth"), value: printValue(row.salaryMonth) },
+        { label: printLabel("employeeSalary.fields.basicSalary"), value: printValue(formatAmount(row.basicSalary)) },
+        { label: printLabel("employeeSalary.fields.bonus"), value: printValue(formatAmount(row.bonus)) },
+        { label: printLabel("employeeSalary.fields.deduction"), value: printValue(formatAmount(row.deduction)) },
+        { label: printLabel("employeeSalary.fields.loanRecovery"), value: printValue(formatAmount(row.loanRecovery)) },
+        { label: printLabel("employeeSalary.fields.advanceRecovery"), value: printValue(formatAmount(row.advanceRecovery)) },
+        { label: printLabel("employeeSalary.fields.netSalary"), value: printValue(formatAmount(row.netSalary)) },
+        { label: printLabel("common.paid"), value: printValue(formatAmount(row.paidAmount)) },
+        { label: printLabel("common.remaining"), value: printValue(formatAmount(row.remainingAmount)) },
+        { label: printLabel("common.status"), value: printLabel(`common.paymentStatus.${row.paymentStatus.toLowerCase()}`) },
+        { label: printLabel("employeeSalary.fields.paymentMethod"), value: printValue(paymentMethodLabel) },
+        { label: printLabel("employeeSalary.fields.referenceNo"), value: printValue(row.referenceNo) },
+      ],
+      remarks: printValue(row.remarks),
+    };
+    modulePrint.openPresentation(presentation, printLegacy, addaId);
+  // The selected immutable salary row is the complete print payload.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row.id]);
+
+  return <>{modulePrint.dialog}</>;
 }

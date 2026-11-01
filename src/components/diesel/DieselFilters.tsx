@@ -1,11 +1,13 @@
 "use client";
 
 import type { Dispatch, SetStateAction } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import {
   type DieselFilterValues,
   type PetrolPumpOption,
   type VehicleOption,
 } from "./Diesel";
+import VoiceTypingField from "@/components/shared/VoiceTypingField";
 
 type Props = {
   filters: DieselFilterValues;
@@ -33,56 +35,66 @@ export default function DieselFilters({
   vehicles,
   onReset,
 }: Props) {
+  const { t, dir } = useLanguage();
   return (
-    <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+    <div dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Diesel Filters</h2>
+        <h2 className="text-2xl font-bold text-gray-900">
+          {t("diesel.filters.title")}
+        </h2>
         <p className="mt-1 text-sm font-semibold text-gray-900">
-          Filter diesel records by date, pump, vehicle and payment status.
+          {t("diesel.filters.description")}
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            From Date
+          <label htmlFor="diesel-from-date" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("common.fromDate")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel="diesel from date" mode="date"><input
+            id="diesel-from-date"
             type="date"
             value={filters.fromDate}
             onChange={(event) =>
               updateFilter(setFilters, "fromDate", event.target.value)
             }
             className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
 
+
+
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            To Date
+          <label htmlFor="diesel-to-date" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("common.toDate")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel="diesel to date" mode="date"><input
+            id="diesel-to-date"
             type="date"
             value={filters.toDate}
             onChange={(event) =>
               updateFilter(setFilters, "toDate", event.target.value)
             }
             className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
 
+
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Petrol Pump
+          <label htmlFor="diesel-pump-filter" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("diesel.fields.petrolPump")}
           </label>
           <select
+            id="diesel-pump-filter"
             value={filters.petrolPumpId}
             onChange={(event) =>
               updateFilter(setFilters, "petrolPumpId", event.target.value)
             }
             className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
           >
-            <option value="">All Pumps</option>
+            <option value="">{t("diesel.filters.allPumps")}</option>
             {petrolPumps.map((pump) => (
               <option key={pump.id} value={pump.id}>
                 {pump.pumpName}
@@ -92,17 +104,18 @@ export default function DieselFilters({
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Vehicle
+          <label htmlFor="diesel-vehicle-filter" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("common.vehicle")}
           </label>
           <select
+            id="diesel-vehicle-filter"
             value={filters.vehicleId}
             onChange={(event) =>
               updateFilter(setFilters, "vehicleId", event.target.value)
             }
             className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
           >
-            <option value="">All Vehicles</option>
+            <option value="">{t("diesel.filters.allVehicles")}</option>
             {vehicles.map((vehicle) => (
               <option key={vehicle.id} value={vehicle.id}>
                 {vehicle.vehicleNo}
@@ -112,37 +125,41 @@ export default function DieselFilters({
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Payment Status
+          <label htmlFor="diesel-status-filter" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("diesel.fields.paymentStatus")}
           </label>
           <select
+            id="diesel-status-filter"
             value={filters.paymentStatus}
             onChange={(event) =>
               updateFilter(setFilters, "paymentStatus", event.target.value)
             }
             className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
           >
-            <option value="">All</option>
-            <option value="Paid">Paid</option>
-            <option value="Partial">Partial</option>
-            <option value="Unpaid">Unpaid</option>
+            <option value="">{t("diesel.filters.all")}</option>
+            <option value="Paid">{t("common.paymentStatus.paid")}</option>
+            <option value="Partial">{t("common.paymentStatus.partial")}</option>
+            <option value="Unpaid">{t("common.paymentStatus.unpaid")}</option>
           </select>
         </div>
 
+
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Search
+          <label htmlFor="diesel-search" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("common.actions.search")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel={t("diesel.filters.searchPlaceholder")} mode="text"><input
+            id="diesel-search"
             type="text"
             value={filters.search}
             onChange={(event) =>
               updateFilter(setFilters, "search", event.target.value)
             }
-            placeholder="Search diesel..."
+            placeholder={t("diesel.filters.searchPlaceholder")}
             className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
+
       </div>
 
       <div className="mt-5 flex justify-end">
@@ -151,7 +168,7 @@ export default function DieselFilters({
           onClick={onReset}
           className="rounded-lg bg-gray-200 px-5 py-3 text-sm font-bold text-gray-900 transition hover:bg-gray-300"
         >
-          Reset
+          {t("common.actions.reset")}
         </button>
       </div>
     </div>

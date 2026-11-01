@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import TripCards from "@/components/trip-management/TripCards";
 import TripDetailsModal from "@/components/trip-management/TripDetailsModal";
 import TripFilters from "@/components/trip-management/TripFilters";
 import TripForm from "@/components/trip-management/TripForm";
 import TripPrint from "@/components/trip-management/TripPrint";
 import TripTable from "@/components/trip-management/TripTable";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { supabase } from "@/lib/supabase/client";
+import ModulePageHeading from "@/components/shared/ModulePageHeading";
 
 export type TripStatus =
   | "Planned"
@@ -25,6 +27,19 @@ export const TRIP_STATUSES: TripStatus[] = [
   "Completed",
   "Cancelled",
 ];
+
+export function tripStatusTranslationKey(status: TripStatus) {
+  const keys: Record<TripStatus, string> = {
+    Planned: "planned",
+    Loading: "loading",
+    "In Transit": "inTransit",
+    Delivered: "delivered",
+    Completed: "completed",
+    Cancelled: "cancelled",
+  };
+
+  return `tripManagement.statuses.${keys[status]}`;
+}
 
 export type TripDateFilter =
   | "all"
@@ -283,12 +298,14 @@ function isTripInDateFilter(
 }
 
 export default function TripManagement() {
+  const { t, dir } = useLanguage();
   const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
   const [drivers, setDrivers] = useState<DriverOption[]>([]);
   const [bookings, setBookings] = useState<BookingOption[]>([]);
   const [trips, setTrips] = useState<TripRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const mutationInFlightRef = useRef(false);
   const [error, setError] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentAddaId, setCurrentAddaId] = useState<string | null>(null);
@@ -393,8 +410,13 @@ export default function TripManagement() {
     );
   }, [filteredTrips]);
 
+  const loadInitialTrips = useEffectEvent(async () => {
+    await refreshTrips();
+  });
+
   useEffect(() => {
-    refreshTrips();
+    const timer = window.setTimeout(() => void loadInitialTrips(), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   async function loadCurrentContext(): Promise<CurrentContext> {
@@ -609,17 +631,16 @@ export default function TripManagement() {
         loadTrips(context.addaId),
       ]);
     } catch (refreshError) {
-      setError(
-        refreshError instanceof Error
-          ? refreshError.message
-          : "Unable to load trip management data."
-      );
+      console.error("Unable to load trip management data:", refreshError);
+      setError(t("tripManagement.messages.loadFailed"));
     } finally {
       setLoading(false);
     }
   }
 
   async function createTrip(payload: TripPayload) {
+    if (mutationInFlightRef.current) return false;
+    mutationInFlightRef.current = true;
     setSaving(true);
     setError("");
 
@@ -628,6 +649,15 @@ export default function TripManagement() {
         throw new Error(
           "User or adda context is missing. Please refresh the page and try again."
         );
+      }
+      if (
+        !vehicles.some((vehicle) => vehicle.id === payload.vehicle_id) ||
+        (payload.driver_id &&
+          !drivers.some((driver) => driver.id === payload.driver_id)) ||
+        (payload.booking_id &&
+          !bookings.some((booking) => booking.id === payload.booking_id))
+      ) {
+        throw new Error("Trip relations do not belong to the current Adda.");
       }
 
       const { error: createError } = await supabase.from("trips").insert({
@@ -643,18 +673,18 @@ export default function TripManagement() {
       await loadTrips(currentAddaId);
       return true;
     } catch (createError) {
-      setError(
-        createError instanceof Error
-          ? createError.message
-          : "Unable to create trip."
-      );
+      console.error("Unable to create trip:", createError);
+      setError(t("tripManagement.messages.createFailed"));
       return false;
     } finally {
+      mutationInFlightRef.current = false;
       setSaving(false);
     }
   }
 
   async function updateTrip(id: string, payload: TripPayload) {
+    if (mutationInFlightRef.current) return false;
+    mutationInFlightRef.current = true;
     setSaving(true);
     setError("");
 
@@ -663,6 +693,15 @@ export default function TripManagement() {
         throw new Error(
           "Adda context is missing. Please refresh the page and try again."
         );
+      }
+      if (
+        !vehicles.some((vehicle) => vehicle.id === payload.vehicle_id) ||
+        (payload.driver_id &&
+          !drivers.some((driver) => driver.id === payload.driver_id)) ||
+        (payload.booking_id &&
+          !bookings.some((booking) => booking.id === payload.booking_id))
+      ) {
+        throw new Error("Trip relations do not belong to the current Adda.");
       }
 
       const { error: updateError } = await supabase
@@ -679,22 +718,24 @@ export default function TripManagement() {
       await loadTrips(currentAddaId);
       return true;
     } catch (updateError) {
-      setError(
-        updateError instanceof Error
-          ? updateError.message
-          : "Unable to update trip."
-      );
+      console.error("Unable to update trip:", updateError);
+      setError(t("tripManagement.messages.updateFailed"));
       return false;
     } finally {
+      mutationInFlightRef.current = false;
       setSaving(false);
     }
   }
 
   async function deleteTrip(id: string) {
-    const confirmed = window.confirm("Delete this trip record?");
+    if (mutationInFlightRef.current) return false;
+    const confirmed = window.confirm(
+      t("tripManagement.messages.deleteConfirm")
+    );
 
     if (!confirmed) return false;
 
+    mutationInFlightRef.current = true;
     setSaving(true);
     setError("");
 
@@ -721,13 +762,11 @@ export default function TripManagement() {
       await loadTrips(currentAddaId);
       return true;
     } catch (deleteError) {
-      setError(
-        deleteError instanceof Error
-          ? deleteError.message
-          : "Unable to delete trip."
-      );
+      console.error("Unable to delete trip:", deleteError);
+      setError(t("tripManagement.messages.deleteFailed"));
       return false;
     } finally {
+      mutationInFlightRef.current = false;
       setSaving(false);
     }
   }
@@ -743,16 +782,10 @@ export default function TripManagement() {
   }
 
   return (
-    <div className="space-y-8">
-      <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Trip / Chakkar Management
-        </h1>
-        <p className="mt-2 text-base font-medium text-gray-900">
-          Manage vehicle trips, routes, freight, advances, expenses, payments
-          and trip status.
-        </p>
-      </div>
+    <div dir={dir} className="ut-module-page space-y-6">
+      <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <ModulePageHeading icon="trip" accent="orange" title={t("tripManagement.title")} description={t("tripManagement.description")} />
+      </header>
 
       <TripCards summary={summary} loading={loading} />
 

@@ -5,6 +5,8 @@ import {
   type VehicleDocumentStatus,
   type VehicleOption,
 } from "./VehicleDocuments";
+import { useLanguage } from "@/contexts/LanguageContext";
+import VoiceTypingField from "@/components/shared/VoiceTypingField";
 
 type Props = {
   vehicles: VehicleOption[];
@@ -38,27 +40,33 @@ export default function VehicleDocumentFilters({
   selectedDocumentType,
   setSelectedDocumentType,
 }: Props) {
+  const { t, dir } = useLanguage();
+  const statusLabel = (status: VehicleDocumentStatus) =>
+    t(`vehicleDocuments.statuses.${status === "Expiring Soon" ? "expiringSoon" : status.toLowerCase()}`);
+  const documentTypeLabel = (type: string) =>
+    t(`vehicleDocuments.documentTypes.${type.replaceAll(" ", "").replace(/^./, (character) => character.toLowerCase())}`);
   return (
-    <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+    <div dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
       <h2 className="text-2xl font-bold text-gray-900">
-        Vehicle Document Filters
+        {t("vehicleDocuments.filters.title")}
       </h2>
 
+
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <input
+        <VoiceTypingField fieldLabel={t("vehicleDocuments.filters.searchPlaceholder")} mode="text"><input
           type="text"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search documents..."
+          placeholder={t("vehicleDocuments.filters.searchPlaceholder")}
           className="rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 placeholder:text-gray-600"
-        />
+        /></VoiceTypingField>
 
         <select
           value={selectedVehicle}
           onChange={(event) => setSelectedVehicle(event.target.value)}
           className="rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900"
         >
-          <option value="">All Vehicles</option>
+          <option value="">{t("vehicleDocuments.filters.allVehicles")}</option>
           {vehicles.map((vehicle) => (
             <option key={vehicle.id} value={vehicle.id}>
               {vehicle.vehicleNo}
@@ -71,10 +79,10 @@ export default function VehicleDocumentFilters({
           onChange={(event) => setSelectedDocumentType(event.target.value)}
           className="rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900"
         >
-          <option value="">All Document Types</option>
+          <option value="">{t("vehicleDocuments.filters.allTypes")}</option>
           {documentTypes.map((documentType) => (
             <option key={documentType} value={documentType}>
-              {documentType}
+              {documentTypeLabel(documentType)}
             </option>
           ))}
         </select>
@@ -84,14 +92,15 @@ export default function VehicleDocumentFilters({
           onChange={(event) => setSelectedStatus(event.target.value)}
           className="rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900"
         >
-          <option value="">All Status</option>
+          <option value="">{t("vehicleDocuments.filters.allStatuses")}</option>
           {statuses.map((status) => (
             <option key={status} value={status}>
-              {status}
+              {statusLabel(status)}
             </option>
           ))}
         </select>
       </div>
+
     </div>
   );
 }

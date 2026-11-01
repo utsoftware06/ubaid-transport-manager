@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PetrolPumpForm from "@/components/petrolPumps/PetrolPumpForm";
 import PetrolPumpCards from "@/components/petrolPumps/PetrolPumpCards";
 import PetrolPumpTable from "@/components/petrolPumps/PetrolPumpTable";
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/contexts/LanguageContext";
+import ModulePageHeading from "@/components/shared/ModulePageHeading";
 
 export type PetrolPumpDieselEntry = {
   id: number;
@@ -109,6 +111,8 @@ function getSingleRelation<T>(relation: RelatedRecord<T>): T | null {
 }
 
 export default function PetrolPumps() {
+  const { t, dir } = useLanguage();
+  const [addaId, setAddaId] = useState<string | null>(null);
   const [pumpName, setPumpName] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
@@ -126,21 +130,20 @@ export default function PetrolPumps() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const saveInProgressRef = useRef(false);
+  const deleteInProgressRef = useRef(false);
 
   useEffect(() => {
-    loadInitialData();
+    let active = true;
+    void supabase.auth.getUser().then(async ({ data }) => {
+      if (!data.user) return;
+      const { data: profile } = await supabase.from("profiles").select("adda_id,is_active").eq("id", data.user.id).maybeSingle();
+      if (active && profile?.is_active && profile.adda_id) setAddaId(String(profile.adda_id));
+    });
+    return () => { active = false; };
   }, []);
 
-  async function loadInitialData() {
-    setIsLoading(true);
-    setErrorMessage("");
-
-    await Promise.all([loadPetrolPumps(), loadDieselEntries(), loadPayments()]);
-
-    setIsLoading(false);
-  }
-
-  async function loadPetrolPumps() {
+  const loadPetrolPumps = useCallback(async () => {
     const { data, error } = await supabase
       .from("petrol_pumps")
       .select(
@@ -149,15 +152,16 @@ export default function PetrolPumps() {
       .order("pump_name", { ascending: true });
 
     if (error) {
-      setErrorMessage(error.message);
+      console.error("Failed to load petrol pumps:", error);
+      setErrorMessage(t("petrolPumps.messages.loadFailed"));
       setPumps([]);
       return;
     }
 
     setPumps((data ?? []) as PetrolPumpDatabaseRow[]);
-  }
+  }, [t]);
 
-  async function loadDieselEntries() {
+  const loadDieselEntries = useCallback(async () => {
     const { data, error } = await supabase
       .from("diesel_entries")
       .select(
@@ -181,7 +185,8 @@ export default function PetrolPumps() {
       .order("entry_date", { ascending: false });
 
     if (error) {
-      setErrorMessage(error.message);
+      console.error("Failed to load petrol pump diesel entries:", error);
+      setErrorMessage(t("petrolPumps.messages.loadFailed"));
       setDieselEntries([]);
       return;
     }
@@ -207,21 +212,34 @@ export default function PetrolPumps() {
         };
       })
     );
-  }
+  }, [t]);
 
-  async function loadPayments() {
+  const loadPayments = useCallback(async () => {
     const { data, error } = await supabase
       .from("petrol_pump_payments")
       .select("id, petrol_pump_id, amount");
 
     if (error) {
-      setErrorMessage(error.message);
+      console.error("Failed to load petrol pump payments:", error);
+      setErrorMessage(t("petrolPumps.messages.loadFailed"));
       setPayments([]);
       return;
     }
 
     setPayments((data ?? []) as PetrolPumpPaymentDatabaseRow[]);
-  }
+  }, [t]);
+
+  const loadInitialData = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage("");
+    await Promise.all([loadPetrolPumps(), loadDieselEntries(), loadPayments()]);
+    setIsLoading(false);
+  }, [loadDieselEntries, loadPayments, loadPetrolPumps]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadInitialData(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadInitialData]);
 
   function resetForm() {
     setPumpName("");
@@ -234,12 +252,13 @@ export default function PetrolPumps() {
 
   function validateForm() {
     if (!pumpName.trim()) {
-      alert("Pump name is required.");
+      alert(t("petrolPumps.validation.pumpRequired"));
       return false;
     }
 
-    if (Number(openingBalance || 0) < 0) {
-      alert("Opening balance cannot be negative.");
+    const openingValue = Number(openingBalance || 0);
+    if (!Number.isFinite(openingValue) || openingValue < 0) {
+      alert(t("petrolPumps.validation.openingNonNegative"));
       return false;
     }
 
@@ -247,8 +266,10 @@ export default function PetrolPumps() {
   }
 
   async function handleSave() {
+    if (saveInProgressRef.current) return;
     if (!validateForm()) return;
 
+    saveInProgressRef.current = true;
     setIsSaving(true);
 
     const payload = {
@@ -259,25 +280,32 @@ export default function PetrolPumps() {
       opening_balance: Number(openingBalance || 0),
     };
 
-    const result = editingId
-      ? await supabase.from("petrol_pumps").update(payload).eq("id", editingId)
-      : await supabase.from("petrol_pumps").insert(payload);
+    try {
+      const result = editingId
+        ? await supabase.from("petrol_pumps").update(payload).eq("id", editingId)
+        : await supabase.from("petrol_pumps").insert(payload);
 
-    setIsSaving(false);
+      if (result.error) {
+        console.error("Failed to save petrol pump:", result.error);
+        alert(t("petrolPumps.messages.saveFailed"));
+        return;
+      }
 
-    if (result.error) {
-      alert(result.error.message);
-      return;
+      alert(
+        editingId
+          ? t("petrolPumps.messages.updated")
+          : t("petrolPumps.messages.saved")
+      );
+
+      resetForm();
+      await loadPetrolPumps();
+    } catch (error) {
+      console.error("Failed to save petrol pump:", error);
+      alert(t("petrolPumps.messages.saveFailed"));
+    } finally {
+      saveInProgressRef.current = false;
+      setIsSaving(false);
     }
-
-    alert(
-      editingId
-        ? "Petrol pump updated successfully!"
-        : "Petrol pump saved successfully!"
-    );
-
-    resetForm();
-    await loadPetrolPumps();
   }
 
   function handleEdit(row: PetrolPumpRow) {
@@ -290,35 +318,50 @@ export default function PetrolPumps() {
   }
 
   async function handleDelete(row: PetrolPumpRow) {
+    if (deleteInProgressRef.current) return;
+
     if (row.dieselEntries.length > 0) {
       alert(
-        "This petrol pump cannot be deleted because diesel records are linked with it."
+        t("petrolPumps.messages.deleteLinked")
       );
       return;
     }
 
-    const confirmed = window.confirm(`Delete petrol pump ${row.pumpName}?`);
-
-    if (!confirmed) return;
-
-    setIsDeleting(true);
-
-    const { error } = await supabase
-      .from("petrol_pumps")
-      .delete()
-      .eq("id", row.id);
-
-    setIsDeleting(false);
-
-    if (error) {
-      alert(error.message);
+    if (payments.some((payment) => payment.petrol_pump_id === row.id)) {
+      alert(t("petrolPumps.messages.deletePaymentLinked"));
       return;
     }
 
-    if (editingId === row.id) resetForm();
+    const confirmed = window.confirm(`${t("petrolPumps.messages.deleteConfirm")} ${row.pumpName}?`);
 
-    alert("Petrol pump deleted successfully!");
-    await loadPetrolPumps();
+    if (!confirmed) return;
+
+    deleteInProgressRef.current = true;
+    setIsDeleting(true);
+
+    try {
+      const { error } = await supabase
+        .from("petrol_pumps")
+        .delete()
+        .eq("id", row.id);
+
+      if (error) {
+        console.error("Failed to delete petrol pump:", error);
+        alert(t("petrolPumps.messages.deleteFailed"));
+        return;
+      }
+
+      if (editingId === row.id) resetForm();
+
+      alert(t("petrolPumps.messages.deleted"));
+      await loadPetrolPumps();
+    } catch (error) {
+      console.error("Failed to delete petrol pump:", error);
+      alert(t("petrolPumps.messages.deleteFailed"));
+    } finally {
+      deleteInProgressRef.current = false;
+      setIsDeleting(false);
+    }
   }
 
   const rows = useMemo<PetrolPumpRow[]>(() => {
@@ -391,16 +434,10 @@ export default function PetrolPumps() {
   }, [filteredRows]);
 
   return (
-    <div className="space-y-8">
-      <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Petrol Pump Management
-        </h1>
-        <p className="mt-2 text-base font-medium text-gray-900">
-          Manage petrol pumps, opening balances, diesel totals, actual payments
-          and outstanding balances.
-        </p>
-      </div>
+    <div dir={dir} className="ut-module-page space-y-6">
+      <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <ModulePageHeading icon="diesel" accent="green" title={t("petrolPumps.title")} description={t("petrolPumps.description")} />
+      </header>
 
       <PetrolPumpCards summary={summary} />
 
@@ -423,6 +460,7 @@ export default function PetrolPumps() {
 
       <PetrolPumpTable
         rows={filteredRows}
+        addaId={addaId}
         search={search}
         setSearch={setSearch}
         onEdit={handleEdit}

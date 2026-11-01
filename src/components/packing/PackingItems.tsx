@@ -1,35 +1,30 @@
-type LoadingItem = {
-  id: number;
-  loading_id: number;
-  item_name: string;
-  quantity: number;
-  weight: number;
-  unit: string;
-  remarks: string | null;
-};
-
-type LoadingRecord = {
-  id: number;
-  loading_no: string;
-  loading_date: string;
-  route: string;
-  vehicles?: {
-    vehicle_no: string;
-  } | null;
-  drivers?: {
-    name: string;
-  } | null;
-};
+import type {
+  PackingLoadingItem as LoadingItem,
+  PackingLoadingRecord as LoadingRecord,
+} from "@/types/packing";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 type PackingItemsProps = {
   selectedLoading: LoadingRecord | null;
   loadingItems: LoadingItem[];
 };
 
+function getUnitLabel(unit: string, t: (key: string) => string): string {
+  const unitKey = {
+    Kg: "kg",
+    Ton: "ton",
+    Bag: "bag",
+    Piece: "piece",
+  }[unit];
+
+  return unitKey ? t(`packing.units.${unitKey}`) : unit;
+}
+
 export default function PackingItems({
   selectedLoading,
   loadingItems,
 }: PackingItemsProps) {
+  const { t, dir } = useLanguage();
   const totalQuantity = loadingItems.reduce(
     (total, item) => total + Number(item.quantity || 0),
     0
@@ -40,38 +35,38 @@ export default function PackingItems({
   );
 
   return (
-    <div className="mt-10 rounded-xl border border-gray-200 bg-gray-50 p-6">
+    <div dir={dir} className="mt-10 rounded-xl border border-gray-300 bg-white p-6 shadow-md">
       <div className="mb-6 flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Packing Items</h2>
+          <h2 className="text-2xl font-bold text-gray-900">{t("packing.items.title")}</h2>
           <p className="mt-1 text-sm font-semibold text-gray-900">
-            Items loaded automatically from Loading:{" "}
+            {t("packing.items.loadedFrom")}:{" "}
             {selectedLoading?.loading_no ?? "-"}
           </p>
         </div>
 
         <div className="grid grid-cols-1 gap-3 text-sm font-semibold text-gray-900 sm:grid-cols-3">
-          <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
-            Items: {loadingItems.length}
+          <div className="rounded-lg border border-gray-300 bg-white px-4 py-3 shadow-sm">
+            {t("common.items")}: <span dir="ltr">{loadingItems.length}</span>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
-            Qty: {totalQuantity}
+          <div className="rounded-lg border border-gray-300 bg-white px-4 py-3 shadow-sm">
+            {t("packing.items.qty")}: <span dir="ltr">{totalQuantity}</span>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
-            Weight: {totalWeight}
+          <div className="rounded-lg border border-gray-300 bg-white px-4 py-3 shadow-sm">
+            {t("common.weight")}: <span dir="ltr">{totalWeight}</span>
           </div>
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-gray-300 bg-white">
         <table className="w-full min-w-[760px] border-collapse text-sm text-gray-900">
           <thead className="bg-green-600 text-white">
             <tr>
-              <th className="p-3 text-left font-bold">Item Name</th>
-              <th className="p-3 text-right font-bold">Quantity</th>
-              <th className="p-3 text-right font-bold">Weight</th>
-              <th className="p-3 text-left font-bold">Unit</th>
-              <th className="p-3 text-left font-bold">Remarks</th>
+              <th className="p-3 text-start font-bold">{t("packing.items.itemName")}</th>
+              <th className="p-3 text-end font-bold">{t("common.quantity")}</th>
+              <th className="p-3 text-end font-bold">{t("common.weight")}</th>
+              <th className="p-3 text-start font-bold">{t("common.unit")}</th>
+              <th className="p-3 text-start font-bold">{t("common.remarks")}</th>
             </tr>
           </thead>
 
@@ -82,7 +77,7 @@ export default function PackingItems({
                   colSpan={5}
                   className="p-6 text-center text-base font-semibold text-gray-900"
                 >
-                  No loading items found.
+                  {t("packing.items.empty")}
                 </td>
               </tr>
             )}
@@ -95,13 +90,15 @@ export default function PackingItems({
                 <td className="p-3 font-semibold text-gray-900">
                   {item.item_name}
                 </td>
-                <td className="p-3 text-right font-semibold text-gray-900">
+                <td dir="ltr" className="p-3 text-end font-semibold text-gray-900">
                   {item.quantity}
                 </td>
-                <td className="p-3 text-right font-semibold text-gray-900">
+                <td dir="ltr" className="p-3 text-end font-semibold text-gray-900">
                   {item.weight}
                 </td>
-                <td className="p-3 font-semibold text-gray-900">{item.unit}</td>
+                <td className="p-3 font-semibold text-gray-900">
+                  {getUnitLabel(item.unit, t)}
+                </td>
                 <td className="p-3 font-semibold text-gray-900">
                   {item.remarks || "-"}
                 </td>
@@ -110,11 +107,11 @@ export default function PackingItems({
           </tbody>
 
           {loadingItems.length > 0 && (
-            <tfoot className="bg-gray-50 text-gray-900">
+            <tfoot className="border-t-2 border-gray-300 bg-white text-gray-900">
               <tr>
-                <td className="p-3 font-bold">Total</td>
-                <td className="p-3 text-right font-bold">{totalQuantity}</td>
-                <td className="p-3 text-right font-bold">{totalWeight}</td>
+                <td className="p-3 font-bold">{t("common.total")}</td>
+                <td dir="ltr" className="p-3 text-end font-bold">{totalQuantity}</td>
+                <td dir="ltr" className="p-3 text-end font-bold">{totalWeight}</td>
                 <td className="p-3 font-bold" colSpan={2}></td>
               </tr>
             </tfoot>

@@ -1,25 +1,33 @@
 import { forwardRef } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
+import type { Booking } from "./types";
+import { usePrintAddaName } from "@/lib/print/usePrintAddaName";
+
 type BookingSlipProps = {
-  booking: any;
+  booking: Booking | null;
 };
 
 const BookingSlip = forwardRef<HTMLDivElement, BookingSlipProps>(
   ({ booking }, ref) => {
+  const { t, dir, language } = useLanguage();
+  const addaName = usePrintAddaName(booking?.adda_id, language === "ur" ? "ur" : "en");
   if (!booking) return null;
 
   return (
     <div
   ref={ref}
   id="booking-slip"
+  dir={dir}
+  lang={language}
   className="bg-white text-black p-8"
 >
       <div className="border-2 border-black p-6">
         <h1 className="text-3xl font-bold text-center">
-          UT Software
+          {addaName}
         </h1>
 
         <p className="text-center mb-6">
-          Bilty Receipt
+          {t("bookings.receipt.title")}
         </p>
 
         <hr className="my-4" />
@@ -27,53 +35,58 @@ const BookingSlip = forwardRef<HTMLDivElement, BookingSlipProps>(
         <div className="grid grid-cols-2 gap-4">
 
           <p>
-            <strong>Bilty No:</strong>{" "}
-            {booking.booking_no}
+            <strong>{t("bookings.receipt.biltyNo")}:</strong>{" "}
+            <span dir="ltr">{booking.booking_no}</span>
           </p>
 
           <p>
-            <strong>Date:</strong>{" "}
-            {booking.booking_date}
+            <strong>{t("common.date")}:</strong>{" "}
+            <span dir="ltr">{booking.booking_date}</span>
           </p>
 
           <p>
-            <strong>Sender:</strong>{" "}
+            <strong>{t("bookings.party")}:</strong>{" "}
+            {booking.parties?.name ?? booking.sender_name}
+          </p>
+
+          <p>
+            <strong>{t("bookings.sender")}:</strong>{" "}
             {booking.sender_name}
           </p>
 
           <p>
-            <strong>Receiver:</strong>{" "}
+            <strong>{t("bookings.receiver")}:</strong>{" "}
             {booking.receiver_name}
           </p>
 
           <p>
-            <strong>From:</strong>{" "}
+            <strong>{t("bookings.from")}:</strong>{" "}
             {booking.from_city}
           </p>
 
           <p>
-            <strong>To:</strong>{" "}
+            <strong>{t("bookings.to")}:</strong>{" "}
             {booking.to_city}
           </p>
 
           <p>
-            <strong>Goods:</strong>{" "}
+            <strong>{t("bookings.goods")}:</strong>{" "}
             {booking.goods_name}
           </p>
 
           <p>
-            <strong>Weight:</strong>{" "}
-            {booking.weight}
+            <strong>{t("common.weight")}:</strong>{" "}
+            <span dir="ltr">{booking.weight}</span>
           </p>
 
           <p>
-            <strong>Quantity:</strong>{" "}
-            {booking.quantity}
+            <strong>{t("common.quantity")}:</strong>{" "}
+            <span dir="ltr">{booking.quantity}</span>
           </p>
 
           <p>
-            <strong>Freight:</strong>{" "}
-            Rs. {booking.freight}
+            <strong>{t("common.freight")}:</strong>{" "}
+            <span dir="ltr">Rs. {booking.freight}</span>
           </p>
 
         </div>
@@ -83,13 +96,13 @@ const BookingSlip = forwardRef<HTMLDivElement, BookingSlipProps>(
           <div>
             ___________________
             <br />
-            Sender Signature
+            {t("bookings.receipt.senderSignature")}
           </div>
 
           <div>
             ___________________
             <br />
-            Receiver Signature
+            {t("bookings.receipt.receiverSignature")}
           </div>
 
         </div>
@@ -98,5 +111,7 @@ const BookingSlip = forwardRef<HTMLDivElement, BookingSlipProps>(
     </div>
     );
 });
+
+BookingSlip.displayName = "BookingSlip";
 
 export default BookingSlip;

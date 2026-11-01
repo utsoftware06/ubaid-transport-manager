@@ -6,22 +6,18 @@ import {
   formatAmount,
   formatLiters,
 } from "./Diesel";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { escapeHtml } from "@/lib/print/escapeHtml";
+import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
+import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
 
 type Props = {
   rows: DieselEntryRow[];
   isLoading: boolean;
   errorMessage: string;
   filters: DieselFilterValues;
+  addaId: string | null;
 };
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
 
 function getStatusClass(status: string) {
   if (status === "Paid") return "border-green-200 bg-green-100 text-green-700";
@@ -31,22 +27,25 @@ function getStatusClass(status: string) {
   return "border-red-200 bg-red-100 text-red-700";
 }
 
-function dateRange(filters: DieselFilterValues) {
-  if (filters.fromDate && filters.toDate) {
-    return `${filters.fromDate} to ${filters.toDate}`;
-  }
-
-  if (filters.fromDate) return `From ${filters.fromDate}`;
-  if (filters.toDate) return `Up to ${filters.toDate}`;
-  return "All Dates";
-}
-
 export default function DieselTable({
   rows,
   isLoading,
   errorMessage,
   filters,
+  addaId,
 }: Props) {
+  const { t, dir, language } = useLanguage();
+  const modulePrint = useModuleTransportPrint("diesel", addaId, language);
+  const statusLabel = (status: string) =>
+    t(`common.paymentStatus.${status.toLowerCase()}`);
+  const dateRange = () => {
+    if (filters.fromDate && filters.toDate) {
+      return `${filters.fromDate} ${t("diesel.print.to")} ${filters.toDate}`;
+    }
+    if (filters.fromDate) return `${t("common.fromDate")}: ${filters.fromDate}`;
+    if (filters.toDate) return `${t("diesel.print.upTo")}: ${filters.toDate}`;
+    return t("diesel.print.allDates");
+  };
   const totalLiters = rows.reduce((total, row) => total + row.liters, 0);
   const totalAmount = rows.reduce((total, row) => total + row.totalAmount, 0);
   const totalPaid = rows.reduce((total, row) => total + row.paidAmount, 0);
@@ -57,28 +56,28 @@ export default function DieselTable({
 
   function printRows(printRowsList: DieselEntryRow[]) {
     if (printRowsList.length === 0) {
-      return `<tr><td colspan="15" class="empty">No diesel records found.</td></tr>`;
+      return `<tr><td colspan="15" class="empty">${escapeHtml(t("diesel.empty"))}</td></tr>`;
     }
 
     return printRowsList
       .map(
         (row) => `
           <tr>
-            <td>${escapeHtml(row.entryDate || "-")}</td>
-            <td>${escapeHtml(row.expenseNo || "-")}</td>
+            <td class="technical">${escapeHtml(row.entryDate || "-")}</td>
+            <td class="technical">${escapeHtml(row.expenseNo || "-")}</td>
             <td>${escapeHtml(row.pumpName || "-")}</td>
-            <td>${escapeHtml(row.vehicleNo || "-")}</td>
+            <td class="technical">${escapeHtml(row.vehicleNo || "-")}</td>
             <td>${escapeHtml(row.vehicleOwner || "-")}</td>
             <td>${escapeHtml(row.driverName || "-")}</td>
-            <td>${escapeHtml(row.loadingNo || "-")}</td>
+            <td class="technical">${escapeHtml(row.loadingNo || "-")}</td>
             <td>${escapeHtml(row.route || "-")}</td>
-            <td>${escapeHtml(row.slipNo || "-")}</td>
-            <td>${escapeHtml(formatLiters(row.liters))}</td>
-            <td>${escapeHtml(formatAmount(row.rate))}</td>
-            <td>${escapeHtml(formatAmount(row.totalAmount))}</td>
-            <td>${escapeHtml(formatAmount(row.paidAmount))}</td>
-            <td>${escapeHtml(formatAmount(row.remainingAmount))}</td>
-            <td>${escapeHtml(row.paymentStatus)}</td>
+            <td class="technical">${escapeHtml(row.slipNo || "-")}</td>
+            <td class="technical">${escapeHtml(formatLiters(row.liters))}</td>
+            <td class="technical">${escapeHtml(formatAmount(row.rate))}</td>
+            <td class="technical">${escapeHtml(formatAmount(row.totalAmount))}</td>
+            <td class="technical">${escapeHtml(formatAmount(row.paidAmount))}</td>
+            <td class="technical">${escapeHtml(formatAmount(row.remainingAmount))}</td>
+            <td>${escapeHtml(statusLabel(row.paymentStatus))}</td>
           </tr>
         `
       )
@@ -86,18 +85,29 @@ export default function DieselTable({
   }
 
   function handlePrintEntry(row: DieselEntryRow) {
+    const body = `<div class="details">${[
+      [t("common.date"), row.entryDate], [t("diesel.fields.expenseNo"), row.expenseNo], [t("diesel.fields.petrolPump"), row.pumpName],
+      [t("diesel.fields.pumpOwner"), row.pumpOwner], [t("common.vehicle"), row.vehicleNo], [t("diesel.fields.vehicleOwner"), row.vehicleOwner],
+      [t("common.driver"), row.driverName], [t("diesel.fields.loading"), row.loadingNo], [t("common.route"), row.route], [t("diesel.fields.slipNo"), row.slipNo],
+      [t("diesel.fields.liters"), formatLiters(row.liters)], [t("diesel.fields.rate"), formatAmount(row.rate)], [t("common.total"), formatAmount(row.totalAmount)],
+      [t("common.paid"), formatAmount(row.paidAmount)], [t("common.remaining"), formatAmount(row.remainingAmount)], [t("common.status"), statusLabel(row.paymentStatus)], [t("common.remarks"), row.remarks],
+    ].map(([label,value])=>`<div><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</div>`).join("")}</div>`;
+    modulePrint.open(t("diesel.print.entryTitle"), body, () => legacyPrintEntry(row));
+  }
+
+  function legacyPrintEntry(row: DieselEntryRow) {
     const printWindow = window.open("", "_blank", "width=1000,height=800");
 
     if (!printWindow) {
-      alert("Please allow popups to print diesel entry.");
+      alert(t("diesel.messages.allowEntryPopups"));
       return;
     }
 
-    printWindow.document.write(`
+    void writeAddaBrandedPrintDocument(printWindow, `
       <!doctype html>
-      <html>
+      <html lang="${language}" dir="${dir}">
         <head>
-          <title>Diesel Entry - ${escapeHtml(row.slipNo)}</title>
+          <title>${escapeHtml(t("diesel.print.entryTitle"))} - ${escapeHtml(row.slipNo)}</title>
           <style>
             * { box-sizing: border-box; }
             body {
@@ -106,6 +116,8 @@ export default function DieselTable({
               color: #111827;
               font-family: Arial, sans-serif;
               background: #ffffff;
+              direction: ${dir};
+              text-align: start;
             }
             .slip {
               max-width: 900px;
@@ -124,7 +136,7 @@ export default function DieselTable({
             }
             h1 { margin: 0; font-size: 28px; color: #111827; }
             h2 { margin: 4px 0 0; font-size: 18px; color: #111827; }
-            .meta { text-align: right; line-height: 1.7; font-size: 14px; }
+            .meta { text-align: end; line-height: 1.7; font-size: 14px; }
             .details {
               display: grid;
               grid-template-columns: repeat(2, 1fr);
@@ -135,37 +147,38 @@ export default function DieselTable({
               border-bottom: 1px solid #e5e7eb;
               padding-bottom: 8px;
             }
+            .technical { direction: ltr; unicode-bidi: isolate; }
           </style>
         </head>
         <body>
           <div class="slip">
             <div class="header">
               <div>
-                <h1>UT Software</h1>
-                <h2>Diesel Entry</h2>
+                <h1>${PRINT_ADDA_NAME_TOKEN}</h1>
+                <h2>${escapeHtml(t("diesel.print.entryTitle"))}</h2>
               </div>
               <div class="meta">
-                <div><strong>Date:</strong> ${escapeHtml(row.entryDate)}</div>
-                <div><strong>Expense No:</strong> ${escapeHtml(row.expenseNo)}</div>
+                <div><strong>${escapeHtml(t("common.date"))}:</strong> <span class="technical">${escapeHtml(row.entryDate)}</span></div>
+                <div><strong>${escapeHtml(t("diesel.fields.expenseNo"))}:</strong> <span class="technical">${escapeHtml(row.expenseNo)}</span></div>
               </div>
             </div>
 
             <div class="details">
-              <div><strong>Petrol Pump:</strong> ${escapeHtml(row.pumpName)}</div>
-              <div><strong>Pump Owner:</strong> ${escapeHtml(row.pumpOwner)}</div>
-              <div><strong>Vehicle:</strong> ${escapeHtml(row.vehicleNo)}</div>
-              <div><strong>Vehicle Owner:</strong> ${escapeHtml(row.vehicleOwner)}</div>
-              <div><strong>Driver:</strong> ${escapeHtml(row.driverName)}</div>
-              <div><strong>Loading:</strong> ${escapeHtml(row.loadingNo)}</div>
-              <div><strong>Route:</strong> ${escapeHtml(row.route)}</div>
-              <div><strong>Slip No:</strong> ${escapeHtml(row.slipNo)}</div>
-              <div><strong>Litres:</strong> ${escapeHtml(formatLiters(row.liters))}</div>
-              <div><strong>Rate:</strong> ${escapeHtml(formatAmount(row.rate))}</div>
-              <div><strong>Total:</strong> ${escapeHtml(formatAmount(row.totalAmount))}</div>
-              <div><strong>Paid:</strong> ${escapeHtml(formatAmount(row.paidAmount))}</div>
-              <div><strong>Remaining:</strong> ${escapeHtml(formatAmount(row.remainingAmount))}</div>
-              <div><strong>Status:</strong> ${escapeHtml(row.paymentStatus)}</div>
-              <div><strong>Remarks:</strong> ${escapeHtml(row.remarks)}</div>
+              <div><strong>${escapeHtml(t("diesel.fields.petrolPump"))}:</strong> ${escapeHtml(row.pumpName)}</div>
+              <div><strong>${escapeHtml(t("diesel.fields.pumpOwner"))}:</strong> ${escapeHtml(row.pumpOwner)}</div>
+              <div><strong>${escapeHtml(t("common.vehicle"))}:</strong> <span class="technical">${escapeHtml(row.vehicleNo)}</span></div>
+              <div><strong>${escapeHtml(t("diesel.fields.vehicleOwner"))}:</strong> ${escapeHtml(row.vehicleOwner)}</div>
+              <div><strong>${escapeHtml(t("common.driver"))}:</strong> ${escapeHtml(row.driverName)}</div>
+              <div><strong>${escapeHtml(t("diesel.fields.loading"))}:</strong> <span class="technical">${escapeHtml(row.loadingNo)}</span></div>
+              <div><strong>${escapeHtml(t("common.route"))}:</strong> ${escapeHtml(row.route)}</div>
+              <div><strong>${escapeHtml(t("diesel.fields.slipNo"))}:</strong> <span class="technical">${escapeHtml(row.slipNo)}</span></div>
+              <div><strong>${escapeHtml(t("diesel.fields.liters"))}:</strong> <span class="technical">${escapeHtml(formatLiters(row.liters))}</span></div>
+              <div><strong>${escapeHtml(t("diesel.fields.rate"))}:</strong> <span class="technical">${escapeHtml(formatAmount(row.rate))}</span></div>
+              <div><strong>${escapeHtml(t("common.total"))}:</strong> <span class="technical">${escapeHtml(formatAmount(row.totalAmount))}</span></div>
+              <div><strong>${escapeHtml(t("common.paid"))}:</strong> <span class="technical">${escapeHtml(formatAmount(row.paidAmount))}</span></div>
+              <div><strong>${escapeHtml(t("common.remaining"))}:</strong> <span class="technical">${escapeHtml(formatAmount(row.remainingAmount))}</span></div>
+              <div><strong>${escapeHtml(t("common.status"))}:</strong> ${escapeHtml(statusLabel(row.paymentStatus))}</div>
+              <div><strong>${escapeHtml(t("common.remarks"))}:</strong> ${escapeHtml(row.remarks)}</div>
             </div>
           </div>
 
@@ -177,24 +190,30 @@ export default function DieselTable({
           </script>
         </body>
       </html>
-    `);
-
-    printWindow.document.close();
+    `, addaId, language === "ur" ? "ur" : "en");
   }
 
   function handlePrintReport() {
+    const body = `<div class="grid">${[
+      [t("diesel.print.dateRange"), dateRange()], [t("diesel.cards.totalEntries"), String(rows.length)], [t("diesel.cards.totalLiters"), formatLiters(totalLiters)],
+      [t("diesel.cards.totalAmount"), formatAmount(totalAmount)], [t("diesel.cards.totalPaid"), formatAmount(totalPaid)], [t("diesel.cards.totalRemaining"), formatAmount(totalRemaining)],
+    ].map(([label,value])=>`<div><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</div>`).join("")}</div><table><thead><tr>${["common.date","diesel.fields.expenseNo","diesel.fields.pump","common.vehicle","common.owner","common.driver","diesel.fields.loading","common.route","diesel.fields.slipNo","diesel.fields.liters","diesel.fields.rate","common.total","common.paid","common.remaining","common.status"].map(key=>`<th>${escapeHtml(t(key))}</th>`).join("")}</tr></thead><tbody>${printRows(rows)}</tbody></table>`;
+    modulePrint.open(t("diesel.print.reportTitle"), body, legacyPrintReport);
+  }
+
+  function legacyPrintReport() {
     const printWindow = window.open("", "_blank", "width=1200,height=800");
 
     if (!printWindow) {
-      alert("Please allow popups to print diesel report.");
+      alert(t("diesel.messages.allowReportPopups"));
       return;
     }
 
-    printWindow.document.write(`
+    void writeAddaBrandedPrintDocument(printWindow, `
       <!doctype html>
-      <html>
+      <html lang="${language}" dir="${dir}">
         <head>
-          <title>Diesel Report</title>
+          <title>${escapeHtml(t("diesel.print.reportTitle"))}</title>
           <style>
             * { box-sizing: border-box; }
             @page { size: A4 landscape; margin: 10mm; }
@@ -203,6 +222,8 @@ export default function DieselTable({
               color: #111827;
               font-family: Arial, sans-serif;
               background: #ffffff;
+              direction: ${dir};
+              text-align: start;
             }
             .header {
               display: flex;
@@ -215,7 +236,7 @@ export default function DieselTable({
             h1 { margin: 0; font-size: 28px; color: #111827; }
             h2 { margin: 4px 0 0; font-size: 18px; color: #111827; }
             .meta {
-              text-align: right;
+              text-align: end;
               font-size: 13px;
               line-height: 1.7;
               color: #111827;
@@ -250,7 +271,7 @@ export default function DieselTable({
             th {
               background: #2563eb;
               color: #ffffff;
-              text-align: left;
+              text-align: start;
               padding: 6px;
               border: 1px solid #2563eb;
               white-space: nowrap;
@@ -271,41 +292,42 @@ export default function DieselTable({
               font-weight: 700;
               padding: 18px;
             }
+            .technical, .box-value, tfoot td { direction: ltr; unicode-bidi: isolate; }
           </style>
         </head>
         <body>
           <div class="header">
             <div>
-              <h1>UT Software</h1>
-              <h2>Diesel Report</h2>
+              <h1>${PRINT_ADDA_NAME_TOKEN}</h1>
+              <h2>${escapeHtml(t("diesel.print.reportTitle"))}</h2>
             </div>
             <div class="meta">
-              <div><strong>Date Range:</strong> ${escapeHtml(dateRange(filters))}</div>
-              <div><strong>Printed:</strong> ${escapeHtml(
+              <div><strong>${escapeHtml(t("diesel.print.dateRange"))}:</strong> <span class="technical">${escapeHtml(dateRange())}</span></div>
+              <div><strong>${escapeHtml(t("diesel.print.printed"))}:</strong> <span class="technical">${escapeHtml(
                 new Date().toLocaleString("en-PK")
-              )}</div>
+              )}</span></div>
             </div>
           </div>
 
           <div class="summary">
             <div class="box">
-              <div class="box-title">Total Entries</div>
+              <div class="box-title">${escapeHtml(t("diesel.cards.totalEntries"))}</div>
               <div class="box-value">${rows.length}</div>
             </div>
             <div class="box">
-              <div class="box-title">Total Litres</div>
+              <div class="box-title">${escapeHtml(t("diesel.cards.totalLiters"))}</div>
               <div class="box-value">${escapeHtml(formatLiters(totalLiters))}</div>
             </div>
             <div class="box">
-              <div class="box-title">Total Amount</div>
+              <div class="box-title">${escapeHtml(t("diesel.cards.totalAmount"))}</div>
               <div class="box-value">${escapeHtml(formatAmount(totalAmount))}</div>
             </div>
             <div class="box">
-              <div class="box-title">Total Paid</div>
+              <div class="box-title">${escapeHtml(t("diesel.cards.totalPaid"))}</div>
               <div class="box-value">${escapeHtml(formatAmount(totalPaid))}</div>
             </div>
             <div class="box">
-              <div class="box-title">Total Remaining</div>
+              <div class="box-title">${escapeHtml(t("diesel.cards.totalRemaining"))}</div>
               <div class="box-value">${escapeHtml(formatAmount(totalRemaining))}</div>
             </div>
           </div>
@@ -313,27 +335,27 @@ export default function DieselTable({
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Expense No</th>
-                <th>Pump</th>
-                <th>Vehicle</th>
-                <th>Owner</th>
-                <th>Driver</th>
-                <th>Loading</th>
-                <th>Route</th>
-                <th>Slip No</th>
-                <th>Litres</th>
-                <th>Rate</th>
-                <th>Total</th>
-                <th>Paid</th>
-                <th>Remaining</th>
-                <th>Status</th>
+                <th>${escapeHtml(t("common.date"))}</th>
+                <th>${escapeHtml(t("diesel.fields.expenseNo"))}</th>
+                <th>${escapeHtml(t("diesel.fields.pump"))}</th>
+                <th>${escapeHtml(t("common.vehicle"))}</th>
+                <th>${escapeHtml(t("common.owner"))}</th>
+                <th>${escapeHtml(t("common.driver"))}</th>
+                <th>${escapeHtml(t("diesel.fields.loading"))}</th>
+                <th>${escapeHtml(t("common.route"))}</th>
+                <th>${escapeHtml(t("diesel.fields.slipNo"))}</th>
+                <th>${escapeHtml(t("diesel.fields.liters"))}</th>
+                <th>${escapeHtml(t("diesel.fields.rate"))}</th>
+                <th>${escapeHtml(t("common.total"))}</th>
+                <th>${escapeHtml(t("common.paid"))}</th>
+                <th>${escapeHtml(t("common.remaining"))}</th>
+                <th>${escapeHtml(t("common.status"))}</th>
               </tr>
             </thead>
             <tbody>${printRows(rows)}</tbody>
             <tfoot>
               <tr>
-                <td colspan="9">Total</td>
+                <td colspan="9">${escapeHtml(t("common.total"))}</td>
                 <td>${escapeHtml(formatLiters(totalLiters))}</td>
                 <td></td>
                 <td>${escapeHtml(formatAmount(totalAmount))}</td>
@@ -352,18 +374,18 @@ export default function DieselTable({
           </script>
         </body>
       </html>
-    `);
-
-    printWindow.document.close();
+    `, addaId, language === "ur" ? "ur" : "en");
   }
 
   return (
-    <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+    <div dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
       <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Diesel Entries</h2>
+          <h2 className="text-2xl font-bold text-gray-900">
+            {t("diesel.entriesTitle")}
+          </h2>
           <p className="mt-1 text-sm font-semibold text-gray-900">
-            Read-only diesel entries generated from Expense Vouchers.
+            {t("diesel.entriesDescription")}
           </p>
         </div>
 
@@ -372,13 +394,13 @@ export default function DieselTable({
           onClick={handlePrintReport}
           className="rounded-lg bg-gray-900 px-5 py-3 text-sm font-bold text-white transition hover:bg-gray-800"
         >
-          Print Diesel Report
+          {t("diesel.actions.printReport")}
         </button>
       </div>
 
       {isLoading && (
         <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm font-bold text-blue-700">
-          Loading diesel entries...
+          {t("diesel.loading")}
         </div>
       )}
 
@@ -390,7 +412,7 @@ export default function DieselTable({
 
       {!isLoading && !errorMessage && rows.length === 0 && (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center text-sm font-bold text-gray-900">
-          No diesel records found.
+          {t("diesel.empty")}
         </div>
       )}
 
@@ -399,23 +421,23 @@ export default function DieselTable({
           <table className="w-full min-w-[1700px] border-collapse bg-white text-sm text-gray-900">
             <thead className="bg-blue-600 text-white">
               <tr>
-                <th className="p-3 text-left font-bold">Date</th>
-                <th className="p-3 text-left font-bold">Expense No</th>
-                <th className="p-3 text-left font-bold">Pump</th>
-                <th className="p-3 text-left font-bold">Vehicle</th>
-                <th className="p-3 text-left font-bold">Owner</th>
-                <th className="p-3 text-left font-bold">Driver</th>
-                <th className="p-3 text-left font-bold">Loading</th>
-                <th className="p-3 text-left font-bold">Route</th>
-                <th className="p-3 text-left font-bold">Slip No</th>
-                <th className="p-3 text-right font-bold">Litres</th>
-                <th className="p-3 text-right font-bold">Rate</th>
-                <th className="p-3 text-right font-bold">Total Amount</th>
-                <th className="p-3 text-right font-bold">Paid</th>
-                <th className="p-3 text-right font-bold">Remaining</th>
-                <th className="p-3 text-left font-bold">Status</th>
-                <th className="p-3 text-left font-bold">Remarks</th>
-                <th className="p-3 text-left font-bold">Actions</th>
+                <th className="p-3 text-start font-bold">{t("common.date")}</th>
+                <th className="p-3 text-start font-bold">{t("diesel.fields.expenseNo")}</th>
+                <th className="p-3 text-start font-bold">{t("diesel.fields.pump")}</th>
+                <th className="p-3 text-start font-bold">{t("common.vehicle")}</th>
+                <th className="p-3 text-start font-bold">{t("common.owner")}</th>
+                <th className="p-3 text-start font-bold">{t("common.driver")}</th>
+                <th className="p-3 text-start font-bold">{t("diesel.fields.loading")}</th>
+                <th className="p-3 text-start font-bold">{t("common.route")}</th>
+                <th className="p-3 text-start font-bold">{t("diesel.fields.slipNo")}</th>
+                <th className="p-3 text-end font-bold">{t("diesel.fields.liters")}</th>
+                <th className="p-3 text-end font-bold">{t("diesel.fields.rate")}</th>
+                <th className="p-3 text-end font-bold">{t("diesel.fields.totalAmount")}</th>
+                <th className="p-3 text-end font-bold">{t("common.paid")}</th>
+                <th className="p-3 text-end font-bold">{t("common.remaining")}</th>
+                <th className="p-3 text-start font-bold">{t("common.status")}</th>
+                <th className="p-3 text-start font-bold">{t("common.remarks")}</th>
+                <th className="p-3 text-start font-bold">{t("common.actions.title")}</th>
               </tr>
             </thead>
 
@@ -425,28 +447,28 @@ export default function DieselTable({
                   key={row.id}
                   className="border-b border-gray-200 hover:bg-gray-50"
                 >
-                  <td className="p-3 font-semibold">{row.entryDate || "-"}</td>
-                  <td className="p-3 font-bold">{row.expenseNo}</td>
+                  <td dir="ltr" className="p-3 font-semibold">{row.entryDate || "-"}</td>
+                  <td dir="ltr" className="p-3 font-bold">{row.expenseNo}</td>
                   <td className="p-3 font-semibold">{row.pumpName}</td>
-                  <td className="p-3 font-bold">{row.vehicleNo}</td>
+                  <td dir="ltr" className="p-3 font-bold">{row.vehicleNo}</td>
                   <td className="p-3 font-semibold">{row.vehicleOwner}</td>
                   <td className="p-3 font-semibold">{row.driverName}</td>
-                  <td className="p-3 font-semibold">{row.loadingNo}</td>
+                  <td dir="ltr" className="p-3 font-semibold">{row.loadingNo}</td>
                   <td className="p-3 font-semibold">{row.route}</td>
-                  <td className="p-3 font-semibold">{row.slipNo}</td>
-                  <td className="p-3 text-right font-bold">
+                  <td dir="ltr" className="p-3 font-semibold">{row.slipNo}</td>
+                  <td dir="ltr" className="p-3 text-end font-bold">
                     {formatLiters(row.liters)}
                   </td>
-                  <td className="p-3 text-right font-bold">
+                  <td dir="ltr" className="p-3 text-end font-bold">
                     {formatAmount(row.rate)}
                   </td>
-                  <td className="p-3 text-right font-extrabold">
+                  <td dir="ltr" className="p-3 text-end font-extrabold">
                     {formatAmount(row.totalAmount)}
                   </td>
-                  <td className="p-3 text-right font-extrabold text-green-700">
+                  <td dir="ltr" className="p-3 text-end font-extrabold text-green-700">
                     {formatAmount(row.paidAmount)}
                   </td>
-                  <td className="p-3 text-right font-extrabold text-red-700">
+                  <td dir="ltr" className="p-3 text-end font-extrabold text-red-700">
                     {formatAmount(row.remainingAmount)}
                   </td>
                   <td className="p-3">
@@ -455,7 +477,7 @@ export default function DieselTable({
                         row.paymentStatus
                       )}`}
                     >
-                      {row.paymentStatus}
+                      {statusLabel(row.paymentStatus)}
                     </span>
                   </td>
                   <td className="max-w-[260px] p-3 font-semibold">
@@ -465,9 +487,10 @@ export default function DieselTable({
                     <button
                       type="button"
                       onClick={() => handlePrintEntry(row)}
+                      aria-label={`${t("diesel.actions.printEntry")} ${row.expenseNo}`}
                       className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-bold text-white transition hover:bg-gray-800"
                     >
-                      Print Entry
+                      {t("diesel.actions.printEntry")}
                     </button>
                   </td>
                 </tr>
@@ -477,19 +500,19 @@ export default function DieselTable({
             <tfoot>
               <tr className="border-t-2 border-gray-300 bg-gray-50 text-gray-900">
                 <td colSpan={9} className="p-3 font-extrabold">
-                  Total
+                  {t("common.total")}
                 </td>
-                <td className="p-3 text-right font-extrabold">
+                <td dir="ltr" className="p-3 text-end font-extrabold">
                   {formatLiters(totalLiters)}
                 </td>
                 <td />
-                <td className="p-3 text-right font-extrabold">
+                <td dir="ltr" className="p-3 text-end font-extrabold">
                   {formatAmount(totalAmount)}
                 </td>
-                <td className="p-3 text-right font-extrabold text-green-700">
+                <td dir="ltr" className="p-3 text-end font-extrabold text-green-700">
                   {formatAmount(totalPaid)}
                 </td>
-                <td className="p-3 text-right font-extrabold text-red-700">
+                <td dir="ltr" className="p-3 text-end font-extrabold text-red-700">
                   {formatAmount(totalRemaining)}
                 </td>
                 <td colSpan={3} />
@@ -498,6 +521,7 @@ export default function DieselTable({
           </table>
         </div>
       )}
+      {modulePrint.dialog}
     </div>
   );
 }

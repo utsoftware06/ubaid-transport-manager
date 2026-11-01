@@ -1,99 +1,38 @@
 "use client";
 
-import { useState } from "react";
-import { supabase } from "@/lib/supabase/client";
+import Link from "next/link";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 export default function RegisterPage() {
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
-  async function handleRegister(
-    e: React.FormEvent<HTMLFormElement>
-  ) {
-    e.preventDefault();
-
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    const user = data.user;
-
-    if (user) {
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .insert({
-          id: user.id,
-          full_name: fullName,
-          role: "super_admin",
-        });
-
-      if (profileError) {
-        alert(profileError.message);
-        return;
-      }
-    }
-
-    alert("UT Software account created successfully!");
-
-    setFullName("");
-    setEmail("");
-    setPassword("");
-  }
+  const { t, dir } = useLanguage();
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-slate-100 p-8">
-      <div className="bg-white p-10 rounded-2xl shadow-lg w-full max-w-xl">
-        <h1 className="text-5xl font-bold text-center text-slate-900 mb-10">
-          Create UT Software Account
+    <main
+      dir={dir}
+      className="flex min-h-screen items-center justify-center bg-slate-100 p-8 text-slate-900"
+    >
+      <section
+        aria-labelledby="registration-managed-title"
+        className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-lg"
+      >
+        <h1
+          id="registration-managed-title"
+          className="text-4xl font-bold text-slate-900"
+        >
+          {t("auth.register.adminManagedTitle")}
         </h1>
 
-        <form
-          onSubmit={handleRegister}
-          className="space-y-6"
+        <p className="mt-6 text-lg font-semibold leading-8 text-slate-700">
+          {t("auth.register.adminManagedDescription")}
+        </p>
+
+        <Link
+          href="/login"
+          className="mt-8 inline-flex min-h-12 items-center justify-center rounded-xl bg-blue-600 px-6 py-3 text-lg font-bold text-white transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
         >
-          <input
-            type="text"
-            placeholder="Full Name"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            className="w-full border border-slate-300 p-5 rounded-xl text-xl text-slate-700 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500"
-            required
-          />
-
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full border border-slate-300 p-5 rounded-xl text-xl text-slate-700 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500"
-            required
-          />
-
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full border border-slate-300 p-5 rounded-xl text-xl text-slate-700 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500"
-            required
-            minLength={6}
-          />
-
-          <button
-            type="submit"
-            className="w-full bg-green-600 text-white text-2xl font-semibold p-5 rounded-xl hover:bg-green-700 transition"
-          >
-            Create Account
-          </button>
-        </form>
-      </div>
+          {t("auth.backToLogin")}
+        </Link>
+      </section>
     </main>
   );
 }

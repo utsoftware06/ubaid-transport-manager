@@ -1,58 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PackingForm from "@/components/packing/PackingForm";
 import PackingItems from "@/components/packing/PackingItems";
 import PackingTable from "@/components/packing/PackingTable";
 import { supabase } from "@/lib/supabase/client";
-
-type LoadingItem = {
-  id: number;
-  loading_id: number;
-  item_name: string;
-  quantity: number;
-  weight: number;
-  unit: string;
-  remarks: string | null;
-};
-
-type LoadingRecord = {
-  id: number;
-  loading_no: string;
-  loading_date: string;
-  vehicle_id: number | string;
-  driver_id: number | string;
-  route: string;
-  vehicles?: {
-    vehicle_no: string;
-  } | null;
-  drivers?: {
-    name: string;
-  } | null;
-  loading_items?: LoadingItem[];
-};
-
-type PackingSlipItem = {
-  id: number;
-  packing_slip_id: number;
-  item_name: string;
-  quantity: number;
-  weight: number;
-  unit: string;
-  remarks: string | null;
-};
-
-type PackingSlipRecord = {
-  id: number;
-  packing_slip_no: string;
-  packing_date: string;
-  loading_id: number | string;
-  remarks: string | null;
-  loadings?: LoadingRecord | null;
-  packing_slip_items?: PackingSlipItem[];
-};
+import type {
+  PackingLoadingItem as LoadingItem,
+  PackingLoadingRecord as LoadingRecord,
+  PackingSlipRecord,
+} from "@/types/packing";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { escapeHtml } from "@/lib/print/escapeHtml";
+import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
+import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
+import { printLabel, printValue, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
+import ModulePageHeading from "@/components/shared/ModulePageHeading";
 
 export default function PackingPage() {
+  const { t, dir, language } = useLanguage();
+  const modulePrint = useModuleTransportPrint("packing_slip", null, language === "ur" ? "ur" : "en");
   const [packingSlipNo, setPackingSlipNo] = useState("");
   const [packingDate, setPackingDate] = useState("");
   const [loadingId, setLoadingId] = useState("");
@@ -68,6 +35,8 @@ export default function PackingPage() {
   );
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const saveLockRef = useRef(false);
+  const deleteLockRef = useRef(false);
 
   const selectedLoading = useMemo(() => {
     if (!loadingId) return null;
@@ -106,26 +75,14 @@ export default function PackingPage() {
     });
   }, [packingSlips, search]);
 
-  useEffect(() => {
-    loadLoadings();
-    loadPackingSlips();
-  }, []);
-
-  useEffect(() => {
-    if (loadingId) {
-      loadLoadingItems(Number(loadingId));
-    } else {
-      setLoadingItems([]);
-    }
-  }, [loadingId]);
-
-  async function loadLoadings() {
+  const loadLoadings = useCallback(async () => {
     const { data, error } = await supabase
       .from("loadings")
       .select(
         `
         *,
-        vehicles(vehicle_no),
+        vehicles(vehicle_no,adda_id),
+        bookings(adda_id),
         drivers(name),
         loading_items(*)
       `
@@ -133,14 +90,15 @@ export default function PackingPage() {
       .order("id", { ascending: false });
 
     if (error) {
-      alert(error.message);
+      console.error("Unable to load packing loadings:", error);
+      alert(t("common.messages.loadFailed"));
       return;
     }
 
     if (data) setLoadings(data as LoadingRecord[]);
-  }
+  }, [t]);
 
-  async function loadLoadingItems(currentLoadingId: number) {
+  const loadLoadingItems = useCallback(async (currentLoadingId: number) => {
     const { data, error } = await supabase
       .from("loading_items")
       .select("*")
@@ -148,14 +106,15 @@ export default function PackingPage() {
       .order("id", { ascending: true });
 
     if (error) {
-      alert(error.message);
+      console.error("Unable to load loading items for packing:", error);
+      alert(t("common.messages.loadFailed"));
       return;
     }
 
     if (data) setLoadingItems(data as LoadingItem[]);
-  }
+  }, [t]);
 
-  async function loadPackingSlips() {
+  const loadPackingSlips = useCallback(async () => {
     const { data, error } = await supabase
       .from("packing_slips")
       .select(
@@ -163,7 +122,8 @@ export default function PackingPage() {
         *,
         loadings(
           *,
-          vehicles(vehicle_no),
+          vehicles(vehicle_no,adda_id),
+          bookings(adda_id),
           drivers(name)
         ),
         packing_slip_items(*)
@@ -172,12 +132,37 @@ export default function PackingPage() {
       .order("id", { ascending: false });
 
     if (error) {
-      alert(error.message);
+      console.error("Unable to load packing slips:", error);
+      alert(t("common.messages.loadFailed"));
       return;
     }
 
     if (data) setPackingSlips(data as PackingSlipRecord[]);
-  }
+  }, [t]);
+
+  useEffect(() => {
+    const loadTimer = window.setTimeout(() => {
+      void loadLoadings();
+      void loadPackingSlips();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(loadTimer);
+    };
+  }, [loadLoadings, loadPackingSlips]);
+
+  const handleLoadingIdChange = useCallback(
+    (value: string) => {
+      setLoadingId(value);
+
+      if (value) {
+        void loadLoadingItems(Number(value));
+      } else {
+        setLoadingItems([]);
+      }
+    },
+    [loadLoadingItems]
+  );
 
   function resetForm() {
     setPackingSlipNo("");
@@ -190,22 +175,38 @@ export default function PackingPage() {
 
   function validatePackingForm() {
     if (!packingSlipNo.trim()) {
-      alert("Packing Slip Number is required.");
+      alert(t("packing.validation.numberRequired"));
       return false;
     }
 
     if (!packingDate) {
-      alert("Packing Date is required.");
+      alert(t("packing.validation.dateRequired"));
       return false;
     }
 
     if (!loadingId) {
-      alert("Please select a loading.");
+      alert(t("packing.validation.loadingRequired"));
       return false;
     }
 
     if (loadingItems.length === 0) {
-      alert("Selected loading has no items to pack.");
+      alert(t("packing.validation.noItems"));
+      return false;
+    }
+
+    const hasInvalidItem = loadingItems.some((item) => {
+      const quantity = Number(item.quantity);
+      const weight = Number(item.weight);
+      return (
+        !Number.isFinite(quantity) ||
+        quantity <= 0 ||
+        !Number.isFinite(weight) ||
+        weight < 0
+      );
+    });
+
+    if (hasInvalidItem) {
+      alert(t("packing.validation.invalidItems"));
       return false;
     }
 
@@ -227,7 +228,8 @@ export default function PackingPage() {
       .insert(itemsToInsert);
 
     if (error) {
-      alert(error.message);
+      console.error("Unable to copy packing items:", error);
+      alert(t("common.messages.saveFailed"));
       return false;
     }
 
@@ -235,90 +237,81 @@ export default function PackingPage() {
   }
 
   async function handleSavePackingSlip() {
+    if (saveLockRef.current) return;
     if (!validatePackingForm()) return;
 
+    saveLockRef.current = true;
     setIsSaving(true);
+    try {
+      if (editingPackingSlipId) {
+        const { error: updateError } = await supabase
+          .from("packing_slips")
+          .update({
+            packing_slip_no: packingSlipNo.trim(),
+            packing_date: packingDate,
+            loading_id: loadingId,
+            remarks: remarks.trim(),
+          })
+          .eq("id", editingPackingSlipId);
 
-    if (editingPackingSlipId) {
-      const { error: updateError } = await supabase
+        if (updateError) throw updateError;
+
+        const { error: deleteItemsError } = await supabase
+          .from("packing_slip_items")
+          .delete()
+          .eq("packing_slip_id", editingPackingSlipId);
+
+        if (deleteItemsError) throw deleteItemsError;
+
+        const copied = await copyLoadingItemsToPackingSlip(editingPackingSlipId);
+        if (!copied) return;
+
+        alert(t("packing.messages.updated"));
+        await loadPackingSlips();
+        resetForm();
+        return;
+      }
+
+      const { data, error } = await supabase
         .from("packing_slips")
-        .update({
+        .insert({
           packing_slip_no: packingSlipNo.trim(),
           packing_date: packingDate,
           loading_id: loadingId,
           remarks: remarks.trim(),
         })
-        .eq("id", editingPackingSlipId);
+        .select();
 
-      if (updateError) {
-        setIsSaving(false);
-        alert(updateError.message);
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        alert(t("packing.messages.saveFailed"));
         return;
       }
 
-      const { error: deleteItemsError } = await supabase
-        .from("packing_slip_items")
-        .delete()
-        .eq("packing_slip_id", editingPackingSlipId);
-
-      if (deleteItemsError) {
-        setIsSaving(false);
-        alert(deleteItemsError.message);
-        return;
-      }
-
-      const copied = await copyLoadingItemsToPackingSlip(editingPackingSlipId);
-      setIsSaving(false);
-
+      const copied = await copyLoadingItemsToPackingSlip(data[0].id);
       if (!copied) return;
 
-      alert("Packing Slip updated successfully!");
+      alert(t("packing.messages.saved"));
       await loadPackingSlips();
       resetForm();
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("packing_slips")
-      .insert({
-        packing_slip_no: packingSlipNo.trim(),
-        packing_date: packingDate,
-        loading_id: loadingId,
-        remarks: remarks.trim(),
-      })
-      .select();
-
-    if (error) {
+    } catch (error) {
+      console.error("Unable to save packing slip:", error);
+      alert(t("common.messages.saveFailed"));
+    } finally {
+      saveLockRef.current = false;
       setIsSaving(false);
-      alert(error.message);
-      return;
     }
-
-    if (!data || data.length === 0) {
-      setIsSaving(false);
-      alert("Packing Slip was not saved.");
-      return;
-    }
-
-    const copied = await copyLoadingItemsToPackingSlip(data[0].id);
-    setIsSaving(false);
-
-    if (!copied) return;
-
-    alert("Packing Slip saved successfully!");
-    await loadPackingSlips();
-    resetForm();
   }
 
   function handleViewPackingSlip(packingSlip: PackingSlipRecord) {
     alert(
-      `Packing Slip No: ${packingSlip.packing_slip_no}\nDate: ${
+      `${t("packing.slipNo")}: ${packingSlip.packing_slip_no}\n${t("common.date")}: ${
         packingSlip.packing_date
-      }\nLoading No: ${packingSlip.loadings?.loading_no ?? "-"}\nVehicle: ${
+      }\n${t("common.loadingNo")}: ${packingSlip.loadings?.loading_no ?? "-"}\n${t("common.vehicle")}: ${
         packingSlip.loadings?.vehicles?.vehicle_no ?? "-"
-      }\nDriver: ${packingSlip.loadings?.drivers?.name ?? "-"}\nRoute: ${
+      }\n${t("common.driver")}: ${packingSlip.loadings?.drivers?.name ?? "-"}\n${t("common.route")}: ${
         packingSlip.loadings?.route ?? "-"
-      }\nItems: ${packingSlip.packing_slip_items?.length ?? 0}`
+      }\n${t("common.items")}: ${packingSlip.packing_slip_items?.length ?? 0}`
     );
   }
 
@@ -335,53 +328,63 @@ export default function PackingPage() {
   }
 
   async function handleDeletePackingSlip(packingSlip: PackingSlipRecord) {
+    if (deleteLockRef.current) return;
     const confirmed = window.confirm(
-      `Delete packing slip ${packingSlip.packing_slip_no}? This will also delete its packing items.`
+      `${t("packing.deleteConfirm")} ${packingSlip.packing_slip_no}?`
     );
 
     if (!confirmed) return;
 
+    deleteLockRef.current = true;
     setIsDeleting(true);
+    try {
+      const { error: itemsError } = await supabase
+        .from("packing_slip_items")
+        .delete()
+        .eq("packing_slip_id", packingSlip.id);
 
-    const { error: itemsError } = await supabase
-      .from("packing_slip_items")
-      .delete()
-      .eq("packing_slip_id", packingSlip.id);
+      if (itemsError) throw itemsError;
 
-    if (itemsError) {
+      const { error: slipError } = await supabase
+        .from("packing_slips")
+        .delete()
+        .eq("id", packingSlip.id);
+
+      if (slipError) throw slipError;
+
+      if (editingPackingSlipId === packingSlip.id) resetForm();
+
+      alert(t("packing.messages.deleted"));
+      await loadPackingSlips();
+    } catch (error) {
+      console.error("Unable to delete packing slip:", error);
+      alert(t("common.messages.deleteFailed"));
+    } finally {
+      deleteLockRef.current = false;
       setIsDeleting(false);
-      alert(itemsError.message);
-      return;
     }
-
-    const { error: slipError } = await supabase
-      .from("packing_slips")
-      .delete()
-      .eq("id", packingSlip.id);
-
-    setIsDeleting(false);
-
-    if (slipError) {
-      alert(slipError.message);
-      return;
-    }
-
-    if (editingPackingSlipId === packingSlip.id) {
-      resetForm();
-    }
-
-    alert("Packing Slip deleted successfully!");
-    await loadPackingSlips();
   }
 
-  function handlePrintPackingSlip(packingSlip: PackingSlipRecord) {
+  function handlePrintPackingSlipLegacy(packingSlip: PackingSlipRecord) {
     const printWindow = window.open("", "_blank", "width=900,height=700");
 
     if (!printWindow) {
-      alert("Please allow popups to print the packing slip.");
+      alert(t("packing.messages.allowPopups"));
       return;
     }
 
+    const label = (key: string) => escapeHtml(t(key));
+    const value = (input: unknown) => escapeHtml(input);
+    const unitLabel = (unit: string) => {
+      const unitKey = {
+        Kg: "kg",
+        Ton: "ton",
+        Bag: "bag",
+        Piece: "piece",
+      }[unit];
+
+      return unitKey ? label(`packing.units.${unitKey}`) : value(unit);
+    };
     const items = packingSlip.packing_slip_items ?? [];
     const totalQuantity = items.reduce(
       (total, item) => total + Number(item.quantity || 0),
@@ -398,23 +401,29 @@ export default function PackingPage() {
             .map(
               (item, index) => `
                 <tr>
-                  <td>${index + 1}</td>
-                  <td>${item.item_name ?? ""}</td>
-                  <td>${item.quantity ?? ""}</td>
-                  <td>${item.weight ?? ""}</td>
-                  <td>${item.unit ?? ""}</td>
-                  <td>${item.remarks ?? ""}</td>
+                  <td class="technical">${index + 1}</td>
+                  <td>${value(item.item_name)}</td>
+                  <td class="technical">${value(item.quantity)}</td>
+                  <td class="technical">${value(item.weight)}</td>
+                  <td>${unitLabel(item.unit)}</td>
+                  <td>${value(item.remarks)}</td>
                 </tr>
               `
             )
             .join("")
-        : `<tr><td colspan="6" class="empty">No items found</td></tr>`;
+        : `<tr><td colspan="6" class="empty">${label("packing.items.empty")}</td></tr>`;
 
-    printWindow.document.write(`
+    const loading = packingSlip.loadings;
+    const booking = Array.isArray(loading?.bookings) ? loading.bookings[0] : loading?.bookings;
+    const vehicle = Array.isArray(loading?.vehicles) ? loading.vehicles[0] : loading?.vehicles;
+    const ownerAddaId = loading?.booking_id != null
+      ? booking?.adda_id ?? null
+      : vehicle?.adda_id ?? null;
+    void writeAddaBrandedPrintDocument(printWindow, `
       <!doctype html>
-      <html>
+      <html lang="${value(language)}" dir="${value(dir)}">
         <head>
-          <title>Packing Slip - ${packingSlip.packing_slip_no}</title>
+          <title>${label("packing.print")} - ${value(packingSlip.packing_slip_no)}</title>
           <style>
             * { box-sizing: border-box; }
             body {
@@ -450,7 +459,7 @@ export default function PackingPage() {
               color: #111827;
             }
             .meta {
-              text-align: right;
+              text-align: end;
               font-size: 14px;
               line-height: 1.7;
               color: #111827;
@@ -474,7 +483,7 @@ export default function PackingPage() {
             th {
               background: #2563eb;
               color: #ffffff;
-              text-align: left;
+              text-align: start;
               padding: 10px;
               border: 1px solid #2563eb;
             }
@@ -491,6 +500,7 @@ export default function PackingPage() {
               text-align: center;
               font-weight: 700;
             }
+            .technical { direction: ltr; unicode-bidi: isolate; }
             .signatures {
               display: grid;
               grid-template-columns: repeat(3, 1fr);
@@ -517,51 +527,51 @@ export default function PackingPage() {
           <div class="slip">
             <div class="header">
               <div>
-                <h1>Packing Slip</h1>
-                <div class="subtitle">Transport Management System</div>
+                <h1>${label("packing.print")}</h1>
+                <div class="subtitle">${PRINT_ADDA_NAME_TOKEN}</div>
               </div>
               <div class="meta">
-                <div><strong>Packing Slip No:</strong> ${packingSlip.packing_slip_no}</div>
-                <div><strong>Date:</strong> ${packingSlip.packing_date}</div>
+                <div><strong>${label("packing.slipNo")}:</strong> <span class="technical">${value(packingSlip.packing_slip_no)}</span></div>
+                <div><strong>${label("common.date")}:</strong> <span class="technical">${value(packingSlip.packing_date)}</span></div>
               </div>
             </div>
 
             <div class="details">
-              <div><strong>Loading No:</strong> ${packingSlip.loadings?.loading_no ?? "-"}</div>
-              <div><strong>Loading Date:</strong> ${packingSlip.loadings?.loading_date ?? "-"}</div>
-              <div><strong>Vehicle:</strong> ${packingSlip.loadings?.vehicles?.vehicle_no ?? "-"}</div>
-              <div><strong>Driver:</strong> ${packingSlip.loadings?.drivers?.name ?? "-"}</div>
-              <div><strong>Route:</strong> ${packingSlip.loadings?.route ?? "-"}</div>
-              <div><strong>Total Items:</strong> ${items.length}</div>
-              <div><strong>Remarks:</strong> ${packingSlip.remarks ?? "-"}</div>
+              <div><strong>${label("common.loadingNo")}:</strong> <span class="technical">${value(packingSlip.loadings?.loading_no ?? "-")}</span></div>
+              <div><strong>${label("common.loadingDate")}:</strong> <span class="technical">${value(packingSlip.loadings?.loading_date ?? "-")}</span></div>
+              <div><strong>${label("common.vehicle")}:</strong> <span class="technical">${value(packingSlip.loadings?.vehicles?.vehicle_no ?? "-")}</span></div>
+              <div><strong>${label("common.driver")}:</strong> ${value(packingSlip.loadings?.drivers?.name ?? "-")}</div>
+              <div><strong>${label("common.route")}:</strong> ${value(packingSlip.loadings?.route ?? "-")}</div>
+              <div><strong>${label("packing.items.totalItems")}:</strong> <span class="technical">${items.length}</span></div>
+              <div><strong>${label("common.remarks")}:</strong> ${value(packingSlip.remarks ?? "-")}</div>
             </div>
 
             <table>
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>Item</th>
-                  <th>Quantity</th>
-                  <th>Weight</th>
-                  <th>Unit</th>
-                  <th>Remarks</th>
+                  <th>${label("common.item")}</th>
+                  <th>${label("common.quantity")}</th>
+                  <th>${label("common.weight")}</th>
+                  <th>${label("common.unit")}</th>
+                  <th>${label("common.remarks")}</th>
                 </tr>
               </thead>
               <tbody>${itemRows}</tbody>
               <tfoot>
                 <tr>
-                  <td colspan="2">Total</td>
-                  <td>${totalQuantity}</td>
-                  <td>${totalWeight}</td>
+                  <td colspan="2">${label("common.total")}</td>
+                  <td class="technical">${totalQuantity}</td>
+                  <td class="technical">${totalWeight}</td>
                   <td colspan="2"></td>
                 </tr>
               </tfoot>
             </table>
 
             <div class="signatures">
-              <div class="signature">Prepared By</div>
-              <div class="signature">Checked By</div>
-              <div class="signature">Manager Signature</div>
+              <div class="signature">${label("packing.printLabels.preparedBy")}</div>
+              <div class="signature">${label("packing.printLabels.checkedBy")}</div>
+              <div class="signature">${label("packing.printLabels.managerSignature")}</div>
             </div>
           </div>
 
@@ -572,31 +582,52 @@ export default function PackingPage() {
           </script>
         </body>
       </html>
-    `);
+    `, ownerAddaId, language === "ur" ? "ur" : "en");
+  }
 
-    printWindow.document.close();
+  function handlePrintPackingSlip(packingSlip: PackingSlipRecord) {
+    const loading = packingSlip.loadings;
+    const booking = Array.isArray(loading?.bookings) ? loading.bookings[0] : loading?.bookings;
+    const vehicle = Array.isArray(loading?.vehicles) ? loading.vehicles[0] : loading?.vehicles;
+    const ownerAddaId = loading?.booking_id != null ? booking?.adda_id ?? null : vehicle?.adda_id ?? null;
+    const items = packingSlip.packing_slip_items ?? [];
+    const presentation: ModulePrintPresentation = {
+      documentType: "packing_slip",
+      title: printLabel("packing.print"),
+      documentNo: printValue(packingSlip.packing_slip_no),
+      documentDate: printValue(packingSlip.packing_date),
+      fields: [
+        { label: printLabel("common.loadingNo"), value: printValue(loading?.loading_no) },
+        { label: printLabel("common.loadingDate"), value: printValue(loading?.loading_date) },
+        { label: printLabel("common.vehicle"), value: printValue(vehicle?.vehicle_no) },
+        { label: printLabel("common.driver"), value: printValue(loading?.drivers?.name) },
+        { label: printLabel("common.route"), value: printValue(loading?.route) },
+        { label: printLabel("packing.items.totalItems"), value: String(items.length) },
+      ],
+      tables: [{
+        title: printLabel("common.item"),
+        columns: [printLabel("common.item"), printLabel("common.quantity"), printLabel("common.weight"), printLabel("common.unit"), printLabel("common.remarks")],
+        rows: items.map((item) => [printValue(item.item_name), printValue(item.quantity), printValue(item.weight), printValue(item.unit), printValue(item.remarks)]),
+      }],
+      remarks: printValue(packingSlip.remarks),
+    };
+    modulePrint.openPresentation(presentation, () => handlePrintPackingSlipLegacy(packingSlip), ownerAddaId);
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
-      <div>
-        <h1 className="text-4xl font-bold text-gray-900">
-          📦 Packing Slip Management
-        </h1>
-        <p className="mt-2 text-base font-medium text-gray-900">
-          Create packing slips from completed loadings and print professional
-          packing records.
-        </p>
-      </div>
+    <div dir={dir} className="ut-module-page mx-auto max-w-7xl space-y-5">
+      <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <ModulePageHeading icon="package" accent="orange" title={t("packing.title")} description={t("packing.description")} />
+      </header>
 
-      <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <PackingForm
           packingSlipNo={packingSlipNo}
           setPackingSlipNo={setPackingSlipNo}
           packingDate={packingDate}
           setPackingDate={setPackingDate}
           loadingId={loadingId}
-          setLoadingId={setLoadingId}
+          setLoadingId={handleLoadingIdChange}
           remarks={remarks}
           setRemarks={setRemarks}
           loadings={loadings}
@@ -625,6 +656,7 @@ export default function PackingPage() {
         onPrint={handlePrintPackingSlip}
         isDeleting={isDeleting}
       />
+      {modulePrint.dialog}
     </div>
   );
 }

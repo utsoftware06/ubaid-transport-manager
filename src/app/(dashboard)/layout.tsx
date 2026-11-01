@@ -1,312 +1,198 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+
+import Sidebar from "@/components/sidebar/Sidebar";
+import DashboardTopbar from "@/components/dashboard/DashboardTopbar";
+import { LanguageProvider, useLanguage } from "@/contexts/LanguageContext";
+import {
+  isNavigationRouteAllowed,
+  isUserRole,
+  type UserRole,
+} from "@/config/navigation";
+import { supabase } from "@/lib/supabase/client";
+
+type DashboardLayoutProps = {
+  children: ReactNode;
+};
+
+type ProfileRoleRow = {
+  role: string | null;
+  is_active: boolean | null;
+  full_name: string | null;
+};
+
+type AuthAccessError = "unavailable" | "inactive" | null;
+
+function AuthenticatedDashboard({
+  children,
+}: DashboardLayoutProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { t, dir } = useLanguage();
+  const [role, setRole] = useState<UserRole | null>(null);
+  const [profileName, setProfileName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [authAccessError, setAuthAccessError] =
+    useState<AuthAccessError>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadAuthenticatedUser() {
+      const { data, error } = await supabase.auth.getUser();
+
+      if (!isMounted) return;
+
+      if (error || !data.user) {
+        if (error) {
+          console.error("Unable to verify authenticated user:", error);
+        }
+        setRole(null);
+        router.replace("/login");
+        return;
+      }
+
+      setUserEmail(data.user.email ?? "");
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role, is_active, full_name")
+        .eq("id", data.user.id)
+        .maybeSingle();
+
+      if (!isMounted) return;
+
+      if (profileError) {
+        console.error("Unable to load authenticated user role:", profileError);
+        setAuthAccessError("unavailable");
+        return;
+      }
+
+      const currentProfile = profile as ProfileRoleRow | null;
+
+      if (currentProfile?.is_active !== true) {
+        setRole(null);
+        setAuthAccessError(
+          currentProfile?.is_active === false ? "inactive" : "unavailable"
+        );
+        return;
+      }
+
+      const profileRole = currentProfile.role;
+
+      if (!isUserRole(profileRole)) {
+        console.error("Authenticated user has no supported application role.");
+        setAuthAccessError("unavailable");
+        return;
+      }
+
+      setAuthAccessError(null);
+      setProfileName(currentProfile.full_name?.trim() ?? "");
+      setRole(profileRole);
+    }
+
+    void loadAuthenticatedUser();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
+        setRole(null);
+        router.replace("/login");
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
+  const routeAllowed =
+    role !== null && isNavigationRouteAllowed(pathname, role);
+
+  useEffect(() => {
+    if (role && !routeAllowed) {
+      router.replace("/dashboard");
+    }
+  }, [role, routeAllowed, router]);
+
+  if (authAccessError) {
+    return (
+      <main
+        dir={dir}
+        className="flex min-h-screen items-center justify-center bg-gray-100 p-6"
+      >
+        <div
+          role="alert"
+          className="w-full max-w-xl rounded-xl border border-red-200 bg-red-50 p-6 text-center font-bold text-red-700"
+        >
+          {t(
+            authAccessError === "inactive"
+              ? "auth.messages.accountInactive"
+              : "auth.messages.accessUnavailable"
+          )}
+        </div>
+      </main>
+    );
+  }
+
+  if (!role || !routeAllowed) {
+    return (
+      <main
+        dir={dir}
+        className="flex min-h-screen items-center justify-center bg-gray-100 p-6"
+      >
+        <p role="status" className="font-bold text-gray-900">
+          {t("auth.loading")}
+        </p>
+      </main>
+    );
+  }
+
+  return (
+    <div dir={dir} className="flex min-h-screen w-full min-w-0 bg-[#f3f6fb]">
+        <Sidebar
+          role={role}
+          profileName={profileName}
+          userEmail={userEmail}
+          collapsed={sidebarCollapsed}
+          onCollapsedChange={setSidebarCollapsed}
+          mobileOpen={mobileSidebarOpen}
+          onMobileOpenChange={setMobileSidebarOpen}
+        />
+        <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+          <DashboardTopbar
+            role={role}
+            profileName={profileName}
+            userEmail={userEmail}
+            mobileSidebarOpen={mobileSidebarOpen}
+            onMenuClick={() => {
+              if (window.matchMedia("(min-width: 1024px)").matches) {
+                setSidebarCollapsed((current) => !current);
+              } else {
+                setMobileSidebarOpen(true);
+              }
+            }}
+          />
+          <main className="min-w-0 flex-1 overflow-x-hidden px-4 pb-6 pt-5 sm:px-6 lg:px-8 lg:pb-8">
+            {children}
+          </main>
+        </div>
+    </div>
+  );
+}
 
 export default function DashboardLayout({
   children,
-}: {
-  children: React.ReactNode;
-}) {
-  const pathname = usePathname();
-
+}: DashboardLayoutProps) {
   return (
-    <div className="min-h-screen bg-gray-100 flex">
-      <aside className="w-72 bg-white border-r border-gray-200 shadow-sm p-6">
-        <h1 className="text-3xl font-bold text-blue-600 mb-10">
-          UT Software
-        </h1>
-
-        <nav className="space-y-3">
-          <Link
-            href="/dashboard"
-            className={`block p-3 rounded-lg font-medium ${
-              pathname === "/dashboard"
-                ? "border-2 border-black bg-blue-50 text-blue-600"
-                : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-            }`}
-          >
-            📊 Dashboard
-          </Link>
-
-          <Link
-            href="/addas"
-            className={`block p-3 rounded-lg font-medium ${
-              pathname === "/addas"
-                ? "border-2 border-black bg-blue-50 text-blue-600"
-                : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-            }`}
-          >
-            🏢 Addas
-          </Link>
-
-          <Link
-            href="/drivers"
-            className={`block p-3 rounded-lg font-medium ${
-              pathname === "/drivers"
-                ? "border-2 border-black bg-blue-50 text-blue-600"
-                : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-            }`}
-          >
-            👨 Drivers
-          </Link>
-
-          <Link
-            href="/vehicles"
-            className={`block p-3 rounded-lg font-medium ${
-              pathname === "/vehicles"
-                ? "border-2 border-black bg-blue-50 text-blue-600"
-                : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-            }`}
-          >
-            🚚 Vehicles
-          </Link>
-
-<Link
-  href="/trip-management"
-  className={`block rounded-lg p-3 font-medium ${
-    pathname === "/trip-management"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  🚚 Trip / Chakkar Management
-</Link>
-
-          <Link
-            href="/reports"
-            className={`block p-3 rounded-lg font-medium ${
-              pathname === "/reports"
-                ? "border-2 border-black bg-blue-50 text-blue-600"
-                : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-            }`}
-          >
-            📊 Reports
-          </Link>
-
-          <Link
-            href="/drivers-ledger"
-            className={`block p-3 rounded-lg font-medium ${
-              pathname === "/drivers-ledger"
-                ? "border-2 border-black bg-blue-50 text-blue-600"
-                : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-            }`}
-          >
-            📒 Driver Ledger
-          </Link>
-
-           <Link
-  href="/customer-ledger"
-  className={`block p-3 rounded-lg font-medium ${
-    pathname === "/customer-ledger"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  👥 Customer Ledger
-</Link>
- 
-<Link
-  href="/owner-ledger"
-  className={`block p-3 rounded-lg font-medium ${
-    pathname === "/owner-ledger"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  🏢 Owner Ledger
-</Link>
-
-<Link
-  href="/vehicle-ledger"
-  className={`block p-3 rounded-lg font-medium ${
-    pathname === "/vehicle-ledger"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  🚚 Vehicle Ledger
-</Link>
- 
-<Link
-  href="/payment-receipts"
-  className={`block p-3 rounded-lg font-medium ${
-    pathname === "/payment-receipts"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  💵 Payment Receipts
-</Link>
- 
-<Link
-  href="/cashbook"
-  className={`block p-3 rounded-lg font-medium ${
-    pathname === "/cashbook"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  💰 Cashbook
-</Link>
- 
-<Link
-  href="/workshop"
-  className={`block rounded-lg p-3 font-medium ${
-    pathname === "/workshop"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  🔧 Workshop
-</Link>
-
-         <Link
-            href="/bookings"
-            className={`block p-3 rounded-lg font-medium ${
-              pathname === "/bookings"
-                ? "border-2 border-black bg-blue-50 text-blue-600"
-                : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-            }`}
-          >
-            📦 Bilty
-          </Link>
-
-          <Link
-            href="/loading"
-            className={`block p-3 rounded-lg font-medium ${
-              pathname === "/loading"
-                ? "border-2 border-black bg-blue-50 text-blue-600"
-                : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-            }`}
-          >
-            🚛 Loading
-          </Link>
-
-          <Link
-            href="/packing"
-            className={`block p-3 rounded-lg font-medium ${
-              pathname === "/packing"
-                ? "border-2 border-black bg-blue-50 text-blue-600"
-                : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-            }`}
-          >
-            📦 Packing Slip
-          </Link>
-.
-<Link
-  href="/diesel"
-  className={`block rounded-lg p-3 font-medium ${
-    pathname === "/diesel"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  ⛽ Diesel
-</Link>
-
-<Link
-  href="/petrol-pumps"
-  className={`block rounded-lg p-3 font-medium ${
-    pathname === "/petrol-pumps"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  ⛽ Petrol Pumps
-</Link>
-
-<Link
-  href="/petrol-pump-payments"
-  className={`block rounded-lg p-3 font-medium ${
-    pathname === "/petrol-pump-payments"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  💳 Pump Payments
-</Link>
-
-<Link
-  href="/brokers"
-  className={`block rounded-lg p-3 font-medium ${
-    pathname === "/brokers"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  🤝 Brokers
-</Link>
-
-<Link
-  href="/employees"
-  className={`block rounded-lg p-3 font-medium ${
-    pathname === "/employees"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  👨‍💼 Employees
-</Link>
-
-<Link
-  href="/employee-salary"
-  className={`block rounded-lg p-3 font-medium ${
-    pathname === "/employee-salary"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  💰 Employee Salary
-</Link>
-
-<Link
-  href="/employee-ledger"
-  className={`block rounded-lg p-3 font-medium ${
-    pathname === "/employee-ledger"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  📒 Employee Ledger
-</Link>
-
-<Link
-  href="/employee-loans"
-  className={`block rounded-lg p-3 font-medium ${
-    pathname === "/employee-loans"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  💳 Employee Loans
-</Link>
-
-<Link
-  href="/vehicle-documents"
-  className={`block rounded-lg p-3 font-medium ${
-    pathname === "/vehicle-documents"
-      ? "border-2 border-black bg-blue-50 text-blue-600"
-      : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-  }`}
->
-  📄 Vehicle Documents
-</Link>
-
-          <Link
-            href="/expenses"
-            className={`block p-3 rounded-lg font-medium ${
-              pathname === "/expenses"
-                ? "border-2 border-black bg-blue-50 text-blue-600"
-                : "text-gray-800 hover:bg-blue-50 hover:text-blue-600"
-            }`}
-          >
-            💰 Expenses
-          </Link>
-        </nav>
-      </aside>
-
-      <main className="flex-1 p-8">{children}</main>
-    </div>
+    <LanguageProvider>
+      <AuthenticatedDashboard>{children}</AuthenticatedDashboard>
+    </LanguageProvider>
   );
 }

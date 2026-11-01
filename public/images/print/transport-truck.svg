@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 112" fill="none" role="img" aria-label="Goods transport truck">
+  <g stroke="#17212b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 20h125v64H12z" fill="#fff"/>
+    <path d="M137 43h45l36 27v14h-81z" fill="#fff"/>
+    <path d="M182 44v26h36M15 73h120M15 33h119"/>
+    <path d="M20 29h20v8H20zM47 29h20v8H47zM74 29h20v8H74zM101 29h20v8h-20z" fill="#d8dee4" stroke-width="2"/>
+    <path d="M146 49h31v20h-31zM182 50l25 19h-25z" fill="#e8eef2"/>
+    <path d="M12 84h206"/>
+    <circle cx="54" cy="88" r="15" fill="#fff"/><circle cx="54" cy="88" r="6" fill="#d8dee4"/>
+    <circle cx="158" cy="88" r="15" fill="#fff"/><circle cx="158" cy="88" r="6" fill="#d8dee4"/>
+    <circle cx="204" cy="88" r="15" fill="#fff"/><circle cx="204" cy="88" r="6" fill="#d8dee4"/>
+    <path d="M16 101h201" stroke-width="2"/>
+  </g>
+</svg>

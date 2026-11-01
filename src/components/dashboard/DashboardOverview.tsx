@@ -1,11 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import {
+  ArrowUpRight,
+  BarChart3,
+  PackageOpen,
+  ReceiptText,
+  TrendingUp,
+  Truck,
+  UsersRound,
+} from "lucide-react";
 import DashboardCards from "@/components/dashboard/DashboardCards";
-import DashboardFilters from "@/components/dashboard/DashboardFilters";
+import DashboardHero from "@/components/dashboard/DashboardHero";
 import IncomeExpenseChart from "@/components/dashboard/IncomeExpenseChart";
 import RecentTrips from "@/components/dashboard/RecentTrips";
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 export type DashboardDateFilter =
   | "today"
@@ -68,13 +79,26 @@ export type DashboardSummary = {
   overall: DashboardOverallSummary;
 };
 
+export type DashboardRecentEntry = {
+  id: string;
+  entryDate: string;
+  entryType: "Cash In" | "Cash Out";
+  personName: string;
+  description: string;
+  amount: number;
+  referenceType: string | null;
+  createdAt: string;
+};
+
 type CurrentContext = {
   userId: string;
   addaId: string;
+  role: string | null;
 };
 
 type ProfileRow = {
   adda_id: string | null;
+  role: string | null;
 };
 
 type VehicleRelation = {
@@ -107,6 +131,17 @@ type TripDbRow = {
   driver_id: string | null;
   vehicles?: RelationValue<VehicleRelation>;
   drivers?: RelationValue<DriverRelation>;
+};
+
+type CashbookDbRow = {
+  id: string | number;
+  entry_date: string | null;
+  entry_type: string | null;
+  person_name: string | null;
+  description: string | null;
+  amount: number | string | null;
+  reference_type: string | null;
+  created_at: string | null;
 };
 
 export function formatAmount(value: number) {
@@ -232,8 +267,42 @@ function buildMetricSummary(trips: DashboardTrip[]): DashboardMetricSummary {
   );
 }
 
+function metricRows(
+  summary: DashboardMetricSummary,
+  t: (key: string) => string
+) {
+  return [
+    { label: t("dashboard.metrics.totalTrips"), value: summary.totalTrips },
+    { label: t("dashboard.metrics.totalFreight"), value: formatAmount(summary.totalFreight) },
+    { label: t("dashboard.metrics.cashReceived"), value: formatAmount(summary.cashReceived) },
+    { label: t("dashboard.metrics.expenses"), value: formatAmount(summary.expenses) },
+    { label: t("dashboard.metrics.netProfit"), value: formatAmount(summary.netProfit) },
+    { label: t("dashboard.metrics.pendingBalance"), value: formatAmount(summary.pendingBalance) },
+  ];
+}
+
+function overallMetricRows(
+  summary: DashboardOverallSummary,
+  t: (key: string) => string
+) {
+  return [
+    { label: t("dashboard.metrics.activeTrips"), value: summary.activeTrips },
+    { label: t("dashboard.metrics.completedTrips"), value: summary.completedTrips },
+    { label: t("dashboard.metrics.cancelledTrips"), value: summary.cancelledTrips },
+    { label: t("dashboard.metrics.totalPendingBalance"), value: formatAmount(summary.totalPendingBalance) },
+  ];
+}
+
 export default function DashboardOverview() {
+  const { t, dir } = useLanguage();
   const [trips, setTrips] = useState<DashboardTrip[]>([]);
+  const [recentEntries, setRecentEntries] = useState<DashboardRecentEntry[]>([]);
+  const [vehicleCount, setVehicleCount] = useState<number | null>(null);
+  const [partyCount, setPartyCount] = useState<number | null>(null);
+  const [countsLoading, setCountsLoading] = useState(true);
+  const [recentEntriesLoading, setRecentEntriesLoading] = useState(true);
+  const [recentEntriesError, setRecentEntriesError] = useState("");
+  const [profileRole, setProfileRole] = useState<string | null>(null);
   const [dateFilter, setDateFilter] =
     useState<DashboardDateFilter>("thisMonth");
   const [fromDate, setFromDate] = useState("");
@@ -247,16 +316,6 @@ export default function DashboardOverview() {
       isInFilterRange(trip.tripDate, dateFilter, fromDate, toDate)
     );
   }, [dateFilter, fromDate, toDate, trips]);
-
-  const recentTrips = useMemo(() => {
-    return [...filteredTrips]
-      .sort((first, second) => {
-        const dateCompare = second.tripDate.localeCompare(first.tripDate);
-        if (dateCompare !== 0) return dateCompare;
-        return second.createdAt.localeCompare(first.createdAt);
-      })
-      .slice(0, 10);
-  }, [filteredTrips]);
 
   const summary = useMemo<DashboardSummary>(() => {
     const today = getToday();
@@ -295,11 +354,7 @@ export default function DashboardOverview() {
     };
   }, [filteredTrips, trips]);
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
-
-  async function loadCurrentContext(): Promise<CurrentContext> {
+  const loadCurrentContext = useCallback(async (): Promise<CurrentContext> => {
     const { data: authData, error: authError } = await supabase.auth.getUser();
 
     if (authError) {
@@ -314,7 +369,7 @@ export default function DashboardOverview() {
 
     const { data: profileData, error: profileError } = await supabase
       .from("profiles")
-      .select("adda_id")
+      .select("adda_id, role")
       .eq("id", userId)
       .maybeSingle();
 
@@ -332,10 +387,11 @@ export default function DashboardOverview() {
     return {
       userId,
       addaId,
+      role: profile?.role ?? null,
     };
-  }
+  }, []);
 
-  async function loadTrips(addaId: string) {
+  const loadTrips = useCallback(async (addaId: string) => {
     const { data, error } = await supabase
       .from("trips")
       .select(
@@ -398,25 +454,117 @@ export default function DashboardOverview() {
         };
       })
     );
-  }
+  }, []);
 
-  async function loadDashboard() {
-    setIsLoading(true);
-    setErrorMessage("");
+  const loadTenantCounts = useCallback(async (addaId: string) => {
+    setCountsLoading(true);
+    setVehicleCount(null);
+    setPartyCount(null);
+    try {
+      const [vehicleResult, partyResult] = await Promise.all([
+        supabase
+          .from("vehicles")
+          .select("id", { count: "exact", head: true })
+          .eq("adda_id", addaId),
+        supabase
+          .from("parties")
+          .select("id", { count: "exact", head: true })
+          .eq("adda_id", addaId)
+          .eq("is_active", true),
+      ]);
+
+      if (vehicleResult.error) {
+        console.error("Unable to load dashboard vehicle count:", vehicleResult.error);
+      } else {
+        setVehicleCount(vehicleResult.count ?? null);
+      }
+
+      if (partyResult.error) {
+        console.error("Unable to load dashboard Party count:", partyResult.error);
+      } else {
+        setPartyCount(partyResult.count ?? null);
+      }
+    } catch (error) {
+      console.error("Unable to load dashboard counts:", error);
+    } finally {
+      setCountsLoading(false);
+    }
+  }, []);
+
+  const loadRecentEntries = useCallback(async (addaId: string) => {
+    setRecentEntriesLoading(true);
+    setRecentEntriesError("");
 
     try {
-      const context = await loadCurrentContext();
-      await loadTrips(context.addaId);
+      const { data, error } = await supabase.rpc("get_cashbook_entries", {
+        p_adda_id: addaId,
+      });
+
+      if (error) throw error;
+
+      const rows = ((data ?? []) as CashbookDbRow[])
+        .map((row): DashboardRecentEntry => {
+          const amount = Number(row.amount ?? 0);
+          return {
+            id: String(row.id),
+            entryDate: row.entry_date ?? "",
+            entryType: row.entry_type === "Cash Out" ? "Cash Out" : "Cash In",
+            personName: row.person_name ?? "",
+            description: row.description ?? "",
+            amount: Number.isFinite(amount) ? amount : 0,
+            referenceType: row.reference_type,
+            createdAt: row.created_at ?? "",
+          };
+        })
+        .sort((first, second) => {
+          const dateOrder = second.entryDate.localeCompare(first.entryDate);
+          if (dateOrder !== 0) return dateOrder;
+          const createdOrder = second.createdAt.localeCompare(first.createdAt);
+          if (createdOrder !== 0) return createdOrder;
+          return second.id.localeCompare(first.id, undefined, { numeric: true });
+        })
+        .slice(0, 5);
+
+      setRecentEntries(rows);
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to load dashboard data."
-      );
+      console.error("Unable to load recent Cashbook entries:", error);
+      setRecentEntries([]);
+      setRecentEntriesError(t("dashboard.shell.recent.loadError"));
+    } finally {
+      setRecentEntriesLoading(false);
+    }
+  }, [t]);
+
+  const loadDashboard = useCallback(async () => {
+    setCountsLoading(true);
+    setRecentEntriesLoading(true);
+    try {
+      const context = await loadCurrentContext();
+      setProfileRole(context.role);
+      await Promise.all([
+        loadTrips(context.addaId),
+        loadTenantCounts(context.addaId),
+        loadRecentEntries(context.addaId),
+      ]);
+    } catch (error) {
+      console.error("Unable to load dashboard:", error);
+      setErrorMessage(t("dashboard.messages.loadError"));
+      setCountsLoading(false);
+      setRecentEntriesLoading(false);
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [loadCurrentContext, loadRecentEntries, loadTenantCounts, loadTrips, t]);
+
+  useEffect(() => {
+    const loadTimer = window.setTimeout(() => {
+      void loadDashboard();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(loadTimer);
+    };
+  }, [loadDashboard]);
 
   async function handleRefresh() {
     setIsRefreshing(true);
@@ -424,13 +572,17 @@ export default function DashboardOverview() {
 
     try {
       const context = await loadCurrentContext();
-      await loadTrips(context.addaId);
+      setProfileRole(context.role);
+      await Promise.all([
+        loadTrips(context.addaId),
+        loadTenantCounts(context.addaId),
+        loadRecentEntries(context.addaId),
+      ]);
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to refresh dashboard data."
-      );
+      console.error("Unable to refresh dashboard:", error);
+      setErrorMessage(t("dashboard.messages.refreshError"));
+      setCountsLoading(false);
+      setRecentEntriesLoading(false);
     } finally {
       setIsRefreshing(false);
     }
@@ -442,62 +594,157 @@ export default function DashboardOverview() {
     setToDate("");
   }
 
+  const quickActions = [
+    {
+      href: "/parties",
+      label: t("dashboard.shell.quick.addParty"),
+      icon: UsersRound,
+      tone: "bg-purple-600 text-white",
+      surface: "bg-purple-50/70 hover:bg-purple-50",
+      borderTone: "border-purple-100 hover:border-purple-200",
+    },
+    {
+      href: "/loading",
+      label: t("dashboard.shell.quick.addLoading"),
+      icon: PackageOpen,
+      tone: "bg-orange-600 text-white",
+      surface: "bg-orange-50/70 hover:bg-orange-50",
+      borderTone: "border-orange-100 hover:border-orange-200",
+    },
+    {
+      href: "/expenses",
+      label: t("dashboard.shell.quick.addVoucher"),
+      icon: ReceiptText,
+      tone: "bg-emerald-600 text-white",
+      surface: "bg-emerald-50/70 hover:bg-emerald-50",
+      borderTone: "border-emerald-100 hover:border-emerald-200",
+    },
+    {
+      href: "/vehicles",
+      label: t("dashboard.shell.quick.addVehicle"),
+      icon: Truck,
+      tone: "bg-blue-600 text-white",
+      surface: "bg-blue-50/60 hover:bg-blue-50",
+      borderTone: "border-blue-100 hover:border-blue-200",
+    },
+    {
+      href: "/reports",
+      label: t("dashboard.shell.quick.viewReports"),
+      icon: BarChart3,
+      tone: "bg-violet-600 text-white",
+      surface: "bg-violet-50/70 hover:bg-violet-50",
+      borderTone: "border-violet-100 hover:border-violet-200",
+    },
+  ];
+  const analyticsSections = [
+    {
+      title: t("dashboard.sections.filteredPeriod"),
+      rows: metricRows(summary.filtered, t),
+    },
+    {
+      title: t("dashboard.sections.today"),
+      rows: metricRows(summary.today, t),
+    },
+    {
+      title: t("dashboard.sections.thisMonth"),
+      rows: metricRows(summary.month, t),
+    },
+    {
+      title: t("dashboard.sections.overall"),
+      rows: overallMetricRows(summary.overall, t),
+    },
+  ];
+
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
-      <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              Transport Business Dashboard
-            </h1>
-            <p className="mt-2 text-base font-medium text-gray-900">
-              Track trips, freight, cash received, expenses, pending balances
-              and net profit.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              void handleRefresh();
-            }}
-            disabled={isLoading || isRefreshing}
-            className="rounded-lg bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed"
-          >
-            {isRefreshing ? "Refreshing..." : "Refresh"}
-          </button>
+    <div dir={dir} className="mx-auto w-full max-w-[1680px] min-w-0 space-y-[18px]">
+      <DashboardHero
+        isSuperAdmin={profileRole === "super_admin"}
+        isLoading={isLoading}
+        isRefreshing={isRefreshing}
+        onRefresh={() => {
+          void handleRefresh();
+        }}
+      />
+      {errorMessage && (
+        <div
+          role="alert"
+          className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700"
+        >
+          {errorMessage}
         </div>
-
-        {errorMessage && (
-          <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
-            {errorMessage}
-          </div>
-        )}
+      )}
+      <DashboardCards
+        summary={summary}
+        loading={isLoading}
+        vehicleCount={vehicleCount}
+        partyCount={partyCount}
+        countsLoading={countsLoading}
+      />
+      <div className="grid min-w-0 items-stretch gap-4 xl:grid-cols-[minmax(0,13fr)_minmax(0,12fr)]">
+        <IncomeExpenseChart
+          trips={filteredTrips}
+          summary={summary.filtered}
+          loading={isLoading}
+          dateFilter={dateFilter}
+          setDateFilter={setDateFilter}
+          fromDate={fromDate}
+          setFromDate={setFromDate}
+          toDate={toDate}
+          setToDate={setToDate}
+          onReset={handleResetFilters}
+        />
+        <RecentTrips
+          entries={recentEntries}
+          loading={recentEntriesLoading}
+          errorMessage={recentEntriesError}
+        />
       </div>
-
-      <DashboardFilters
-        dateFilter={dateFilter}
-        setDateFilter={setDateFilter}
-        fromDate={fromDate}
-        setFromDate={setFromDate}
-        toDate={toDate}
-        setToDate={setToDate}
-        onReset={handleResetFilters}
-      />
-
-      <DashboardCards summary={summary} loading={isLoading} />
-
-      <IncomeExpenseChart
-        trips={filteredTrips}
-        summary={summary.filtered}
-        loading={isLoading}
-      />
-
-      <RecentTrips
-        trips={recentTrips}
-        loading={isLoading}
-        errorMessage={errorMessage}
-      />
+      <section
+        aria-label={t("dashboard.shell.quick.title")}
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+      >
+        {quickActions.map((action) => {
+            const Icon = action.icon;
+            return (
+              <Link
+                key={action.href}
+                href={action.href}
+                className={["group relative flex h-[110px] flex-col items-start justify-between overflow-hidden rounded-[14px] border p-4 transition duration-150 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500", action.surface, action.borderTone].join(" ")}
+              >
+                <span className={["flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-[13px] shadow-[0_4px_10px_rgb(15_23_42_/_14%)] transition duration-150 group-hover:scale-105", action.tone].join(" ")}>
+                  <Icon className="h-6 w-6" strokeWidth={2.5} aria-hidden="true" />
+                </span>
+                <span className="min-w-0 text-base font-bold leading-5 text-slate-800">
+                  {action.label}
+                </span>
+                <span className="absolute end-4 top-4 flex h-[34px] w-[34px] items-center justify-center rounded-full bg-white/80 text-slate-600 transition group-hover:bg-white group-hover:text-blue-700">
+                  <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+                </span>
+              </Link>
+            );
+        })}
+      </section>
+      <details className="rounded-xl border border-slate-200/60 bg-white/50 px-3 py-2">
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-[11px] font-bold text-slate-500 outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <TrendingUp className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+          {t("dashboard.shell.stats.moreAnalytics")}
+        </summary>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {analyticsSections.map((section) => (
+            <div key={section.title} className="rounded-2xl border border-slate-100 bg-white p-4">
+              <h3 className="text-sm font-black text-slate-800">{section.title}</h3>
+              <div className="mt-3 space-y-2">
+                {section.rows.map((row) => (
+                  <div key={row.label} className="flex items-start justify-between gap-3 text-xs">
+                    <span className="font-semibold text-slate-500">{row.label}</span>
+                    <span dir="ltr" className="text-end font-extrabold text-slate-800">{row.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </details>
     </div>
   );
 }

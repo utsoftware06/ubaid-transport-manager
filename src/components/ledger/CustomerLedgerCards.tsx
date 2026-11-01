@@ -1,10 +1,11 @@
--"use client";
+"use client";
 
 import { CreditCard, IndianRupee, ReceiptText, Wallet } from "lucide-react";
 import {
   type CustomerLedgerSummary,
-  formatAmount,
+  formatCurrency,
 } from "./CustomerLedger";
+import { useLanguage } from "@/contexts/LanguageContext";
 type Props = {
   summary: CustomerLedgerSummary;
 };
@@ -16,36 +17,37 @@ type Card = {
 };
 
 export default function CustomerLedgerCards({ summary }: Props) {
+  const { t, dir } = useLanguage();
   const cards: Card[] = [
     {
-      title: "Total Bookings",
+      title: t("customerLedger.summary.totalBookings"),
       value: String(summary.totalBookings),
       icon: ReceiptText,
     },
     {
-      title: "Total Freight",
-      value: formatAmount(summary.totalFreight),
+      title: t("customerLedger.summary.totalFreight"),
+      value: formatCurrency(summary.totalFreight),
       icon: IndianRupee,
     },
     {
-      title: "Received Amount",
-      value: formatAmount(summary.receivedAmount),
+      title: t("customerLedger.summary.receivedAmount"),
+      value: formatCurrency(summary.receivedAmount),
       icon: Wallet,
     },
     {
-      title: "Pending Amount",
-      value: formatAmount(summary.pendingAmount),
+      title: t("customerLedger.summary.pendingAmount"),
+      value: formatCurrency(summary.pendingAmount),
       icon: CreditCard,
     },
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+    <div dir={dir} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
       {cards.map((card) => {
         const Icon = card.icon;
 
         return (
-          <div key={card.title} className="rounded-xl bg-white p-6 shadow-md">
+          <div key={card.title} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-bold text-gray-900">
@@ -56,7 +58,7 @@ export default function CustomerLedgerCards({ summary }: Props) {
                 </h3>
               </div>
 
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600">
                 <Icon className="h-6 w-6 text-white" />
               </div>
             </div>

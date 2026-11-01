@@ -2,33 +2,35 @@
 
 import { Banknote, BriefcaseBusiness, CreditCard, Wrench } from "lucide-react";
 import { type WorkshopSummary, formatAmount } from "./Workshop";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 type Props = {
   summary: WorkshopSummary;
 };
 
 export default function WorkshopCards({ summary }: Props) {
+  const { t, dir } = useLanguage();
   const cards = [
     {
-      title: "Total Jobs",
+      title: t("workshop.cards.totalJobs"),
       value: String(summary.totalJobs),
       icon: BriefcaseBusiness,
       color: "bg-blue-600",
     },
     {
-      title: "Total Workshop Cost",
+      title: t("workshop.cards.totalCost"),
       value: formatAmount(summary.totalCost),
       icon: Wrench,
       color: "bg-purple-600",
     },
     {
-      title: "Paid Amount",
+      title: t("workshop.fields.paidAmount"),
       value: formatAmount(summary.paidAmount),
       icon: Banknote,
       color: "bg-green-600",
     },
     {
-      title: "Remaining Amount",
+      title: t("workshop.fields.remainingAmount"),
       value: formatAmount(summary.remainingAmount),
       icon: CreditCard,
       color: "bg-red-600",
@@ -36,7 +38,7 @@ export default function WorkshopCards({ summary }: Props) {
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+    <div dir={dir} className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
       {cards.map((card) => {
         const Icon = card.icon;
 
@@ -47,13 +49,13 @@ export default function WorkshopCards({ summary }: Props) {
                 <p className="text-sm font-bold text-gray-900">
                   {card.title}
                 </p>
-                <h3 className="mt-3 text-2xl font-extrabold text-gray-900">
+                <h3 dir="ltr" className="mt-3 text-2xl font-extrabold text-gray-900">
                   {card.value}
                 </h3>
               </div>
 
               <div
-                className={`flex h-12 w-12 items-center justify-center rounded-full ${card.color}`}
+                className={`flex h-11 w-11 items-center justify-center rounded-xl ${card.color}`}
               >
                 <Icon className="h-6 w-6 text-white" />
               </div>

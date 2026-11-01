@@ -1,6 +1,7 @@
 "use client";
 
 import { formatAmount } from "./LoadingDetails";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 type Props = {
   totalIncome: number;
@@ -13,33 +14,34 @@ export default function LoadingSummary({
   totalExpense,
   netProfit,
 }: Props) {
+  const { t, dir } = useLanguage();
   const cards = [
     {
-      title: "Total Income",
+      title: t("loadings.details.totalIncome"),
       value: formatAmount(totalIncome),
       color: "text-green-700",
     },
     {
-      title: "Total Expense",
+      title: t("loadings.details.totalExpense"),
       value: formatAmount(totalExpense),
       color: "text-red-700",
     },
     {
-      title: "Net Profit",
+      title: t("dashboard.metrics.netProfit"),
       value: formatAmount(netProfit),
       color: netProfit >= 0 ? "text-blue-700" : "text-red-700",
     },
   ];
 
   return (
-    <section className="rounded-xl bg-white p-6 shadow-md">
+    <section dir={dir} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="mb-5">
-        <h2 className="text-2xl font-bold text-gray-900">
-          Trip Summary
+        <h2 className="text-lg font-extrabold text-slate-900">
+          {t("loadings.details.tripSummary")}
         </h2>
 
-        <p className="mt-1 text-sm font-medium text-gray-700">
-          Income, expense aur final profit summary.
+        <p className="mt-1 text-sm font-medium text-slate-600">
+          {t("loadings.details.summaryDescription")}
         </p>
       </div>
 
@@ -47,13 +49,13 @@ export default function LoadingSummary({
         {cards.map((card) => (
           <div
             key={card.title}
-            className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
+            className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 shadow-sm"
           >
-            <p className="text-sm font-semibold text-gray-700">
+            <p className="text-sm font-semibold text-slate-600">
               {card.title}
             </p>
 
-            <p className={`mt-3 text-2xl font-bold ${card.color}`}>
+            <p className={`mt-2 text-xl font-extrabold ${card.color}`} dir="ltr">
               {card.value}
             </p>
           </div>

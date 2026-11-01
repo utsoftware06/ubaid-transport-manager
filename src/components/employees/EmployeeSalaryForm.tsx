@@ -1,5 +1,7 @@
 "use client";
 
+import { useLanguage } from "@/contexts/LanguageContext";
+import VoiceTypingField from "@/components/shared/VoiceTypingField";
 import {
   type EmployeeSalaryOption,
   type SalaryPaymentMethod,
@@ -80,6 +82,19 @@ export default function EmployeeSalaryForm({
   isEditing,
   onCancelEdit,
 }: Props) {
+  const { t, dir } = useLanguage();
+  const paymentMethodLabel = (method: SalaryPaymentMethod) => {
+    const keys: Record<SalaryPaymentMethod, string> = {
+      Cash: "cash",
+      Bank: "bank",
+      Cheque: "cheque",
+      "Online Transfer": "onlineTransfer",
+      Account: "account",
+    };
+    return t(`employeeSalary.paymentMethods.${keys[method]}`);
+  };
+  const statusLabel = (value: string) =>
+    t(`common.paymentStatus.${value.toLowerCase()}`);
   const basic = toNumber(basicSalary);
   const bonusValue = toNumber(bonus);
   const deductionValue = toNumber(deduction);
@@ -93,14 +108,16 @@ export default function EmployeeSalaryForm({
     paidValue <= 0 ? "Unpaid" : paidValue >= netSalary ? "Paid" : "Partial";
 
   return (
-    <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+    <form dir={dir} onSubmit={(event) => { event.preventDefault(); void onSave(); }} className="rounded-xl bg-white p-6 shadow-md md:p-8">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
-            {isEditing ? "Edit Salary Record" : "Generate Salary"}
+            {isEditing
+              ? t("employeeSalary.actions.edit")
+              : t("employeeSalary.actions.generate")}
           </h2>
           <p className="mt-1 text-sm font-medium text-gray-900">
-            Select an employee, calculate salary and record salary payment.
+            {t("employeeSalary.formDescription")}
           </p>
         </div>
 
@@ -110,128 +127,158 @@ export default function EmployeeSalaryForm({
             onClick={onCancelEdit}
             className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-bold text-gray-900 hover:bg-gray-100"
           >
-            Cancel Edit
+            {t("common.cancelEdit")}
           </button>
         )}
       </div>
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Employee
+          <label htmlFor="salary-employee" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("employeeSalary.fields.employee")}
           </label>
           <select
+            id="salary-employee"
             value={employeeId}
             onChange={(event) => setEmployeeId(event.target.value)}
             className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
           >
-            <option value="">Select Employee</option>
+            <option value="">{t("employeeSalary.placeholders.selectEmployee")}</option>
             {employees.map((employee) => (
               <option key={employee.id} value={employee.id}>
                 {employee.employeeName} - {employee.employeeType} -{" "}
-                {formatAmount(employee.monthlySalary)} - Loan{" "}
-                {formatAmount(employee.activeLoanRemaining)} / Installment{" "}
+                {formatAmount(employee.monthlySalary)} - {t("employeeSalary.fields.activeLoan")}{" "}
+                {formatAmount(employee.activeLoanRemaining)} / {t("employeeSalary.fields.installment")}{" "}
                 {formatAmount(employee.monthlyInstallment)}
               </option>
             ))}
           </select>
         </div>
 
+
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Salary Month
+          <label htmlFor="salary-month" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("employeeSalary.fields.salaryMonth")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel="salary month" mode="date"><input
+            id="salary-month"
             type="date"
             value={salaryMonth}
             onChange={(event) => setSalaryMonth(event.target.value)}
+            dir="ltr"
             className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
 
+
+
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Basic Salary
+          <label htmlFor="salary-basic" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("employeeSalary.fields.basicSalary")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel="salary basic" mode="amount"><input
+            id="salary-basic"
             type="number"
             min="0"
             value={basicSalary}
             onChange={(event) => setBasicSalary(event.target.value)}
+            dir="ltr"
             className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
 
+
+
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Bonus
+          <label htmlFor="salary-bonus" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("employeeSalary.fields.bonus")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel="salary bonus" mode="amount"><input
+            id="salary-bonus"
             type="number"
             min="0"
             value={bonus}
             onChange={(event) => setBonus(event.target.value)}
+            dir="ltr"
             className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
 
+
+
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Deduction
+          <label htmlFor="salary-deduction" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("employeeSalary.fields.deduction")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel="salary deduction" mode="amount"><input
+            id="salary-deduction"
             type="number"
             min="0"
             value={deduction}
             onChange={(event) => setDeduction(event.target.value)}
+            dir="ltr"
             className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
 
+
+
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Loan Recovery
+          <label htmlFor="salary-loan-recovery" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("employeeSalary.fields.loanRecovery")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel="salary loan recovery" mode="amount"><input
+            id="salary-loan-recovery"
             type="number"
             min="0"
             value={loanRecovery}
             onChange={(event) => setLoanRecovery(event.target.value)}
+            dir="ltr"
             className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
 
+
+
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Advance Recovery
+          <label htmlFor="salary-advance-recovery" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("employeeSalary.fields.advanceRecovery")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel="salary advance recovery" mode="amount"><input
+            id="salary-advance-recovery"
             type="number"
             min="0"
             value={advanceRecovery}
             onChange={(event) => setAdvanceRecovery(event.target.value)}
+            dir="ltr"
             className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
 
+
+
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Paid Amount
+          <label htmlFor="salary-paid" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("employeeSalary.fields.paidAmount")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel="salary paid" mode="amount"><input
+            id="salary-paid"
             type="number"
             min="0"
             value={paidAmount}
             onChange={(event) => setPaidAmount(event.target.value)}
+            dir="ltr"
             className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
 
+
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Payment Method
+          <label htmlFor="salary-payment-method" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("employeeSalary.fields.paymentMethod")}
           </label>
           <select
+            id="salary-payment-method"
             value={paymentMethod}
             onChange={(event) =>
               setPaymentMethod(event.target.value as SalaryPaymentMethod)
@@ -239,59 +286,74 @@ export default function EmployeeSalaryForm({
             className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
           >
             {paymentMethods.map((method) => (
-              <option key={method}>{method}</option>
+              <option key={method}>{paymentMethodLabel(method)}</option>
             ))}
           </select>
         </div>
 
+
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Reference No
+          <label htmlFor="salary-reference" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("employeeSalary.fields.referenceNo")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel="salary reference" mode="identifier"><input
+            id="salary-reference"
             type="text"
             value={referenceNo}
             onChange={(event) => setReferenceNo(event.target.value)}
+            dir="ltr"
             className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
 
+
         <div className="md:col-span-2">
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Remarks
+          <label htmlFor="salary-remarks" className="mb-2 block text-sm font-bold text-gray-900">
+            {t("common.remarks")}
           </label>
-          <input
-            type="text"
-            value={remarks}
-            onChange={(event) => setRemarks(event.target.value)}
-            className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          <VoiceTypingField fieldLabel={t("common.remarks")} value={remarks} onValueChange={setRemarks} contextKey={`${employeeId}:${salaryMonth}:${isEditing ? "edit" : "new"}`}>
+            <input
+              id="salary-remarks"
+              type="text"
+              value={remarks}
+              onChange={(event) => setRemarks(event.target.value)}
+              className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+            />
+          </VoiceTypingField>
         </div>
       </div>
 
       {selectedEmployee && (
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
-            <p className="text-sm font-bold text-gray-900">Employee</p>
+            <p className="text-sm font-bold text-gray-900">
+              {t("employeeSalary.fields.employee")}
+            </p>
             <p className="mt-2 text-lg font-extrabold text-gray-900">
               {selectedEmployee.employeeName}
             </p>
           </div>
           <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
-            <p className="text-sm font-bold text-gray-900">Type</p>
+            <p className="text-sm font-bold text-gray-900">
+              {t("employeeSalary.fields.type")}
+            </p>
             <p className="mt-2 text-lg font-extrabold text-gray-900">
               {selectedEmployee.employeeType}
             </p>
           </div>
           <div className="rounded-xl border border-red-100 bg-red-50 p-4">
-            <p className="text-sm font-bold text-gray-900">Active Loan</p>
-            <p className="mt-2 text-lg font-extrabold text-red-700">
+            <p className="text-sm font-bold text-gray-900">
+              {t("employeeSalary.fields.activeLoan")}
+            </p>
+            <p dir="ltr" className="mt-2 text-lg font-extrabold text-red-700">
               {formatAmount(selectedEmployee.activeLoanRemaining)}
             </p>
           </div>
           <div className="rounded-xl border border-orange-100 bg-orange-50 p-4">
-            <p className="text-sm font-bold text-gray-900">Installment</p>
-            <p className="mt-2 text-lg font-extrabold text-orange-700">
+            <p className="text-sm font-bold text-gray-900">
+              {t("employeeSalary.fields.installment")}
+            </p>
+            <p dir="ltr" className="mt-2 text-lg font-extrabold text-orange-700">
               {formatAmount(selectedEmployee.monthlyInstallment)}
             </p>
           </div>
@@ -300,19 +362,25 @@ export default function EmployeeSalaryForm({
 
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm font-bold text-gray-900">Net Salary</p>
-          <p className="mt-2 text-xl font-extrabold text-blue-700">
+          <p className="text-sm font-bold text-gray-900">
+            {t("employeeSalary.fields.netSalary")}
+          </p>
+          <p dir="ltr" className="mt-2 text-xl font-extrabold text-blue-700">
             {formatAmount(Math.max(netSalary, 0))}
           </p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm font-bold text-gray-900">Remaining Amount</p>
-          <p className="mt-2 text-xl font-extrabold text-red-700">
+          <p className="text-sm font-bold text-gray-900">
+            {t("employeeSalary.fields.remainingAmount")}
+          </p>
+          <p dir="ltr" className="mt-2 text-xl font-extrabold text-red-700">
             {formatAmount(remainingAmount)}
           </p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm font-bold text-gray-900">Payment Status</p>
+          <p className="text-sm font-bold text-gray-900">
+            {t("employeeSalary.fields.paymentStatus")}
+          </p>
           <span
             className={`mt-2 inline-flex rounded-full px-3 py-1 text-sm font-extrabold ${
               paymentStatus === "Paid"
@@ -322,19 +390,22 @@ export default function EmployeeSalaryForm({
                   : "bg-red-100 text-red-700"
             }`}
           >
-            {paymentStatus}
+            {statusLabel(paymentStatus)}
           </span>
         </div>
       </div>
 
       <div className="mt-8 flex flex-col gap-3 sm:flex-row">
         <button
-          type="button"
-          onClick={onSave}
+          type="submit"
           disabled={isSaving}
           className="rounded-lg bg-blue-600 px-8 py-3 font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed"
         >
-          {isSaving ? "Saving..." : isEditing ? "Update Salary" : "Save Salary"}
+          {isSaving
+            ? t("common.states.saving")
+            : isEditing
+              ? t("employeeSalary.actions.update")
+              : t("employeeSalary.actions.save")}
         </button>
 
         {isEditing && (
@@ -343,10 +414,10 @@ export default function EmployeeSalaryForm({
             onClick={onCancelEdit}
             className="rounded-lg border border-gray-300 bg-white px-8 py-3 font-bold text-gray-900 hover:bg-gray-100"
           >
-            Cancel Edit
+            {t("common.cancelEdit")}
           </button>
         )}
       </div>
-    </div>
+    </form>
   );
 }

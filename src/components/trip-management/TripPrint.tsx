@@ -1,7 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { type TripRecord, type TripSummary, formatAmount } from "./TripManagement";
+import {
+  type TripRecord,
+  type TripSummary,
+  formatAmount,
+  tripStatusTranslationKey,
+} from "./TripManagement";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { usePrintAddaName } from "@/lib/print/usePrintAddaName";
+import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
+import { bilingual, printLabel, printValue, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
+import { singleResolvedAddaId } from "@/components/print/LedgerStatementPrint";
 
 type Props = {
   trips: TripRecord[];
@@ -30,7 +40,12 @@ function displayValue(value: string | null) {
 }
 
 export default function TripPrint({ trips, summary, selectedTrip }: Props) {
+  const { t, dir, language } = useLanguage();
   const [printMode, setPrintMode] = useState<PrintMode>("all");
+  const printOwnerIds = (printMode === "single" && selectedTrip ? [selectedTrip] : trips).map((trip) => trip.adda_id);
+  const addaId = singleResolvedAddaId(printOwnerIds);
+  const addaName = usePrintAddaName(addaId, language === "ur" ? "ur" : "en");
+  const modulePrint = useModuleTransportPrint("reports", addaId, language === "ur" ? "ur" : "en");
 
   function printAfterRender() {
     requestAnimationFrame(() => {
@@ -41,29 +56,76 @@ export default function TripPrint({ trips, summary, selectedTrip }: Props) {
   }
 
   function handlePrintAll() {
-    setPrintMode("all");
-    printAfterRender();
+    if (!addaId || trips.some((trip) => !trip.adda_id)) return;
+    const presentation: ModulePrintPresentation = {
+      documentType: "reports",
+      title: printLabel("tripManagement.print.reportTitle"),
+      subtitle: bilingual(`${trips.length} filtered trips`, `${trips.length} فلٹر شدہ ٹرپس`),
+      fields: [],
+      tables: [{
+        title: printLabel("tripManagement.print.reportTitle"),
+        columns: [printLabel("tripManagement.form.tripNumber"), printLabel("common.date"), printLabel("common.vehicle"), printLabel("common.driver"), printLabel("common.customer"), printLabel("common.route"), printLabel("common.freight"), printLabel("tripManagement.table.received"), printLabel("common.balance"), printLabel("common.expense"), printLabel("common.profit"), printLabel("common.status")],
+        rows: trips.map((trip) => [printValue(trip.trip_no), printValue(trip.trip_date), printValue(trip.vehicleNo), printValue(trip.driverName), printValue(trip.customer_name), printValue(`${trip.loading_from} → ${trip.delivery_to}`), printValue(formatAmount(trip.freight_amount)), printValue(formatAmount(trip.received_amount)), printValue(formatAmount(trip.payment_balance)), printValue(formatAmount(trip.total_expense)), printValue(formatAmount(trip.net_profit)), printLabel(tripStatusTranslationKey(trip.trip_status))]),
+      }],
+      totals: [
+        { label: printLabel("tripManagement.cards.totalFreight"), value: printValue(formatAmount(summary.totalFreight)) },
+        { label: printLabel("tripManagement.cards.totalReceived"), value: printValue(formatAmount(summary.totalReceived)) },
+        { label: printLabel("tripManagement.cards.totalBalance"), value: printValue(formatAmount(summary.totalBalance)) },
+        { label: printLabel("tripManagement.cards.totalExpenses"), value: printValue(formatAmount(summary.totalExpenses)) },
+        { label: printLabel("tripManagement.cards.netProfit"), value: printValue(formatAmount(summary.totalProfit)) },
+      ],
+    };
+    modulePrint.openPresentation(presentation, () => { setPrintMode("all"); printAfterRender(); }, addaId);
   }
 
   function handlePrintSelected() {
     if (!selectedTrip) return;
-    setPrintMode("single");
-    printAfterRender();
+    if (!selectedTrip.adda_id) return;
+    const presentation: ModulePrintPresentation = {
+      documentType: "reports",
+      title: printLabel("tripManagement.print.recordTitle"),
+      documentNo: printValue(selectedTrip.trip_no),
+      documentDate: printValue(selectedTrip.trip_date),
+      fields: [
+        { label: printLabel("common.vehicle"), value: printValue(selectedTrip.vehicleNo) },
+        { label: printLabel("common.driver"), value: printValue(selectedTrip.driverName) },
+        { label: printLabel("common.customer"), value: printValue(selectedTrip.customer_name) },
+        { label: printLabel("common.route"), value: printValue(`${selectedTrip.loading_from} → ${selectedTrip.delivery_to}`) },
+        { label: printLabel("common.status"), value: printLabel(tripStatusTranslationKey(selectedTrip.trip_status)) },
+      ],
+      totals: [
+        { label: printLabel("common.freight"), value: printValue(formatAmount(selectedTrip.freight_amount)) },
+        { label: printLabel("tripManagement.table.received"), value: printValue(formatAmount(selectedTrip.received_amount)) },
+        { label: printLabel("common.balance"), value: printValue(formatAmount(selectedTrip.payment_balance)) },
+        { label: printLabel("common.expense"), value: printValue(formatAmount(selectedTrip.total_expense)) },
+        { label: printLabel("common.profit"), value: printValue(formatAmount(selectedTrip.net_profit)) },
+      ],
+    };
+    modulePrint.openPresentation(presentation, () => { setPrintMode("single"); printAfterRender(); }, selectedTrip.adda_id);
   }
 
   return (
     <>
-      <section className="rounded-xl bg-white p-6 shadow-md md:p-8">
+      <section dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Trip Printing</h2>
+            <h2 className="text-2xl font-bold text-gray-900">
+              {t("tripManagement.print.title")}
+            </h2>
             <p className="mt-2 text-sm font-medium text-gray-900">
-              Print filtered trip reports or the currently selected trip record.
+              {t("tripManagement.print.description")}
             </p>
             <p className="mt-4 text-sm font-bold text-gray-900">
-              Filtered Trips: {trips.length} | Total Freight:{" "}
-              {formatAmount(summary.totalFreight)} | Selected:{" "}
-              {selectedTrip ? selectedTrip.trip_no : "None"}
+              {t("tripManagement.print.filteredTrips")}:{" "}
+              <span dir="ltr">{trips.length}</span> |{" "}
+              {t("tripManagement.cards.totalFreight")}:{" "}
+              <span dir="ltr">{formatAmount(summary.totalFreight)}</span> |{" "}
+              {t("tripManagement.print.selected")}:{" "}
+              <span dir="ltr">
+                {selectedTrip
+                  ? selectedTrip.trip_no
+                  : t("tripManagement.print.none")}
+              </span>
             </p>
           </div>
 
@@ -71,79 +133,81 @@ export default function TripPrint({ trips, summary, selectedTrip }: Props) {
            <button
   type="button"
   onClick={handlePrintAll}
-  disabled={trips.length === 0}
+  disabled={trips.length === 0 || !addaId}
   className="rounded-lg bg-blue-600 px-6 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
 >
-  Print All Filtered Trips
+  {t("tripManagement.print.printAll")}
 </button>
             <button
               type="button"
               onClick={handlePrintSelected}
-              disabled={!selectedTrip}
+              disabled={!selectedTrip || !selectedTrip.adda_id}
               className="rounded-lg bg-gray-900 px-6 py-3 text-sm font-bold text-white hover:bg-black disabled:cursor-not-allowed disabled:bg-gray-500"
             >
-              Print Selected Trip
+              {t("tripManagement.print.printSelected")}
             </button>
           </div>
         </div>
       </section>
 
-      <section className="trip-print-area">
+      {modulePrint.dialog}
+
+      <section className="trip-print-area" dir={dir} lang={language}>
         {printMode === "all" && (
           <div className="print-document">
             <div className="print-header">
               <div>
-                <h1>Trip / Chakkar Report</h1>
-                <p>UT Software</p>
+                <h1>{t("tripManagement.print.reportTitle")}</h1>
+                <p>{addaName}</p>
               </div>
               <div className="print-meta">
-                <p>Generated: {formatDateTime(new Date().toISOString())}</p>
-                <p>Total Trips: {summary.totalTrips}</p>
+                <p>{t("tripManagement.print.generated")}: <span className="technical">{formatDateTime(new Date().toISOString())}</span></p>
+                <p>{t("tripManagement.cards.totalTrips")}: <span className="technical">{summary.totalTrips}</span></p>
               </div>
             </div>
 
             <div className="print-summary">
-              <div><span>Total Freight</span><strong>{formatAmount(summary.totalFreight)}</strong></div>
-              <div><span>Total Received</span><strong>{formatAmount(summary.totalReceived)}</strong></div>
-              <div><span>Total Balance</span><strong>{formatAmount(summary.totalBalance)}</strong></div>
-              <div><span>Total Expenses</span><strong>{formatAmount(summary.totalExpenses)}</strong></div>
-              <div><span>Net Profit</span><strong>{formatAmount(summary.totalProfit)}</strong></div>
+              <div><span>{t("tripManagement.cards.totalFreight")}</span><strong className="technical">{formatAmount(summary.totalFreight)}</strong></div>
+              <div><span>{t("tripManagement.cards.totalReceived")}</span><strong className="technical">{formatAmount(summary.totalReceived)}</strong></div>
+              <div><span>{t("tripManagement.cards.totalBalance")}</span><strong className="technical">{formatAmount(summary.totalBalance)}</strong></div>
+              <div><span>{t("tripManagement.cards.totalExpenses")}</span><strong className="technical">{formatAmount(summary.totalExpenses)}</strong></div>
+              <div><span>{t("tripManagement.cards.netProfit")}</span><strong className="technical">{formatAmount(summary.totalProfit)}</strong></div>
             </div>
 
             <table className="print-table">
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>Trip No</th>
-                  <th>Date</th>
-                  <th>Vehicle</th>
-                  <th>Driver</th>
-                  <th>Customer</th>
-                  <th>Route</th>
-                  <th>Freight</th>
-                  <th>Received</th>
-                  <th>Balance</th>
-                  <th>Expense</th>
-                  <th>Profit</th>
-                  <th>Status</th>
+                  <th>{t("tripManagement.form.tripNumber")}</th>
+                  <th>{t("common.date")}</th>
+                  <th>{t("common.vehicle")}</th>
+                  <th>{t("common.driver")}</th>
+                  <th>{t("common.customer")}</th>
+                  <th>{t("common.route")}</th>
+                  <th>{t("common.freight")}</th>
+                  <th>{t("tripManagement.table.received")}</th>
+                  <th>{t("common.balance")}</th>
+                  <th>{t("common.expense")}</th>
+                  <th>{t("common.profit")}</th>
+                  <th>{t("common.status")}</th>
                 </tr>
               </thead>
               <tbody>
                 {trips.map((trip, index) => (
                   <tr key={trip.id}>
                     <td>{index + 1}</td>
-                    <td>{trip.trip_no}</td>
-                    <td>{formatDate(trip.trip_date)}</td>
-                    <td>{trip.vehicleNo}</td>
+                    <td className="technical">{trip.trip_no}</td>
+                    <td className="technical">{formatDate(trip.trip_date)}</td>
+                    <td className="technical">{trip.vehicleNo}</td>
                     <td>{trip.driverName}</td>
                     <td>{displayValue(trip.customer_name)}</td>
-                    <td>{trip.loading_from} → {trip.delivery_to}</td>
-                    <td>{formatAmount(trip.freight_amount)}</td>
-                    <td>{formatAmount(trip.received_amount)}</td>
-                    <td>{formatAmount(trip.payment_balance)}</td>
-                    <td>{formatAmount(trip.total_expense)}</td>
-                    <td>{formatAmount(trip.net_profit)}</td>
-                    <td>{trip.trip_status}</td>
+                    <td>{trip.loading_from} {dir === "rtl" ? "←" : "→"} {trip.delivery_to}</td>
+                    <td className="technical">{formatAmount(trip.freight_amount)}</td>
+                    <td className="technical">{formatAmount(trip.received_amount)}</td>
+                    <td className="technical">{formatAmount(trip.payment_balance)}</td>
+                    <td className="technical">{formatAmount(trip.total_expense)}</td>
+                    <td className="technical">{formatAmount(trip.net_profit)}</td>
+                    <td>{t(tripStatusTranslationKey(trip.trip_status))}</td>
                   </tr>
                 ))}
               </tbody>
@@ -155,43 +219,43 @@ export default function TripPrint({ trips, summary, selectedTrip }: Props) {
           <div className="print-document print-single">
             <div className="print-header">
               <div>
-                <h1>Trip / Chakkar Record</h1>
-                <p>UT Software</p>
+                <h1>{t("tripManagement.print.recordTitle")}</h1>
+                <p>{addaName}</p>
               </div>
               <div className="print-meta">
-                <p>Printed: {formatDateTime(new Date().toISOString())}</p>
-                <p>Trip No: {selectedTrip.trip_no}</p>
+                <p>{t("tripManagement.print.printed")}: <span className="technical">{formatDateTime(new Date().toISOString())}</span></p>
+                <p>{t("tripManagement.form.tripNumber")}: <span className="technical">{selectedTrip.trip_no}</span></p>
               </div>
             </div>
 
             <div className="print-detail-grid">
               {[
-                ["Trip No", selectedTrip.trip_no],
-                ["Trip Date", formatDate(selectedTrip.trip_date)],
-                ["Vehicle", selectedTrip.vehicleNo],
-                ["Owner", selectedTrip.ownerName],
-                ["Driver", selectedTrip.driverName],
-                ["Booking Customer", selectedTrip.bookingCustomerName],
-                ["Customer Name", displayValue(selectedTrip.customer_name)],
-                ["Customer Phone", displayValue(selectedTrip.customer_phone)],
-                ["Loading From", selectedTrip.loading_from],
-                ["Delivery To", selectedTrip.delivery_to],
-                ["Goods Description", displayValue(selectedTrip.goods_description)],
-                ["Freight Amount", formatAmount(selectedTrip.freight_amount)],
-                ["Customer Advance", formatAmount(selectedTrip.customer_advance)],
-                ["Driver Advance", formatAmount(selectedTrip.driver_advance)],
-                ["Total Expense", formatAmount(selectedTrip.total_expense)],
-                ["Received Amount", formatAmount(selectedTrip.received_amount)],
-                ["Payment Balance", formatAmount(selectedTrip.payment_balance)],
-                ["Net Profit", formatAmount(selectedTrip.net_profit)],
-                ["Status", selectedTrip.trip_status],
-                ["Start Date", formatDate(selectedTrip.start_date)],
-                ["Completion Date", formatDate(selectedTrip.completion_date)],
-                ["Remarks", displayValue(selectedTrip.remarks)],
+                [t("tripManagement.form.tripNumber"), selectedTrip.trip_no],
+                [t("tripManagement.form.tripDate"), formatDate(selectedTrip.trip_date)],
+                [t("common.vehicle"), selectedTrip.vehicleNo],
+                [t("common.owner"), selectedTrip.ownerName],
+                [t("common.driver"), selectedTrip.driverName],
+                [t("tripManagement.details.bookingCustomer"), selectedTrip.bookingCustomerName],
+                [t("tripManagement.details.customerName"), displayValue(selectedTrip.customer_name)],
+                [t("tripManagement.details.customerPhone"), displayValue(selectedTrip.customer_phone)],
+                [t("tripManagement.form.loadingFrom"), selectedTrip.loading_from],
+                [t("tripManagement.form.deliveryTo"), selectedTrip.delivery_to],
+                [t("tripManagement.details.goodsDescription"), displayValue(selectedTrip.goods_description)],
+                [t("tripManagement.form.freightAmount"), formatAmount(selectedTrip.freight_amount)],
+                [t("tripManagement.form.customerAdvance"), formatAmount(selectedTrip.customer_advance)],
+                [t("tripManagement.form.driverAdvance"), formatAmount(selectedTrip.driver_advance)],
+                [t("tripManagement.form.totalExpense"), formatAmount(selectedTrip.total_expense)],
+                [t("tripManagement.form.receivedAmount"), formatAmount(selectedTrip.received_amount)],
+                [t("tripManagement.form.paymentBalance"), formatAmount(selectedTrip.payment_balance)],
+                [t("tripManagement.cards.netProfit"), formatAmount(selectedTrip.net_profit)],
+                [t("common.status"), t(tripStatusTranslationKey(selectedTrip.trip_status))],
+                [t("tripManagement.form.startDate"), formatDate(selectedTrip.start_date)],
+                [t("tripManagement.form.completionDate"), formatDate(selectedTrip.completion_date)],
+                [t("common.remarks"), displayValue(selectedTrip.remarks)],
               ].map(([label, value]) => (
                 <div key={label}>
                   <span>{label}</span>
-                  <strong>{value}</strong>
+                  <strong dir="auto">{value}</strong>
                 </div>
               ))}
             </div>
@@ -202,6 +266,7 @@ export default function TripPrint({ trips, summary, selectedTrip }: Props) {
       <style jsx global>{`
         .trip-print-area {
           display: none;
+          direction: ${dir};
         }
 
         @media print {
@@ -227,6 +292,7 @@ export default function TripPrint({ trips, summary, selectedTrip }: Props) {
             background: #ffffff !important;
             color: #000000 !important;
             font-family: Arial, sans-serif !important;
+            direction: ${dir} !important;
           }
 
           .print-header {
@@ -253,7 +319,7 @@ export default function TripPrint({ trips, summary, selectedTrip }: Props) {
           }
 
           .print-meta {
-            text-align: right !important;
+            text-align: end !important;
           }
 
           .print-summary {
@@ -306,7 +372,7 @@ export default function TripPrint({ trips, summary, selectedTrip }: Props) {
           .print-table td {
             border: 1px solid #000000 !important;
             padding: 5px !important;
-            text-align: left !important;
+            text-align: start !important;
             color: #000000 !important;
           }
 
@@ -324,6 +390,11 @@ export default function TripPrint({ trips, summary, selectedTrip }: Props) {
             display: grid !important;
             grid-template-columns: repeat(2, 1fr) !important;
             gap: 10px !important;
+          }
+
+          .technical {
+            direction: ltr !important;
+            unicode-bidi: isolate !important;
           }
         }
       `}</style>

@@ -8,6 +8,8 @@ import ReportFilters, {
 import ReportTable from "@/components/reports/ReportTable";
 import VehicleWiseReport from "@/components/reports/VehicleWiseReport";
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/contexts/LanguageContext";
+import ModulePageHeading from "@/components/shared/ModulePageHeading";
 
 type VehicleOption = {
   id: string;
@@ -28,6 +30,7 @@ const emptyFilters: ReportFilterValues = {
 };
 
 export default function ReportsPage() {
+  const { t, dir } = useLanguage();
   const [filterValues, setFilterValues] =
     useState<ReportFilterValues>(emptyFilters);
   const [appliedFilters, setAppliedFilters] =
@@ -85,7 +88,7 @@ export default function ReportsPage() {
       filterValues.toDate &&
       filterValues.fromDate > filterValues.toDate
     ) {
-      window.alert("From Date cannot be later than To Date.");
+      window.alert(t("reports.validation.invalidDateRange"));
       return;
     }
 
@@ -101,17 +104,12 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8 p-8">
-      <div>
-        <h1 className="text-4xl font-bold text-gray-900">
-          Reports Dashboard
-        </h1>
-        <p className="mt-2 text-base font-medium text-gray-900">
-          Analyze loading, expenses, income and profit through detailed reports.
-        </p>
-      </div>
+    <div dir={dir} className="ut-module-page mx-auto max-w-7xl space-y-6">
+      <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <ModulePageHeading icon="reports" accent="purple" title={t("reports.title")} description={t("reports.description")} />
+      </header>
 
-      <ReportCards />
+      <ReportCards filters={appliedFilters} />
 
       <ReportFilters
         filters={filterValues}
@@ -124,7 +122,10 @@ export default function ReportsPage() {
 
       <VehicleWiseReport />
 
-      <ReportTable filters={appliedFilters} />
+      <ReportTable
+        key={`${appliedFilters.fromDate}|${appliedFilters.toDate}|${appliedFilters.vehicle}|${appliedFilters.driver}|${appliedFilters.route}`}
+        filters={appliedFilters}
+      />
     </div>
   );
 }

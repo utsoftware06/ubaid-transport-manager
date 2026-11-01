@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import EmployeeSalaryCards from "@/components/employees/EmployeeSalaryCards";
 import EmployeeSalaryForm from "@/components/employees/EmployeeSalaryForm";
 import EmployeeSalarySlip from "@/components/employees/EmployeeSalarySlip";
 import EmployeeSalaryTable from "@/components/employees/EmployeeSalaryTable";
+import { USER_ROLES } from "@/config/navigation";
+import { useLanguage } from "@/contexts/LanguageContext";
+import ModulePageHeading from "@/components/shared/ModulePageHeading";
 import { supabase } from "@/lib/supabase/client";
 
 export type SalaryPaymentStatus = "Paid" | "Partial" | "Unpaid";
@@ -15,6 +18,9 @@ export type SalaryPaymentMethod =
   | "Cheque"
   | "Online Transfer"
   | "Account";
+
+export type SalaryStatusFilter = SalaryPaymentStatus | "All";
+export type SalaryMethodFilter = SalaryPaymentMethod | "All";
 
 export type EmployeeSalaryOption = {
   id: string;
@@ -71,7 +77,7 @@ type EmployeeLoanDbRow = {
   id: number;
   employee_id: string;
   loan_amount: number | string | null;
-  monthly_installment: number | string | null;
+  monthly_installment?: number | string | null;
   recovered_amount: number | string | null;
   remaining_amount: number | string | null;
   status: string | null;
@@ -96,14 +102,15 @@ type SalaryRecordDbRow = {
   created_at: string | null;
 };
 
-type EmployeeTransactionLookup = {
-  id: number;
-  loan_id: number | null;
-  amount: number | string | null;
+type EmployeeProfileContext = {
+  role: string | null;
+  adda_id: string | null;
+  is_active: boolean | null;
 };
 
-type CashbookLookup = {
-  id: number | string;
+type AddaOption = {
+  id: string;
+  name: string;
 };
 
 export function formatAmount(value: number) {
@@ -133,15 +140,6 @@ function normalizePaymentMethod(value: string | null): SalaryPaymentMethod {
   return "Cash";
 }
 
-function calculatePaymentStatus(
-  paidAmount: number,
-  netSalary: number
-): SalaryPaymentStatus {
-  if (paidAmount <= 0) return "Unpaid";
-  if (paidAmount >= netSalary) return "Paid";
-  return "Partial";
-}
-
 function getNetSalary(
   basicSalary: number,
   bonus: number,
@@ -152,7 +150,36 @@ function getNetSalary(
   return basicSalary + bonus - deduction - loanRecovery - advanceRecovery;
 }
 
+function employeeSalaryErrorMessage(message: string, fallback: string) {
+  const normalized = message.toUpperCase();
+  const errors: Array<[string, string]> = [
+    ["AUTHENTICATION_REQUIRED", "Your session has expired. Sign in again."],
+    ["EMPLOYEE_SALARY_AUTHORITATIVE_ADDA_UNRESOLVED", "The selected Adda could not be verified."],
+    ["EMPLOYEE_ADDA_UNASSIGNED", "The selected employee has no assigned Adda."],
+    ["EMPLOYEE_NOT_FOUND_OR_ADDA_MISMATCH", "The selected employee is unavailable in this Adda."],
+    ["EMPLOYEE_NOT_ACTIVE", "Only active Employees can be selected for Salary."],
+    ["EMPLOYEE_SALARY_MONTH_ALREADY_EXISTS", "A Salary record already exists for this Employee and month."],
+    ["HISTORICAL_EMPLOYEE_SALARY_ADDA_UNASSIGNED", "This historical Salary has no assigned Adda and cannot be changed."],
+    ["HISTORICAL_EMPLOYEE_LOAN_ADDA_UNASSIGNED", "This historical Loan has no assigned Adda and cannot be used for recovery."],
+    ["EMPLOYEE_SALARY_LOAN_NOT_FOUND", "The selected Employee Loan could not be found."],
+    ["EMPLOYEE_SALARY_LOAN_ADDA_OR_EMPLOYEE_MISMATCH", "The selected Employee Loan does not belong to this Employee and Adda."],
+    ["EMPLOYEE_SALARY_LOAN_RECOVERY_EXCEEDS_AVAILABLE_AMOUNT", "Loan recovery exceeds the available Loan balance."],
+    ["EMPLOYEE_SALARY_RECOVERY_EVIDENCE_INCONSISTENT", "Existing Salary recovery records are inconsistent. No changes were made."],
+    ["EMPLOYEE_SALARY_CHILD_EVIDENCE_INCONSISTENT", "Existing Salary accounting records are inconsistent. No changes were made."],
+    ["DUPLICATE_EMPLOYEE_SALARY_CASHBOOK_REFERENCE", "Multiple Cashbook rows are linked to this Salary. Contact an administrator."],
+    ["EMPLOYEE_SALARY_NOT_FOUND", "This Salary record no longer exists."],
+    ["EMPLOYEE_SALARY_ADDA_MISMATCH", "This Salary belongs to a different Adda."],
+    ["EMPLOYEE_SALARY_CASHBOOK_EVIDENCE_INCONSISTENT", "The Salary Cashbook record is inconsistent. No changes were made."],
+    ["EMPLOYEE_SALARY_PAID_EXCEEDS_NET", "Paid amount cannot exceed net Salary."],
+    ["EMPLOYEE_SALARY_NET_CANNOT_BE_NEGATIVE", "Net Salary cannot be negative."],
+    ["EMPLOYEE_SALARY_PAYMENT_METHOD_REQUIRED", "Select a payment method when entering a paid amount."],
+  ];
+
+  return errors.find(([marker]) => normalized.includes(marker))?.[1] ?? fallback;
+}
+
 export default function EmployeeSalary() {
+  const { t, dir } = useLanguage();
   const [employeeId, setEmployeeId] = useState("");
   const [salaryMonth, setSalaryMonth] = useState("");
   const [basicSalary, setBasicSalary] = useState("");
@@ -170,6 +197,11 @@ export default function EmployeeSalary() {
   const [salaryRecords, setSalaryRecords] = useState<SalaryRecordDbRow[]>([]);
   const [loans, setLoans] = useState<EmployeeLoanDbRow[]>([]);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] =
+    useState<SalaryStatusFilter>("All");
+  const [methodFilter, setMethodFilter] =
+    useState<SalaryMethodFilter>("All");
+  const [page, setPage] = useState(1);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [selectedSlip, setSelectedSlip] = useState<EmployeeSalaryRow | null>(
     null
@@ -178,13 +210,22 @@ export default function EmployeeSalary() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [profileAddaId, setProfileAddaId] = useState<string | null>(null);
+  const [selectedAddaId, setSelectedAddaId] = useState("");
+  const [addas, setAddas] = useState<AddaOption[]>([]);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isContextLoading, setIsContextLoading] = useState(true);
+  const [contextError, setContextError] = useState("");
+  const saveInProgressRef = useRef(false);
+  const deleteInProgressRef = useRef(false);
+  const loadRequestIdRef = useRef(0);
 
   const employeeOptions = useMemo<EmployeeSalaryOption[]>(() => {
     return employees.map((employee) => {
       const activeLoan = loans.find(
         (loan) =>
           loan.employee_id === employee.id &&
-          loan.status !== "Completed" &&
+          loan.status === "Active" &&
           toNumber(loan.remaining_amount) > 0
       );
 
@@ -193,7 +234,7 @@ export default function EmployeeSalary() {
         employeeName: employee.employee_name ?? "",
         employeeType: employee.employee_type ?? "",
         monthlySalary: toNumber(employee.monthly_salary),
-        status: employee.status ?? "Active",
+        status: employee.status ?? "",
         activeLoanId: activeLoan?.id ?? null,
         activeLoanRemaining: toNumber(activeLoan?.remaining_amount),
         monthlyInstallment: toNumber(activeLoan?.monthly_installment),
@@ -218,7 +259,7 @@ export default function EmployeeSalary() {
       return {
         id: record.id,
         employeeId: record.employee_id,
-        employeeName: employee?.employeeName ?? "Unknown Employee",
+        employeeName: employee?.employeeName ?? t("employeeSalary.unknownEmployee"),
         employeeType: employee?.employeeType ?? "-",
         salaryMonth: record.salary_month ?? "",
         basicSalary: toNumber(record.basic_salary),
@@ -236,12 +277,10 @@ export default function EmployeeSalary() {
         createdAt: record.created_at ?? "",
       };
     });
-  }, [employeeOptions, salaryRecords]);
+  }, [employeeOptions, salaryRecords, t]);
 
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
-
-    if (!keyword) return rows;
 
     return rows.filter((row) => {
       const searchableText = [
@@ -256,9 +295,22 @@ export default function EmployeeSalary() {
         .join(" ")
         .toLowerCase();
 
-      return searchableText.includes(keyword);
+      const matchesSearch = !keyword || searchableText.includes(keyword);
+      const matchesStatus =
+        statusFilter === "All" || row.paymentStatus === statusFilter;
+      const matchesMethod =
+        methodFilter === "All" || row.paymentMethod === methodFilter;
+
+      return matchesSearch && matchesStatus && matchesMethod;
     });
-  }, [rows, search]);
+  }, [methodFilter, rows, search, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / 10));
+  const currentPage = Math.min(Math.max(page, 1), totalPages);
+  const paginatedRows = useMemo(
+    () => filteredRows.slice((currentPage - 1) * 10, currentPage * 10),
+    [currentPage, filteredRows]
+  );
 
   const summary = useMemo<EmployeeSalarySummary>(() => {
     return filteredRows.reduce(
@@ -287,101 +339,189 @@ export default function EmployeeSalary() {
   }, [filteredRows]);
 
   useEffect(() => {
-    loadInitialData();
-  }, []);
+    const syncTimer = window.setTimeout(() => {
+      if (!employeeId || editingId) return;
 
-  useEffect(() => {
-    if (!employeeId || editingId) return;
+      const employee = employeeOptions.find((item) => item.id === employeeId);
 
-    const employee = employeeOptions.find((item) => item.id === employeeId);
+      if (!employee) return;
 
-    if (!employee) return;
+      setBasicSalary(String(employee.monthlySalary || ""));
+      setLoanRecovery(
+        String(
+          Math.min(employee.monthlyInstallment, employee.activeLoanRemaining) || ""
+        )
+      );
+    }, 0);
 
-    setBasicSalary(String(employee.monthlySalary || ""));
-    setLoanRecovery(
-      String(
-        Math.min(employee.monthlyInstallment, employee.activeLoanRemaining) || ""
-      )
-    );
+    return () => window.clearTimeout(syncTimer);
   }, [employeeId, employeeOptions, editingId]);
 
-  async function loadInitialData() {
+  const currentAddaId = isSuperAdmin ? selectedAddaId : profileAddaId;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadTenantContext() {
+      setIsContextLoading(true);
+      setContextError("");
+
+      try {
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        if (authError || !authData.user) {
+          throw authError ?? new Error("No authenticated user.");
+        }
+
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("role, adda_id, is_active")
+          .eq("id", authData.user.id)
+          .maybeSingle();
+        if (profileError) throw profileError;
+
+        const profile = profileData as EmployeeProfileContext | null;
+        if (
+          !profile ||
+          profile.is_active !== true ||
+          (profile.role !== USER_ROLES.superAdmin &&
+            profile.role !== USER_ROLES.addaAdmin)
+        ) {
+          throw new Error("An active Employee administrator profile is required.");
+        }
+
+        if (profile.role === USER_ROLES.superAdmin) {
+          const { data: addaData, error: addaError } = await supabase
+            .from("addas")
+            .select("id, name")
+            .order("name");
+          if (addaError) throw addaError;
+          if (!isMounted) return;
+
+          setAddas((addaData ?? []) as AddaOption[]);
+          setIsSuperAdmin(true);
+          setProfileAddaId(null);
+          setSelectedAddaId("");
+        } else {
+          if (!profile.adda_id) {
+            throw new Error("The current profile has no assigned Adda.");
+          }
+          if (!isMounted) return;
+
+          setIsSuperAdmin(false);
+          setProfileAddaId(profile.adda_id);
+          setSelectedAddaId("");
+          setAddas([]);
+        }
+      } catch (error) {
+        if (!isMounted) return;
+        console.error("Unable to load Employee Salary tenant context:", error);
+        setContextError(t("employeeSalary.messages.loadFailed"));
+      } finally {
+        if (isMounted) setIsContextLoading(false);
+      }
+    }
+
+    void loadTenantContext();
+    return () => {
+      isMounted = false;
+    };
+  }, [t]);
+
+  const loadInitialData = useCallback(async (addaId: string) => {
+    const requestId = ++loadRequestIdRef.current;
     setIsLoading(true);
     setErrorMessage("");
 
     const [employeesResponse, loansResponse, salaryResponse] = await Promise.all([
-      supabase
-        .from("employees")
-        .select("id, employee_name, employee_type, monthly_salary, status")
-        .order("employee_name", { ascending: true }),
-      supabase
-        .from("employee_loans")
-        .select(
-          "id, employee_id, loan_amount, monthly_installment, recovered_amount, remaining_amount, status"
-        )
-        .order("id", { ascending: true }),
-      supabase
-        .from("employee_salary_records")
-        .select(
-          "id, employee_id, salary_month, basic_salary, bonus, deduction, loan_recovery, advance_recovery, net_salary, paid_amount, remaining_amount, payment_status, payment_method, reference_no, remarks, created_at"
-        )
-        .order("salary_month", { ascending: false })
-        .order("id", { ascending: false }),
+      supabase.rpc("get_employees", { p_adda_id: addaId }),
+      supabase.rpc("get_employee_loans_for_adda", { p_adda_id: addaId }),
+      supabase.rpc("get_employee_salary_records_for_adda", {
+        p_adda_id: addaId,
+      }),
     ]);
 
-    if (employeesResponse.error) {
-      setErrorMessage(employeesResponse.error.message);
-      setIsLoading(false);
-      return;
-    }
+    if (requestId !== loadRequestIdRef.current) return;
 
-    if (loansResponse.error) {
-      setErrorMessage(loansResponse.error.message);
-      setIsLoading(false);
-      return;
-    }
-
-    if (salaryResponse.error) {
-      setErrorMessage(salaryResponse.error.message);
+    if (employeesResponse.error || loansResponse.error || salaryResponse.error) {
+      console.error("Unable to load salary data:", {
+        employees: employeesResponse.error,
+        loans: loansResponse.error,
+        salaries: salaryResponse.error,
+      });
+      setEmployees([]);
+      setLoans([]);
+      setSalaryRecords([]);
+      setErrorMessage(t("employeeSalary.messages.loadFailed"));
       setIsLoading(false);
       return;
     }
 
     setEmployees((employeesResponse.data ?? []) as EmployeeDbRow[]);
-    setLoans((loansResponse.data ?? []) as EmployeeLoanDbRow[]);
+    setLoans(
+      ((loansResponse.data ?? []) as EmployeeLoanDbRow[]).sort(
+        (left, right) => left.id - right.id
+      )
+    );
     setSalaryRecords((salaryResponse.data ?? []) as SalaryRecordDbRow[]);
     setIsLoading(false);
-  }
+  }, [t]);
 
-  async function reloadSalaryData() {
+  useEffect(() => {
+    if (isContextLoading) return;
+
+    if (contextError || !currentAddaId) {
+      loadRequestIdRef.current += 1;
+      const clearTimer = window.setTimeout(() => {
+        setEmployees([]);
+        setLoans([]);
+        setSalaryRecords([]);
+        setIsLoading(false);
+      }, 0);
+
+      return () => window.clearTimeout(clearTimer);
+    }
+
+    const timer = window.setTimeout(() => {
+      void loadInitialData(currentAddaId);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [contextError, currentAddaId, isContextLoading, loadInitialData]);
+
+  async function reloadSalaryData(addaId: string | null = currentAddaId) {
+    if (!addaId) return;
+
     const [loansResponse, salaryResponse] = await Promise.all([
-      supabase
-        .from("employee_loans")
-        .select(
-          "id, employee_id, loan_amount, monthly_installment, recovered_amount, remaining_amount, status"
-        )
-        .order("id", { ascending: true }),
-      supabase
-        .from("employee_salary_records")
-        .select(
-          "id, employee_id, salary_month, basic_salary, bonus, deduction, loan_recovery, advance_recovery, net_salary, paid_amount, remaining_amount, payment_status, payment_method, reference_no, remarks, created_at"
-        )
-        .order("salary_month", { ascending: false })
-        .order("id", { ascending: false }),
+      supabase.rpc("get_employee_loans_for_adda", { p_adda_id: addaId }),
+      supabase.rpc("get_employee_salary_records_for_adda", {
+        p_adda_id: addaId,
+      }),
     ]);
 
-    if (loansResponse.error) {
-      setErrorMessage(loansResponse.error.message);
+    if (loansResponse.error || salaryResponse.error) {
+      console.error("Unable to reload salary data:", {
+        loans: loansResponse.error,
+        salaries: salaryResponse.error,
+      });
+      setErrorMessage(t("employeeSalary.messages.loadFailed"));
       return;
     }
 
-    if (salaryResponse.error) {
-      setErrorMessage(salaryResponse.error.message);
-      return;
-    }
-
-    setLoans((loansResponse.data ?? []) as EmployeeLoanDbRow[]);
+    setLoans(
+      ((loansResponse.data ?? []) as EmployeeLoanDbRow[]).sort(
+        (left, right) => left.id - right.id
+      )
+    );
     setSalaryRecords((salaryResponse.data ?? []) as SalaryRecordDbRow[]);
+  }
+
+  function handleAddaChange(value: string) {
+    setSelectedAddaId(value);
+    resetForm();
+    setEmployees([]);
+    setLoans([]);
+    setSalaryRecords([]);
+    setErrorMessage("");
   }
 
   function resetForm() {
@@ -415,42 +555,50 @@ export default function EmployeeSalary() {
     );
 
     if (!employeeId) {
-      alert("Please select an employee.");
+      alert(t("employeeSalary.validation.selectEmployee"));
       return false;
     }
 
     if (!salaryMonth) {
-      alert("Salary Month is required.");
+      alert(t("employeeSalary.validation.monthRequired"));
       return false;
     }
 
-    if (basic < 0 || bonusValue < 0 || deductionValue < 0) {
-      alert("Basic salary, bonus and deduction cannot be negative.");
+    if (
+      [basic, bonusValue, deductionValue].some(
+        (value) => !Number.isFinite(value) || value < 0
+      )
+    ) {
+      alert(t("employeeSalary.validation.salaryValuesNonNegative"));
       return false;
     }
 
-    if (loanRecoveryValue < 0 || advanceRecoveryValue < 0) {
-      alert("Loan recovery and advance recovery cannot be negative.");
+    if (
+      [loanRecoveryValue, advanceRecoveryValue].some(
+        (value) => !Number.isFinite(value) || value < 0
+      )
+    ) {
+      alert(t("employeeSalary.validation.recoveriesNonNegative"));
       return false;
     }
 
-    if (net < 0) {
-      alert("Net salary cannot be negative.");
+    if (!Number.isFinite(net) || net < 0) {
+      alert(t("employeeSalary.validation.netSalaryNonNegative"));
       return false;
     }
 
-    if (paidValue < 0) {
-      alert("Paid amount cannot be negative.");
+    if (!Number.isFinite(paidValue) || paidValue < 0) {
+      alert(t("employeeSalary.validation.paidNonNegative"));
       return false;
     }
 
     if (paidValue > net) {
-      alert("Paid amount cannot be greater than net salary.");
+      alert(t("employeeSalary.validation.paidExceedsNet"));
       return false;
     }
 
     if (paidValue > 0 && !paymentMethod) {
-      alert("Payment method is required when paid amount is greater than zero.");
+      alert(t("employeeSalary.validation.paymentMethodRequired"));
       return false;
     }
 
@@ -462,412 +610,118 @@ export default function EmployeeSalary() {
     );
 
     if (duplicate) {
-      alert("Salary record already exists for this employee and salary month.");
+      alert(t("employeeSalary.validation.duplicateRecord"));
       return false;
     }
 
     return true;
   }
 
-  async function upsertEmployeeTransaction(params: {
-    salaryRecordId: number;
-    employeeIdValue: string;
-    transactionDate: string;
-    transactionType: string;
-    amountValue: number;
-    paymentMethodValue: SalaryPaymentMethod | null;
-    referenceNoValue: string;
-    descriptionValue: string;
-    remarksValue: string;
-    referenceType: string;
-    loanIdValue?: number | null;
-  }) {
-    await supabase
-      .from("employee_transactions")
-      .delete()
-      .eq("reference_type", params.referenceType)
-      .eq("reference_id", String(params.salaryRecordId));
-
-    if (params.amountValue <= 0) return "";
-
-    const { error } = await supabase.from("employee_transactions").insert({
-      employee_id: params.employeeIdValue,
-      transaction_date: params.transactionDate,
-      transaction_type: params.transactionType,
-      amount: params.amountValue,
-      payment_method: params.paymentMethodValue,
-      reference_no: params.referenceNoValue || null,
-      description: params.descriptionValue,
-      remarks: params.remarksValue || null,
-      salary_record_id: params.salaryRecordId,
-      loan_id: params.loanIdValue ?? null,
-      reference_type: params.referenceType,
-      reference_id: String(params.salaryRecordId),
-    });
-
-    return error?.message ?? "";
-  }
-
-  async function syncSalaryCashbook(params: {
-    salaryRecordId: number;
-    employee: EmployeeSalaryOption;
-    salaryMonthValue: string;
-    paidValue: number;
-    paymentMethodValue: SalaryPaymentMethod;
-  }) {
-    const { data, error: lookupError } = await supabase
-      .from("cashbook_entries")
-      .select("id")
-      .eq("reference_type", "employee_salary")
-      .eq("reference_id", String(params.salaryRecordId))
-      .maybeSingle();
-
-    if (lookupError) return lookupError.message;
-
-    const existing = data as CashbookLookup | null;
-
-    if (params.paidValue <= 0) {
-      if (existing?.id) {
-        const { error } = await supabase
-          .from("cashbook_entries")
-          .delete()
-          .eq("id", existing.id);
-
-        return error?.message ?? "";
-      }
-
-      return "";
-    }
-
-    const payload = {
-      entry_date: params.salaryMonthValue,
-      entry_type: "Cash Out",
-      person_type: params.employee.employeeType === "Driver" ? "Driver" : "Other",
-      person_name: params.employee.employeeName,
-      vehicle_id: null,
-      driver_id: null,
-      loading_id: null,
-      payment_method: params.paymentMethodValue,
-      amount: params.paidValue,
-      description: `Salary payment to ${params.employee.employeeName} for ${params.salaryMonthValue}`,
-      reference_type: "employee_salary",
-      reference_id: String(params.salaryRecordId),
-    };
-
-    if (existing?.id) {
-      const { error } = await supabase
-        .from("cashbook_entries")
-        .update(payload)
-        .eq("id", existing.id);
-
-      return error?.message ?? "";
-    }
-
-    const { error } = await supabase.from("cashbook_entries").insert(payload);
-    return error?.message ?? "";
-  }
-
-  async function reverseOldLoanRecovery(salaryRecordId: number) {
-    const { data, error } = await supabase
-      .from("employee_transactions")
-      .select("id, loan_id, amount")
-      .eq("reference_type", "salary_loan_recovery")
-      .eq("reference_id", String(salaryRecordId))
-      .maybeSingle();
-
-    if (error) return error.message;
-
-    const transaction = data as EmployeeTransactionLookup | null;
-
-    if (!transaction?.loan_id) return "";
-
-    const oldAmount = toNumber(transaction.amount);
-    const oldLoan = loans.find((loan) => loan.id === transaction.loan_id);
-
-    if (!oldLoan) return "";
-
-    const recovered = Math.max(toNumber(oldLoan.recovered_amount) - oldAmount, 0);
-    const remaining = toNumber(oldLoan.remaining_amount) + oldAmount;
-
-    const { error: updateError } = await supabase
-      .from("employee_loans")
-      .update({
-        recovered_amount: recovered,
-        remaining_amount: remaining,
-        status: remaining <= 0 ? "Completed" : "Active",
-      })
-      .eq("id", oldLoan.id);
-
-    if (updateError) return updateError.message;
-
-    const { error: deleteError } = await supabase
-      .from("employee_transactions")
-      .delete()
-      .eq("id", transaction.id);
-
-    return deleteError?.message ?? "";
-  }
-
-  async function applyLoanRecovery(params: {
-    salaryRecordId: number;
-    employee: EmployeeSalaryOption;
-    recoveryAmount: number;
-    salaryMonthValue: string;
-    referenceNoValue: string;
-    remarksValue: string;
-  }) {
-    if (params.recoveryAmount <= 0) return "";
-
-    if (!params.employee.activeLoanId) {
-      return "No active employee loan found for loan recovery.";
-    }
-
-    const loan = loans.find((item) => item.id === params.employee.activeLoanId);
-
-    if (!loan) {
-      return "Selected active loan was not found.";
-    }
-
-    if (params.recoveryAmount > toNumber(loan.remaining_amount)) {
-      return "Loan recovery cannot exceed active loan remaining amount.";
-    }
-
-    const recovered = toNumber(loan.recovered_amount) + params.recoveryAmount;
-    const remaining = Math.max(toNumber(loan.remaining_amount) - params.recoveryAmount, 0);
-
-    const { error } = await supabase
-      .from("employee_loans")
-      .update({
-        recovered_amount: recovered,
-        remaining_amount: remaining,
-        status: remaining <= 0 ? "Completed" : "Active",
-      })
-      .eq("id", loan.id);
-
-    if (error) return error.message;
-
-    return upsertEmployeeTransaction({
-      salaryRecordId: params.salaryRecordId,
-      employeeIdValue: params.employee.id,
-      transactionDate: params.salaryMonthValue,
-      transactionType: "Loan Recovery",
-      amountValue: params.recoveryAmount,
-      paymentMethodValue: null,
-      referenceNoValue: params.referenceNoValue,
-      descriptionValue: `Loan recovery from salary of ${params.employee.employeeName}`,
-      remarksValue: params.remarksValue,
-      referenceType: "salary_loan_recovery",
-      loanIdValue: loan.id,
-    });
-  }
-
   async function handleSaveSalary() {
+    if (saveInProgressRef.current) return;
+    if (!currentAddaId) {
+      alert(isSuperAdmin ? t("drivers.selectAdda") : t("employeeSalary.messages.loadFailed"));
+      return;
+    }
     if (!validateForm()) return;
 
     const employee = selectedEmployee;
 
     if (!employee) {
-      alert("Selected employee was not found.");
+      alert(t("employeeSalary.messages.employeeNotFound"));
       return;
     }
 
+    saveInProgressRef.current = true;
     setIsSaving(true);
     setErrorMessage("");
 
-    const basic = Number(basicSalary || 0);
-    const bonusValue = Number(bonus || 0);
-    const deductionValue = Number(deduction || 0);
-    const loanRecoveryValue = Number(loanRecovery || 0);
-    const advanceRecoveryValue = Number(advanceRecovery || 0);
-    const net = getNetSalary(
-      basic,
-      bonusValue,
-      deductionValue,
-      loanRecoveryValue,
-      advanceRecoveryValue
-    );
-    const paid = Number(paidAmount || 0);
-    const remaining = Math.max(net - paid, 0);
-    const paymentStatus = calculatePaymentStatus(paid, net);
-    const now = new Date().toISOString();
+    try {
+      const loanRecoveryValue = Number(loanRecovery || 0);
+      let loanId = loanRecoveryValue > 0 ? employee.activeLoanId : null;
 
-    if (editingId) {
-      const reverseError = await reverseOldLoanRecovery(editingId);
+      if (loanRecoveryValue > 0 && loanId === null && editingId !== null) {
+        const { data, error } = await supabase.rpc(
+          "get_employee_salary_recovery_for_adda",
+          {
+            p_salary_record_id: editingId,
+            p_adda_id: currentAddaId,
+          }
+        );
 
-      if (reverseError) {
-        setIsSaving(false);
-        alert(reverseError);
+        if (error) throw error;
+        const recoveryRows = (data ?? []) as Array<{ loan_id: number | null }>;
+        if (recoveryRows.length > 1) {
+          throw new Error("EMPLOYEE_SALARY_RECOVERY_LOOKUP_AMBIGUOUS");
+        }
+        loanId = recoveryRows[0]?.loan_id ?? null;
+      }
+
+      if (loanRecoveryValue > 0 && loanId === null) {
+        alert(
+          employeeSalaryErrorMessage(
+            "EMPLOYEE_SALARY_LOAN_NOT_FOUND",
+            "Select an active Employee Loan for recovery."
+          )
+        );
         return;
       }
 
-      const { error } = await supabase
-        .from("employee_salary_records")
-        .update({
-          employee_id: employeeId,
-          salary_month: salaryMonth,
-          basic_salary: basic,
-          bonus: bonusValue,
-          deduction: deductionValue,
-          loan_recovery: loanRecoveryValue,
-          advance_recovery: advanceRecoveryValue,
-          net_salary: net,
-          paid_amount: paid,
-          remaining_amount: remaining,
-          payment_status: paymentStatus,
-          payment_method: paid > 0 ? paymentMethod : null,
-          reference_no: referenceNo.trim() || null,
-          remarks: remarks.trim() || null,
-          updated_at: now,
-        })
-        .eq("id", editingId);
+      const { error } = await supabase.rpc("save_employee_salary", {
+        p_id: editingId,
+        p_employee_id: employeeId,
+        p_salary_month: salaryMonth,
+        p_basic_salary: Number(basicSalary || 0),
+        p_bonus: Number(bonus || 0),
+        p_deduction: Number(deduction || 0),
+        p_loan_recovery: loanRecoveryValue,
+        p_advance_recovery: Number(advanceRecovery || 0),
+        p_paid_amount: Number(paidAmount || 0),
+        p_payment_method: paymentMethod,
+        p_reference_no: referenceNo.trim() || null,
+        p_remarks: remarks.trim() || null,
+        p_adda_id: currentAddaId,
+        p_loan_id: loanId,
+      });
 
       if (error) {
-        setIsSaving(false);
-        alert(error.message);
+        console.error("Unable to save salary record:", error);
+        alert(
+          employeeSalaryErrorMessage(
+            error.message,
+            editingId !== null
+              ? t("employeeSalary.messages.updateFailed")
+              : t("employeeSalary.messages.saveFailed")
+          )
+        );
         return;
       }
 
-      const loanError = await applyLoanRecovery({
-        salaryRecordId: editingId,
-        employee,
-        recoveryAmount: loanRecoveryValue,
-        salaryMonthValue: salaryMonth,
-        referenceNoValue: referenceNo,
-        remarksValue: remarks,
-      });
-
-      const generatedError = await upsertEmployeeTransaction({
-        salaryRecordId: editingId,
-        employeeIdValue: employee.id,
-        transactionDate: salaryMonth,
-        transactionType: "Salary Generated",
-       amountValue: basic + bonusValue - deductionValue,
-        paymentMethodValue: null,
-        referenceNoValue: referenceNo,
-        descriptionValue: `Salary generated for ${employee.employeeName}`,
-        remarksValue: remarks,
-        referenceType: "employee_salary_generated",
-      });
-
-      const paidError = await upsertEmployeeTransaction({
-        salaryRecordId: editingId,
-        employeeIdValue: employee.id,
-        transactionDate: salaryMonth,
-        transactionType: "Salary Paid",
-        amountValue: paid,
-        paymentMethodValue: paymentMethod,
-        referenceNoValue: referenceNo,
-        descriptionValue: `Salary paid to ${employee.employeeName}`,
-        remarksValue: remarks,
-        referenceType: "employee_salary_paid",
-      });
-
-      const cashbookError = await syncSalaryCashbook({
-        salaryRecordId: editingId,
-        employee,
-        salaryMonthValue: salaryMonth,
-        paidValue: paid,
-        paymentMethodValue: paymentMethod,
-      });
-
-      const syncError = loanError || generatedError || paidError || cashbookError;
-
-      if (syncError) {
-        alert(`Salary updated, but sync failed: ${syncError}`);
-      } else {
-        alert("Salary updated successfully!");
-      }
-
-      await reloadSalaryData();
+      await reloadSalaryData(currentAddaId);
       resetForm();
+      alert(
+        editingId !== null
+          ? t("employeeSalary.messages.updated")
+          : t("employeeSalary.messages.saved")
+      );
+    } catch (error) {
+      console.error("Unable to save salary record:", error);
+      const message =
+        typeof error === "object" && error !== null && "message" in error
+          ? String(error.message)
+          : String(error);
+      alert(
+        employeeSalaryErrorMessage(
+          message,
+          editingId !== null
+            ? t("employeeSalary.messages.updateFailed")
+            : t("employeeSalary.messages.saveFailed")
+        )
+      );
+    } finally {
       setIsSaving(false);
-      return;
+      saveInProgressRef.current = false;
     }
-
-    const { data, error } = await supabase
-      .from("employee_salary_records")
-      .insert({
-        employee_id: employeeId,
-        salary_month: salaryMonth,
-        basic_salary: basic,
-        bonus: bonusValue,
-        deduction: deductionValue,
-        loan_recovery: loanRecoveryValue,
-        advance_recovery: advanceRecoveryValue,
-        net_salary: net,
-        paid_amount: paid,
-        remaining_amount: remaining,
-        payment_status: paymentStatus,
-        payment_method: paid > 0 ? paymentMethod : null,
-        reference_no: referenceNo.trim() || null,
-        remarks: remarks.trim() || null,
-        updated_at: now,
-      })
-      .select("id")
-      .single();
-
-    if (error) {
-      setIsSaving(false);
-      alert(error.message);
-      return;
-    }
-
-    const salaryRecord = data as { id: number };
-
-    const loanError = await applyLoanRecovery({
-      salaryRecordId: salaryRecord.id,
-      employee,
-      recoveryAmount: loanRecoveryValue,
-      salaryMonthValue: salaryMonth,
-      referenceNoValue: referenceNo,
-      remarksValue: remarks,
-    });
-
-    const generatedError = await upsertEmployeeTransaction({
-      salaryRecordId: salaryRecord.id,
-      employeeIdValue: employee.id,
-      transactionDate: salaryMonth,
-      transactionType: "Salary Generated",
-     amountValue: basic + bonusValue - deductionValue,
-      paymentMethodValue: null,
-      referenceNoValue: referenceNo,
-      descriptionValue: `Salary generated for ${employee.employeeName}`,
-      remarksValue: remarks,
-      referenceType: "employee_salary_generated",
-    });
-
-    const paidError = await upsertEmployeeTransaction({
-      salaryRecordId: salaryRecord.id,
-      employeeIdValue: employee.id,
-      transactionDate: salaryMonth,
-      transactionType: "Salary Paid",
-      amountValue: paid,
-      paymentMethodValue: paymentMethod,
-      referenceNoValue: referenceNo,
-      descriptionValue: `Salary paid to ${employee.employeeName}`,
-      remarksValue: remarks,
-      referenceType: "employee_salary_paid",
-    });
-
-    const cashbookError = await syncSalaryCashbook({
-      salaryRecordId: salaryRecord.id,
-      employee,
-      salaryMonthValue: salaryMonth,
-      paidValue: paid,
-      paymentMethodValue: paymentMethod,
-    });
-
-    const syncError = loanError || generatedError || paidError || cashbookError;
-
-    if (syncError) {
-      alert(`Salary saved, but sync failed: ${syncError}`);
-    } else {
-      alert("Salary saved successfully!");
-    }
-
-    await reloadSalaryData();
-    resetForm();
-    setIsSaving(false);
   }
 
   function handleEdit(row: EmployeeSalaryRow) {
@@ -886,62 +740,99 @@ export default function EmployeeSalary() {
   }
 
   async function handleDelete(row: EmployeeSalaryRow) {
+    if (deleteInProgressRef.current) return;
     const confirmed = window.confirm(
-      `Delete salary record for ${row.employeeName}?`
+      `${t("employeeSalary.messages.deleteConfirm")} ${row.employeeName}?`
     );
 
     if (!confirmed) return;
+    if (!currentAddaId) {
+      alert(isSuperAdmin ? t("drivers.selectAdda") : t("employeeSalary.messages.loadFailed"));
+      return;
+    }
 
+    deleteInProgressRef.current = true;
     setIsDeleting(true);
+    setErrorMessage("");
+    const addaId = currentAddaId;
 
-    const reverseError = await reverseOldLoanRecovery(row.id);
+    try {
+      const { error } = await supabase.rpc("delete_employee_salary", {
+        p_id: Number(row.id),
+        p_adda_id: addaId,
+      });
 
-    if (reverseError) {
+      if (error) {
+        console.error("Unable to delete salary record:", error);
+        alert(
+          employeeSalaryErrorMessage(
+            error.message,
+            t("employeeSalary.messages.deleteFailed")
+          )
+        );
+        return;
+      }
+
+      if (editingId === row.id) resetForm();
+
+      await reloadSalaryData(addaId);
+      alert(t("employeeSalary.messages.deleted"));
+    } catch (error) {
+      console.error("Unable to delete salary record:", error);
+      const message =
+        typeof error === "object" && error !== null && "message" in error
+          ? String(error.message)
+          : String(error);
+      alert(
+        employeeSalaryErrorMessage(
+          message,
+          t("employeeSalary.messages.deleteFailed")
+        )
+      );
+    } finally {
       setIsDeleting(false);
-      alert(reverseError);
-      return;
+      deleteInProgressRef.current = false;
     }
-
-    await supabase
-      .from("employee_transactions")
-      .delete()
-      .eq("salary_record_id", row.id);
-
-    await supabase
-      .from("cashbook_entries")
-      .delete()
-      .eq("reference_type", "employee_salary")
-      .eq("reference_id", String(row.id));
-
-    const { error } = await supabase
-      .from("employee_salary_records")
-      .delete()
-      .eq("id", row.id);
-
-    if (error) {
-      setIsDeleting(false);
-      alert(error.message);
-      return;
-    }
-
-    if (editingId === row.id) resetForm();
-
-    await reloadSalaryData();
-    alert("Salary record deleted successfully!");
-    setIsDeleting(false);
   }
 
   return (
-    <div className="space-y-8">
-      <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Employee Salary Management
-        </h1>
-        <p className="mt-2 text-base font-medium text-gray-900">
-          Generate salaries, recover loans, record payments and print salary
-          slips.
+    <div dir={dir} className="ut-module-page space-y-6">
+      <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <ModulePageHeading icon="payment" accent="cyan" title={t("employeeSalary.title")} description={t("employeeSalary.description")} />
+      </header>
+
+      {isSuperAdmin && !isContextLoading && (
+        <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+          <label
+            htmlFor="employee-salary-adda"
+            className="mb-2 block text-sm font-bold text-gray-900"
+          >
+            Adda
+          </label>
+          <select
+            required
+            id="employee-salary-adda"
+            name="addaId"
+            value={selectedAddaId}
+            onChange={(event) => handleAddaChange(event.target.value)}
+            disabled={isSaving || isDeleting}
+            className="w-full max-w-md rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+          >
+            <option value="">{t("drivers.selectAdda")}</option>
+            {addas.map((adda) => (
+              <option key={adda.id} value={adda.id}>
+                {adda.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {contextError && (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 font-semibold text-red-700">
+          {contextError}
         </p>
-      </div>
+      )}
 
       <EmployeeSalaryCards summary={summary} />
 
@@ -977,20 +868,45 @@ export default function EmployeeSalary() {
       />
 
       <EmployeeSalaryTable
-        rows={filteredRows}
+        addaId={currentAddaId}
+        rows={paginatedRows}
+        reportRows={filteredRows}
         search={search}
-        setSearch={setSearch}
+        setSearch={(value) => {
+          setSearch(value);
+          setPage(1);
+        }}
+        statusFilter={statusFilter}
+        setStatusFilter={(value) => {
+          setStatusFilter(value);
+          setPage(1);
+        }}
+        methodFilter={methodFilter}
+        setMethodFilter={(value) => {
+          setMethodFilter(value);
+          setPage(1);
+        }}
+        onResetFilters={() => {
+          setSearch("");
+          setStatusFilter("All");
+          setMethodFilter("All");
+          setPage(1);
+        }}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        setPage={setPage}
         onEdit={handleEdit}
         onDelete={handleDelete}
         onPrintSlip={setSelectedSlip}
         isDeleting={isDeleting}
         isLoading={isLoading}
-        errorMessage={errorMessage}
+        errorMessage={contextError || errorMessage}
       />
 
       {selectedSlip && (
         <EmployeeSalarySlip
           row={selectedSlip}
+          addaId={currentAddaId}
           onClose={() => setSelectedSlip(null)}
         />
       )}

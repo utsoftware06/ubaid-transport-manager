@@ -4,6 +4,7 @@ import {
   formatAmount,
   type VehicleDocumentWithStatus,
 } from "./VehicleDocuments";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 type Props = {
   documents: VehicleDocumentWithStatus[];
@@ -45,25 +46,6 @@ function getStatusBadgeClass(status: VehicleDocumentWithStatus["status"]) {
   return "bg-red-100 text-red-700";
 }
 
-function formatDaysRemaining(document: VehicleDocumentWithStatus) {
-  if (document.status === "Permanent" || document.daysRemaining === null) {
-    return "-";
-  }
-
-  if (document.daysRemaining < 0) {
-    const expiredDays = Math.abs(document.daysRemaining);
-    return `Expired ${expiredDays} ${expiredDays === 1 ? "day" : "days"} ago`;
-  }
-
-  if (document.daysRemaining === 0) {
-    return "Expires today";
-  }
-
-  return `${document.daysRemaining} ${
-    document.daysRemaining === 1 ? "day" : "days"
-  }`;
-}
-
 export default function VehicleDocumentTable({
   documents,
   loading,
@@ -73,6 +55,20 @@ export default function VehicleDocumentTable({
   onDelete,
   onRefresh,
 }: Props) {
+  const { t, dir } = useLanguage();
+  const statusLabel = (status: VehicleDocumentWithStatus["status"]) =>
+    t(`vehicleDocuments.statuses.${status === "Expiring Soon" ? "expiringSoon" : status.toLowerCase()}`);
+  const documentTypeLabel = (type: string) =>
+    t(`vehicleDocuments.documentTypes.${type.replaceAll(" ", "").replace(/^./, (character) => character.toLowerCase())}`);
+  const formatDaysRemaining = (document: VehicleDocumentWithStatus) => {
+    if (document.status === "Permanent" || document.daysRemaining === null) return "-";
+    if (document.daysRemaining < 0) {
+      const days = Math.abs(document.daysRemaining);
+      return `${t("vehicleDocuments.days.expired")} ${days} ${t(days === 1 ? "vehicleDocuments.days.day" : "vehicleDocuments.days.days")} ${t("vehicleDocuments.days.ago")}`;
+    }
+    if (document.daysRemaining === 0) return t("vehicleDocuments.days.expiresToday");
+    return `${document.daysRemaining} ${t(document.daysRemaining === 1 ? "vehicleDocuments.days.day" : "vehicleDocuments.days.days")}`;
+  };
   function handlePrint(document: VehicleDocumentWithStatus) {
     if (saving) return;
 
@@ -84,14 +80,14 @@ export default function VehicleDocumentTable({
   }
 
   return (
-    <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+    <div dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
-            Vehicle Document Records
+            {t("vehicleDocuments.recordsTitle")}
           </h2>
           <p className="mt-2 text-sm font-medium text-gray-900">
-            Review vehicle documents, expiry status, fees and authority details.
+            {t("vehicleDocuments.recordsDescription")}
           </p>
         </div>
 
@@ -103,7 +99,7 @@ export default function VehicleDocumentTable({
           disabled={loading || saving}
           className="rounded-lg bg-blue-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed"
         >
-          {loading ? "Refreshing..." : "Refresh"}
+          {loading ? t("vehicleDocuments.actions.refreshing") : t("common.actions.refresh")}
         </button>
       </div>
 
@@ -115,7 +111,7 @@ export default function VehicleDocumentTable({
 
       {saving && (
         <div className="mb-5 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm font-bold text-blue-700">
-          Saving document changes...
+          {t("vehicleDocuments.savingChanges")}
         </div>
       )}
 
@@ -128,16 +124,16 @@ export default function VehicleDocumentTable({
             <div className="h-4 w-4/6 rounded bg-gray-200" />
           </div>
           <p className="mt-5 text-center text-sm font-bold text-gray-900">
-            Loading vehicle documents...
+            {t("vehicleDocuments.loading")}
           </p>
         </div>
       ) : documents.length === 0 ? (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center">
           <p className="text-base font-extrabold text-gray-900">
-            No vehicle document records found.
+            {t("vehicleDocuments.empty")}
           </p>
           <p className="mt-2 text-sm font-bold text-gray-900">
-            Add a new document or change the filters.
+            {t("vehicleDocuments.emptyHelp")}
           </p>
         </div>
       ) : (
@@ -146,18 +142,18 @@ export default function VehicleDocumentTable({
             <thead className="sticky top-0 z-10 bg-blue-600 text-white">
               <tr>
                 <th className="p-3 text-left font-bold">#</th>
-                <th className="p-3 text-left font-bold">Vehicle</th>
-                <th className="p-3 text-left font-bold">Owner</th>
-                <th className="p-3 text-left font-bold">Document Type</th>
-                <th className="p-3 text-left font-bold">Document Number</th>
-                <th className="p-3 text-left font-bold">Issue Date</th>
-                <th className="p-3 text-left font-bold">Expiry Date</th>
-                <th className="p-3 text-left font-bold">Status</th>
-                <th className="p-3 text-left font-bold">Days Remaining</th>
-                <th className="p-3 text-right font-bold">Fee Amount</th>
-                <th className="p-3 text-left font-bold">Authority</th>
-                <th className="p-3 text-left font-bold">Payment Method</th>
-                <th className="p-3 text-left font-bold">Actions</th>
+                <th className="p-3 text-start font-bold">{t("common.vehicle")}</th>
+                <th className="p-3 text-start font-bold">{t("common.owner")}</th>
+                <th className="p-3 text-start font-bold">{t("vehicleDocuments.fields.documentType")}</th>
+                <th className="p-3 text-start font-bold">{t("vehicleDocuments.fields.documentNumber")}</th>
+                <th className="p-3 text-start font-bold">{t("vehicleDocuments.fields.issueDate")}</th>
+                <th className="p-3 text-start font-bold">{t("vehicleDocuments.fields.expiryDate")}</th>
+                <th className="p-3 text-start font-bold">{t("common.status")}</th>
+                <th className="p-3 text-start font-bold">{t("vehicleDocuments.fields.daysRemaining")}</th>
+                <th className="p-3 text-end font-bold">{t("vehicleDocuments.fields.feeAmount")}</th>
+                <th className="p-3 text-start font-bold">{t("vehicleDocuments.fields.authority")}</th>
+                <th className="p-3 text-start font-bold">{t("vehicleDocuments.fields.paymentMethod")}</th>
+                <th className="p-3 text-start font-bold">{t("common.actions.title")}</th>
               </tr>
             </thead>
 
@@ -172,7 +168,7 @@ export default function VehicleDocumentTable({
                     {document.ownerName || "-"}
                   </td>
                   <td className="p-3 font-medium text-gray-900">
-                    {document.document_type}
+                    {documentTypeLabel(document.document_type)}
                   </td>
                   <td className="p-3 font-medium text-gray-900">
                     {document.document_number || "-"}
@@ -189,7 +185,7 @@ export default function VehicleDocumentTable({
                         document.status
                       )}`}
                     >
-                      {document.status}
+                      {statusLabel(document.status)}
                     </span>
                   </td>
                   <td className="p-3 font-medium text-gray-900">
@@ -210,10 +206,10 @@ export default function VehicleDocumentTable({
                         type="button"
                         onClick={() => onSelect(document)}
                         disabled={saving}
-                        title="Edit vehicle document"
+                        title={t("vehicleDocuments.actions.edit")}
                         className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed"
                       >
-                        Edit
+                        {t("common.edit")}
                       </button>
 
                       <button
@@ -222,10 +218,10 @@ export default function VehicleDocumentTable({
                           void onDelete(document.id);
                         }}
                         disabled={saving}
-                        title="Delete vehicle document"
+                        title={t("vehicleDocuments.actions.delete")}
                         className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed"
                       >
-                        Delete
+                        {t("common.delete")}
                       </button>
 
                       {document.attachment_url && (
@@ -233,10 +229,10 @@ export default function VehicleDocumentTable({
                           href={document.attachment_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          title="Open attachment"
+                          title={t("vehicleDocuments.actions.openAttachment")}
                           className="rounded-lg bg-green-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-green-700"
                         >
-                          Open Attachment
+                          {t("vehicleDocuments.actions.openAttachment")}
                         </a>
                       )}
 
@@ -244,10 +240,10 @@ export default function VehicleDocumentTable({
                         type="button"
                         onClick={() => handlePrint(document)}
                         disabled={saving}
-                        title="Print selected document"
+                        title={t("vehicleDocuments.actions.printSelected")}
                         className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-bold text-white transition hover:bg-black disabled:cursor-not-allowed"
                       >
-                        Print
+                        {t("common.actions.print")}
                       </button>
                     </div>
                   </td>
@@ -261,7 +257,7 @@ export default function VehicleDocumentTable({
                   colSpan={9}
                   className="p-3 text-right font-extrabold text-gray-900"
                 >
-                  Total Fee Amount
+                  {t("vehicleDocuments.cards.totalFees")}
                 </td>
                 <td className="p-3 text-right font-extrabold text-gray-900">
                   {formatAmount(

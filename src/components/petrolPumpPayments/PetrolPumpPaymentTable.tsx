@@ -5,9 +5,15 @@ import {
   type PetrolPumpPaymentRow,
   formatAmount,
 } from "./PetrolPumpPayments";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { escapeHtml } from "@/lib/print/escapeHtml";
+import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
+import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
+import VoiceTypingField from "@/components/shared/VoiceTypingField";
 
 type Props = {
   rows: PetrolPumpPaymentRow[];
+  addaId: string | null;
   search: string;
   setSearch: (value: string) => void;
   onEdit: (row: PetrolPumpPaymentRow) => void;
@@ -17,15 +23,6 @@ type Props = {
   errorMessage: string;
   pumps: PetrolPumpOption[];
 };
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
 
 function getStatusTextClass(status: string) {
   if (status === "Payable") return "text-red-700";
@@ -50,6 +47,7 @@ function getBalanceTextClass(balance: number) {
 
 export default function PetrolPumpPaymentTable({
   rows,
+  addaId,
   search,
   setSearch,
   onEdit,
@@ -59,6 +57,12 @@ export default function PetrolPumpPaymentTable({
   errorMessage,
   pumps,
 }: Props) {
+  const { t, dir, language } = useLanguage();
+  const modulePrint = useModuleTransportPrint("petrol_pump", addaId, language);
+  const statusLabel = (status: string) =>
+    t(`petrolPumpPayments.statuses.${status.toLowerCase()}`);
+  const methodLabel = (method: string) =>
+    t(`petrolPumpPayments.paymentMethods.${method === "Online Transfer" ? "onlineTransfer" : method.toLowerCase()}`);
   const totalPayments = rows.reduce((total, row) => total + row.amount, 0);
 
   function getPump(row: PetrolPumpPaymentRow) {
@@ -66,18 +70,29 @@ export default function PetrolPumpPaymentTable({
   }
 
   function handlePrintReceipt(row: PetrolPumpPaymentRow) {
+    const body = `<div class="details">${[
+      [t("common.date"), row.paymentDate], [t("petrolPumpPayments.fields.reference"), row.referenceNo],
+      [t("petrolPumpPayments.fields.pump"), row.pumpName], [t("petrolPumps.fields.ownerName"), row.ownerName],
+      [t("petrolPumpPayments.fields.paymentMethod"), methodLabel(row.paymentMethod)], [t("petrolPumpPayments.fields.remarks"), row.remarks],
+      [t("petrolPumpPayments.fields.advanceUsed"), formatAmount(row.advanceUsed)], [t("petrolPumpPayments.fields.paymentNow"), formatAmount(row.paymentNow)],
+      [t("common.total"), formatAmount(row.amount)], [t("common.remaining"), formatAmount(row.remainingPayable)], [t("common.status"), statusLabel(row.settlementStatus)],
+    ].map(([label,value])=>`<div><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</div>`).join("")}</div>`;
+    modulePrint.open(t("petrolPumpPayments.print.receiptTitle"), body, () => legacyPrintReceipt(row));
+  }
+
+  function legacyPrintReceipt(row: PetrolPumpPaymentRow) {
     const printWindow = window.open("", "_blank", "width=900,height=700");
 
     if (!printWindow) {
-      alert("Please allow popups to print payment receipt.");
+      alert(t("petrolPumpPayments.messages.allowReceiptPopups"));
       return;
     }
 
-    printWindow.document.write(`
+    void writeAddaBrandedPrintDocument(printWindow, `
       <!doctype html>
-      <html>
+      <html lang="${escapeHtml(language)}" dir="${escapeHtml(dir)}">
         <head>
-          <title>Petrol Pump Payment Receipt - ${escapeHtml(row.pumpName)}</title>
+          <title>${escapeHtml(t("petrolPumpPayments.print.receiptTitle"))} - ${escapeHtml(row.pumpName)}</title>
           <style>
             * { box-sizing: border-box; }
             body {
@@ -104,7 +119,7 @@ export default function PetrolPumpPaymentTable({
             }
             h1 { margin: 0; font-size: 28px; color: #111827; }
             h2 { margin: 6px 0 0; font-size: 18px; color: #111827; }
-            .meta { text-align: right; font-size: 14px; line-height: 1.7; }
+            .meta { text-align: end; font-size: 14px; line-height: 1.7; }
             .details {
               display: grid;
               grid-template-columns: repeat(2, 1fr);
@@ -138,31 +153,33 @@ export default function PetrolPumpPaymentTable({
             }
           </style>
         </head>
-        <body>
+        <body dir="${escapeHtml(dir)}">
           <div class="receipt">
             <div class="header">
               <div>
-                <h1>UT Software</h1>
-                <h2>Petrol Pump Payment Receipt</h2>
+                <h1>${PRINT_ADDA_NAME_TOKEN}</h1>
+                <h2>${escapeHtml(t("petrolPumpPayments.print.receiptTitle"))}</h2>
               </div>
               <div class="meta">
-                <div><strong>Date:</strong> ${escapeHtml(row.paymentDate)}</div>
-                <div><strong>Reference:</strong> ${escapeHtml(row.referenceNo)}</div>
+                <div><strong>${escapeHtml(t("common.date"))}:</strong> <span dir="ltr">${escapeHtml(row.paymentDate)}</span></div>
+                <div><strong>${escapeHtml(t("petrolPumpPayments.fields.reference"))}:</strong> <span dir="ltr">${escapeHtml(row.referenceNo)}</span></div>
               </div>
             </div>
 
             <div class="details">
-              <div><strong>Petrol Pump:</strong> ${escapeHtml(row.pumpName)}</div>
-              <div><strong>Owner:</strong> ${escapeHtml(row.ownerName)}</div>
-              <div><strong>Payment Method:</strong> ${escapeHtml(row.paymentMethod)}</div>
-              <div><strong>Remarks:</strong> ${escapeHtml(row.remarks)}</div>
+              <div><strong>${escapeHtml(t("petrolPumpPayments.fields.pump"))}:</strong> ${escapeHtml(row.pumpName)}</div>
+              <div><strong>${escapeHtml(t("petrolPumps.fields.ownerName"))}:</strong> ${escapeHtml(row.ownerName)}</div>
+              <div><strong>${escapeHtml(t("petrolPumpPayments.fields.paymentMethod"))}:</strong> ${escapeHtml(methodLabel(row.paymentMethod))}</div>
+              <div><strong>${escapeHtml(t("petrolPumpPayments.fields.remarks"))}:</strong> ${escapeHtml(row.remarks)}</div>
             </div>
 
-            <div class="amount">${escapeHtml(formatAmount(row.amount))}</div>
+            <div class="amount" dir="ltr">${escapeHtml(formatAmount(row.amount))}</div>
+            <div>${escapeHtml(t("petrolPumpPayments.fields.advanceUsed"))}: <span dir="ltr">${escapeHtml(formatAmount(row.advanceUsed))}</span></div>
+            <div>${escapeHtml(t("petrolPumpPayments.fields.paymentNow"))}: <span dir="ltr">${escapeHtml(formatAmount(row.paymentNow))}</span></div>
 
             <div class="signatures">
-              <div class="signature">Prepared By</div>
-              <div class="signature">Received By</div>
+              <div class="signature">${escapeHtml(t("petrolPumpPayments.print.preparedBy"))}</div>
+              <div class="signature">${escapeHtml(t("petrolPumpPayments.print.receivedBy"))}</div>
             </div>
           </div>
 
@@ -174,16 +191,19 @@ export default function PetrolPumpPaymentTable({
           </script>
         </body>
       </html>
-    `);
-
-    printWindow.document.close();
+    `, addaId, language === "ur" ? "ur" : "en");
   }
 
   function handlePrintReport() {
+    const body = `<div class="grid"><div><strong>${escapeHtml(t("common.total"))}:</strong> ${escapeHtml(formatAmount(totalPayments))}</div></div><h2>${escapeHtml(t("petrolPumpPayments.print.paymentDetails"))}</h2><table><thead><tr>${["common.date","petrolPumpPayments.fields.pump","petrolPumpPayments.fields.paymentNow","common.total","common.status","petrolPumpPayments.fields.paymentMethod","petrolPumpPayments.fields.reference","common.remarks"].map(key=>`<th>${escapeHtml(t(key))}</th>`).join("")}</tr></thead><tbody>${rows.map(row=>`<tr><td>${escapeHtml(row.paymentDate)}</td><td>${escapeHtml(row.pumpName)}</td><td>${escapeHtml(formatAmount(row.paymentNow))}</td><td>${escapeHtml(formatAmount(row.amount))}</td><td>${escapeHtml(statusLabel(row.settlementStatus))}</td><td>${escapeHtml(methodLabel(row.paymentMethod))}</td><td>${escapeHtml(row.referenceNo)}</td><td>${escapeHtml(row.remarks)}</td></tr>`).join("")}</tbody></table><h2>${escapeHtml(t("petrolPumpPayments.print.balanceSummary"))}</h2><table><thead><tr>${["petrolPumpPayments.fields.pump","petrolPumps.fields.openingBalance","petrolPumps.cards.totalDiesel","petrolPumpPayments.fields.manualPayments","petrolPumpPayments.fields.payableAmount","petrolPumpPayments.fields.advanceAmount","common.status"].map(key=>`<th>${escapeHtml(t(key))}</th>`).join("")}</tr></thead><tbody>${pumps.map(pump=>`<tr><td>${escapeHtml(pump.pumpName)}</td><td>${escapeHtml(formatAmount(pump.openingBalance))}</td><td>${escapeHtml(formatAmount(pump.totalDiesel))}</td><td>${escapeHtml(formatAmount(pump.manualPayments))}</td><td>${escapeHtml(formatAmount(pump.payableAmount))}</td><td>${escapeHtml(formatAmount(pump.advanceAmount))}</td><td>${escapeHtml(statusLabel(pump.balanceStatus))}</td></tr>`).join("")}</tbody></table>`;
+    modulePrint.open(t("petrolPumpPayments.print.reportTitle"), body, legacyPrintReport);
+  }
+
+  function legacyPrintReport() {
     const printWindow = window.open("", "_blank", "width=1200,height=800");
 
     if (!printWindow) {
-      alert("Please allow popups to print payment report.");
+      alert(t("petrolPumpPayments.messages.allowReportPopups"));
       return;
     }
 
@@ -195,13 +215,15 @@ export default function PetrolPumpPaymentTable({
               const currentBalance = pump?.currentBalance ?? 0;
               const payableAmount = pump?.payableAmount ?? 0;
               const advanceAmount = pump?.advanceAmount ?? 0;
-              const status = pump?.balanceStatus ?? "Settled";
+              const status = pump?.balanceStatus ?? "Paid";
 
               return `
                 <tr>
                   <td>${escapeHtml(row.paymentDate || "-")}</td>
                   <td>${escapeHtml(row.pumpName)}</td>
                   <td>${escapeHtml(row.ownerName)}</td>
+                  <td>${escapeHtml(formatAmount(row.advanceUsed))}</td>
+                  <td>${escapeHtml(formatAmount(row.paymentNow))}</td>
                   <td>${escapeHtml(formatAmount(row.amount))}</td>
                   <td class="${getStatusTextClass(status)}">${escapeHtml(
                     formatAmount(currentBalance)
@@ -213,16 +235,16 @@ export default function PetrolPumpPaymentTable({
                     formatAmount(advanceAmount)
                   )}</td>
                   <td class="${getStatusTextClass(status)}">${escapeHtml(
-                    status
+                    statusLabel(status)
                   )}</td>
-                  <td>${escapeHtml(row.paymentMethod)}</td>
+                  <td>${escapeHtml(methodLabel(row.paymentMethod))}</td>
                   <td>${escapeHtml(row.referenceNo)}</td>
                   <td>${escapeHtml(row.remarks)}</td>
                 </tr>
               `;
             })
             .join("")
-        : `<tr><td colspan="11" class="empty">No payments found.</td></tr>`;
+        : `<tr><td colspan="11" class="empty">${escapeHtml(t("petrolPumpPayments.empty"))}</td></tr>`;
 
     const pumpRows =
       pumps.length > 0
@@ -237,19 +259,19 @@ export default function PetrolPumpPaymentTable({
                   <td>${escapeHtml(formatAmount(pump.payableAmount))}</td>
                   <td>${escapeHtml(formatAmount(pump.advanceAmount))}</td>
                   <td class="${getStatusTextClass(pump.balanceStatus)}">${escapeHtml(
-                    pump.balanceStatus
+                    statusLabel(pump.balanceStatus)
                   )}</td>
                 </tr>
               `
             )
             .join("")
-        : `<tr><td colspan="7" class="empty">No pump balances found.</td></tr>`;
+        : `<tr><td colspan="7" class="empty">${escapeHtml(t("petrolPumpPayments.print.noBalances"))}</td></tr>`;
 
-    printWindow.document.write(`
+    void writeAddaBrandedPrintDocument(printWindow, `
       <!doctype html>
-      <html>
+      <html lang="${escapeHtml(language)}" dir="${escapeHtml(dir)}">
         <head>
-          <title>Petrol Pump Payment Report</title>
+          <title>${escapeHtml(t("petrolPumpPayments.print.reportTitle"))}</title>
           <style>
             * { box-sizing: border-box; }
             @page { size: A4 landscape; margin: 10mm; }
@@ -270,7 +292,7 @@ export default function PetrolPumpPaymentTable({
             h1 { margin: 0; font-size: 28px; color: #111827; }
             h2 { margin: 4px 0 0; font-size: 18px; color: #111827; }
             .meta {
-              text-align: right;
+              text-align: end;
               font-size: 13px;
               line-height: 1.7;
             }
@@ -283,7 +305,7 @@ export default function PetrolPumpPaymentTable({
             th {
               background: #2563eb;
               color: #ffffff;
-              text-align: left;
+              text-align: start;
               padding: 7px;
               border: 1px solid #2563eb;
               white-space: nowrap;
@@ -312,57 +334,59 @@ export default function PetrolPumpPaymentTable({
             .text-blue-700 { color: #1d4ed8; font-weight: 800; }
           </style>
         </head>
-        <body>
+        <body dir="${escapeHtml(dir)}">
           <div class="header">
             <div>
-              <h1>UT Software</h1>
-              <h2>Petrol Pump Payment Report</h2>
+              <h1>${PRINT_ADDA_NAME_TOKEN}</h1>
+              <h2>${escapeHtml(t("petrolPumpPayments.print.reportTitle"))}</h2>
             </div>
             <div class="meta">
-              <div><strong>Printed:</strong> ${escapeHtml(
+              <div><strong>${escapeHtml(t("petrolPumpPayments.print.printed"))}:</strong> <span dir="ltr">${escapeHtml(
                 new Date().toLocaleString("en-PK")
-              )}</div>
-              <div><strong>Total:</strong> ${escapeHtml(formatAmount(totalPayments))}</div>
+              )}</span></div>
+              <div><strong>${escapeHtml(t("common.total"))}:</strong> <span dir="ltr">${escapeHtml(formatAmount(totalPayments))}</span></div>
             </div>
           </div>
 
-          <div class="section-title">Pump Balance Summary</div>
+          <div class="section-title">${escapeHtml(t("petrolPumpPayments.print.balanceSummary"))}</div>
           <table>
             <thead>
               <tr>
-                <th>Pump</th>
-                <th>Opening Balance</th>
-                <th>Total Diesel</th>
-                <th>Total Paid</th>
-                <th>Payable</th>
-                <th>Advance</th>
-                <th>Status</th>
+                <th>${escapeHtml(t("petrolPumpPayments.fields.pump"))}</th>
+                <th>${escapeHtml(t("petrolPumps.fields.openingBalance"))}</th>
+                <th>${escapeHtml(t("petrolPumps.cards.totalDiesel"))}</th>
+                <th>${escapeHtml(t("petrolPumps.cards.totalPaid"))}</th>
+                <th>${escapeHtml(t("petrolPumpPayments.statuses.payable"))}</th>
+                <th>${escapeHtml(t("petrolPumpPayments.statuses.advance"))}</th>
+                <th>${escapeHtml(t("common.status"))}</th>
               </tr>
             </thead>
             <tbody>${pumpRows}</tbody>
           </table>
 
-          <div class="section-title">Payment Details</div>
+          <div class="section-title">${escapeHtml(t("petrolPumpPayments.print.paymentDetails"))}</div>
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Pump</th>
-                <th>Owner</th>
-                <th>Amount</th>
-                <th>Current Balance</th>
-                <th>Payable</th>
-                <th>Advance</th>
-                <th>Status</th>
-                <th>Method</th>
-                <th>Reference</th>
-                <th>Remarks</th>
+                <th>${escapeHtml(t("common.date"))}</th>
+                <th>${escapeHtml(t("petrolPumpPayments.fields.pump"))}</th>
+                <th>${escapeHtml(t("petrolPumps.fields.ownerName"))}</th>
+                <th>${escapeHtml(t("petrolPumpPayments.fields.advanceUsed"))}</th>
+                <th>${escapeHtml(t("petrolPumpPayments.fields.paymentNow"))}</th>
+                <th>${escapeHtml(t("petrolPumpPayments.fields.totalSettlement"))}</th>
+                <th>${escapeHtml(t("petrolPumpPayments.fields.currentBalance"))}</th>
+                <th>${escapeHtml(t("petrolPumpPayments.statuses.payable"))}</th>
+                <th>${escapeHtml(t("petrolPumpPayments.statuses.advance"))}</th>
+                <th>${escapeHtml(t("common.status"))}</th>
+                <th>${escapeHtml(t("petrolPumpPayments.fields.paymentMethod"))}</th>
+                <th>${escapeHtml(t("petrolPumpPayments.fields.reference"))}</th>
+                <th>${escapeHtml(t("petrolPumpPayments.fields.remarks"))}</th>
               </tr>
             </thead>
             <tbody>${paymentRows}</tbody>
             <tfoot>
               <tr>
-                <td colspan="3">Total</td>
+                <td colspan="3">${escapeHtml(t("common.total"))}</td>
                 <td>${escapeHtml(formatAmount(totalPayments))}</td>
                 <td colspan="7"></td>
               </tr>
@@ -377,45 +401,45 @@ export default function PetrolPumpPaymentTable({
           </script>
         </body>
       </html>
-    `);
-
-    printWindow.document.close();
+    `, addaId, language === "ur" ? "ur" : "en");
   }
 
   return (
-    <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+    <div dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
       <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
-            Payment Records
+            {t("petrolPumpPayments.recordsTitle")}
           </h2>
           <p className="mt-1 text-sm font-semibold text-gray-900">
-            View, edit, delete and print petrol pump payment records.
+            {t("petrolPumpPayments.recordsDescription")}
           </p>
         </div>
 
+
         <div className="flex flex-col gap-3 sm:flex-row">
-          <input
+          <VoiceTypingField fieldLabel={t("petrolPumpPayments.placeholders.search")} mode="text"><input
             type="text"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search payments..."
+            placeholder={t("petrolPumpPayments.placeholders.search")}
             className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 lg:w-80"
-          />
+          /></VoiceTypingField>
 
           <button
             type="button"
             onClick={handlePrintReport}
             className="rounded-lg bg-gray-900 px-5 py-3 text-sm font-bold text-white transition hover:bg-gray-800"
           >
-            Print Payment Report
+            {t("petrolPumpPayments.actions.printReport")}
           </button>
         </div>
+
       </div>
 
       {isLoading && (
         <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm font-bold text-blue-700">
-          Loading petrol pump payments...
+          {t("petrolPumpPayments.loading")}
         </div>
       )}
 
@@ -427,7 +451,7 @@ export default function PetrolPumpPaymentTable({
 
       {!isLoading && !errorMessage && rows.length === 0 && (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center text-sm font-bold text-gray-900">
-          No petrol pump payments found.
+          {t("petrolPumpPayments.empty")}
         </div>
       )}
 
@@ -436,18 +460,20 @@ export default function PetrolPumpPaymentTable({
           <table className="w-full min-w-[1500px] border-collapse bg-white text-sm text-gray-900">
             <thead className="bg-blue-600 text-white">
               <tr>
-                <th className="p-3 text-left font-bold">Date</th>
-                <th className="p-3 text-left font-bold">Petrol Pump</th>
-                <th className="p-3 text-left font-bold">Owner</th>
-                <th className="p-3 text-right font-bold">Amount</th>
-                <th className="p-3 text-right font-bold">Current Balance</th>
-                <th className="p-3 text-right font-bold">Payable</th>
-                <th className="p-3 text-right font-bold">Advance</th>
-                <th className="p-3 text-left font-bold">Status</th>
-                <th className="p-3 text-left font-bold">Payment Method</th>
-                <th className="p-3 text-left font-bold">Reference No</th>
-                <th className="p-3 text-left font-bold">Remarks</th>
-                <th className="p-3 text-left font-bold">Actions</th>
+                <th className="p-3 text-start font-bold">{t("common.date")}</th>
+                <th className="p-3 text-start font-bold">{t("petrolPumpPayments.fields.pump")}</th>
+                <th className="p-3 text-start font-bold">{t("petrolPumps.fields.ownerName")}</th>
+                <th className="p-3 text-end font-bold">{t("petrolPumpPayments.fields.advanceUsed")}</th>
+                <th className="p-3 text-end font-bold">{t("petrolPumpPayments.fields.paymentNow")}</th>
+                <th className="p-3 text-end font-bold">{t("petrolPumpPayments.fields.totalSettlement")}</th>
+                <th className="p-3 text-end font-bold">{t("petrolPumpPayments.fields.currentBalance")}</th>
+                <th className="p-3 text-end font-bold">{t("petrolPumpPayments.statuses.payable")}</th>
+                <th className="p-3 text-end font-bold">{t("petrolPumpPayments.statuses.advance")}</th>
+                <th className="p-3 text-start font-bold">{t("common.status")}</th>
+                <th className="p-3 text-start font-bold">{t("petrolPumpPayments.fields.paymentMethod")}</th>
+                <th className="p-3 text-start font-bold">{t("petrolPumpPayments.fields.reference")}</th>
+                <th className="p-3 text-start font-bold">{t("petrolPumpPayments.fields.remarks")}</th>
+                <th className="p-3 text-start font-bold">{t("common.actions.title")}</th>
               </tr>
             </thead>
 
@@ -457,7 +483,7 @@ export default function PetrolPumpPaymentTable({
                 const currentBalance = pump?.currentBalance ?? 0;
                 const payableAmount = pump?.payableAmount ?? 0;
                 const advanceAmount = pump?.advanceAmount ?? 0;
-                const status = pump?.balanceStatus ?? "Settled";
+                const status = pump?.balanceStatus ?? "Paid";
 
                 return (
                   <tr
@@ -467,7 +493,13 @@ export default function PetrolPumpPaymentTable({
                     <td className="p-3 font-semibold">{row.paymentDate}</td>
                     <td className="p-3 font-bold">{row.pumpName}</td>
                     <td className="p-3 font-semibold">{row.ownerName}</td>
-                    <td className="p-3 text-right font-extrabold text-green-700">
+                    <td dir="ltr" className="p-3 text-right font-extrabold text-blue-700">
+                      {formatAmount(row.advanceUsed)}
+                    </td>
+                    <td dir="ltr" className="p-3 text-right font-extrabold text-green-700">
+                      {formatAmount(row.paymentNow)}
+                    </td>
+                    <td dir="ltr" className="p-3 text-right font-extrabold text-slate-900">
                       {formatAmount(row.amount)}
                     </td>
                     <td
@@ -477,7 +509,7 @@ export default function PetrolPumpPaymentTable({
                     >
                       <div>{formatAmount(currentBalance)}</div>
                       <div className="mt-1 text-xs font-bold text-gray-900">
-                        Latest Balance
+                        {t("petrolPumpPayments.fields.latestBalance")}
                       </div>
                     </td>
                     <td className="p-3 text-right font-extrabold text-red-700">
@@ -492,11 +524,11 @@ export default function PetrolPumpPaymentTable({
                           status
                         )}`}
                       >
-                        {status}
+                        {statusLabel(status)}
                       </span>
                     </td>
-                    <td className="p-3 font-semibold">{row.paymentMethod}</td>
-                    <td className="p-3 font-semibold">{row.referenceNo}</td>
+                    <td className="p-3 font-semibold">{methodLabel(row.paymentMethod)}</td>
+                    <td dir="ltr" className="p-3 font-semibold">{row.referenceNo}</td>
                     <td className="max-w-[260px] p-3 font-semibold">
                       {row.remarks}
                     </td>
@@ -505,26 +537,29 @@ export default function PetrolPumpPaymentTable({
                         <button
                           type="button"
                           onClick={() => onEdit(row)}
+                          aria-label={`${t("common.edit")} ${row.pumpName}`}
                           className="rounded-lg bg-blue-600 px-3 py-2 font-semibold text-white transition hover:bg-blue-700"
                         >
-                          Edit
+                          {t("common.edit")}
                         </button>
 
                         <button
                           type="button"
                           onClick={() => onDelete(row)}
+                          aria-label={`${t("common.delete")} ${row.pumpName}`}
                           disabled={isDeleting}
                           className="rounded-lg bg-red-600 px-3 py-2 font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed"
                         >
-                          Delete
+                          {t("common.delete")}
                         </button>
 
                         <button
                           type="button"
                           onClick={() => handlePrintReceipt(row)}
+                          aria-label={`${t("petrolPumpPayments.actions.printReceipt")} ${row.pumpName}`}
                           className="rounded-lg bg-gray-900 px-3 py-2 font-semibold text-white transition hover:bg-gray-800"
                         >
-                          Print Receipt
+                          {t("petrolPumpPayments.actions.printReceipt")}
                         </button>
                       </div>
                     </td>
@@ -536,7 +571,7 @@ export default function PetrolPumpPaymentTable({
             <tfoot>
               <tr className="border-t-2 border-gray-300 bg-gray-50 text-gray-900">
                 <td colSpan={3} className="p-3 font-extrabold">
-                  Total
+                  {t("common.total")}
                 </td>
                 <td className="p-3 text-right font-extrabold text-green-700">
                   {formatAmount(totalPayments)}
@@ -547,6 +582,7 @@ export default function PetrolPumpPaymentTable({
           </table>
         </div>
       )}
+      {modulePrint.dialog}
     </div>
   );
 }

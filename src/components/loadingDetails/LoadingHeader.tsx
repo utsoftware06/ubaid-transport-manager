@@ -1,22 +1,24 @@
 "use client";
 
 import type { LoadingDetailsData } from "./LoadingDetails";
+import { useLanguage } from "@/contexts/LanguageContext";
+import ModulePageHeading from "@/components/shared/ModulePageHeading";
 
 type Props = {
   loading: LoadingDetailsData;
 };
 
 export default function LoadingHeader({ loading }: Props) {
+  const { t, dir } = useLanguage();
   return (
-    <div>
-      <h1 className="text-3xl font-bold text-gray-900">
-        Loading Details
-      </h1>
-      <p className="mt-2 text-base font-semibold text-gray-900">
-        Loading No: {loading.loadingNo}
+    <div dir={dir} className="min-w-0">
+      <ModulePageHeading icon="trip" accent="blue" title={t("loadings.details.title")} />
+      <p className="mt-3 text-sm font-semibold text-slate-800">
+        {t("loadings.loadingNo")}: <span dir="ltr">{loading.loadingNo}</span>
       </p>
-      <p className="mt-1 text-sm font-medium text-gray-700">
-        Date: {loading.loadingDate?.slice(0, 10)}
+      <p className="mt-1 text-sm font-medium text-slate-600">
+        {t("common.date")}:{" "}
+        <span dir="ltr">{loading.loadingDate?.slice(0, 10)}</span>
       </p>
     </div>
   );

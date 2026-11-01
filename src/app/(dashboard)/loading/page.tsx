@@ -1,66 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import LoadingForm from "@/components/loading/LoadingForm";
 import LoadingItems from "@/components/loading/LoadingItems";
 import LoadingTable from "@/components/loading/LoadingTable";
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/contexts/LanguageContext";
+import type {
+  LoadingBooking as Booking,
+  LoadingDriver as Driver,
+  LoadingItem,
+  LoadingRecord,
+  LoadingVehicle as Vehicle,
+} from "@/types/loading";
+import { escapeHtml } from "@/lib/print/escapeHtml";
+import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
+import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
+import { printLabel, printValue, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
 
-type Vehicle = {
-  id: string;
-  vehicle_no: string;
-};
-
-type Driver = {
-  id: string;
-  name: string;
-};
-
-type Booking = {
-  id: string;
-  booking_no: string | null;
-  sender_name: string | null;
-  receiver_name: string | null;
-  freight: number | string | null;
-};
-
-type LoadingItem = {
-  id: string;
-  loading_id: string;
-  item_name: string;
-  quantity: number;
-  weight: number;
-  unit: string;
-  remarks: string | null;
-};
-
-type LoadingRecord = {
-  id: string;
-  loading_no: string;
-  loading_date: string;
-  booking_id: string | null;
-  vehicle_id: string;
-  driver_id: string;
-  route: string;
-  advance_amount: number | null;
-  remaining_amount: number | null;
-  payment_status: string | null;
-  vehicles?: {
-    vehicle_no: string;
-  } | null;
-  drivers?: {
-    name: string;
-  } | null;
-  bookings?: {
-    booking_no: string | null;
-    sender_name: string | null;
-    receiver_name: string | null;
-    freight: number | string | null;
-  } | null;
-  loading_items?: LoadingItem[];
-};
+function singleRelation<T>(relation: T | T[] | null | undefined): T | null {
+  return Array.isArray(relation) ? relation[0] ?? null : relation ?? null;
+}
 
 export default function LoadingPage() {
+  const { t, dir, language } = useLanguage();
   const [loadingNo, setLoadingNo] = useState("");
   const [loadingDate, setLoadingDate] = useState("");
   const [bookingId, setBookingId] = useState("");
@@ -83,10 +46,18 @@ export default function LoadingPage() {
   const [remarks, setRemarks] = useState("");
 
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editingLoadingId, setEditingLoadingId] = useState<string | null>(null);
   const [isSavingLoading, setIsSavingLoading] = useState(false);
   const [isSavingItem, setIsSavingItem] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [tenantBookingIds, setTenantBookingIds] = useState<string[]>([]);
+  const [profileRole, setProfileRole] = useState<string | null>(null);
+  const [addas, setAddas] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedAddaId, setSelectedAddaId] = useState("");
+  const loadingCreateRequestId = useRef<string | null>(null);
+  const modulePrint = useModuleTransportPrint("loading", selectedAddaId || null, language === "ur" ? "ur" : "en");
 
   const selectedLoading = useMemo(() => {
     if (!loadingId) return null;
@@ -128,83 +99,175 @@ export default function LoadingPage() {
     });
   }, [loadings, search]);
 
-  useEffect(() => {
-    loadBookings();
-    loadVehicles();
-    loadDrivers();
-    loadLoadings();
-  }, []);
+  const loadInitialData = useEffectEvent(async () => {
+    setIsLoadingData(true);
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        throw authError ?? new Error("Authenticated user is unavailable.");
+      }
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role, adda_id")
+        .eq("id", authData.user.id)
+        .maybeSingle();
+      if (profileError || !profile) {
+        throw profileError ?? new Error("Authenticated profile is unavailable.");
+      }
+      setProfileRole(profile.role);
+
+      let addaId = profile.adda_id ? String(profile.adda_id) : "";
+      if (profile.role === "super_admin") {
+        const { data: addaRows, error: addasError } = await supabase
+          .from("addas")
+          .select("id, name")
+          .order("name");
+        if (addasError) throw addasError;
+        setAddas((addaRows ?? []).map((adda) => ({ id: String(adda.id), name: adda.name })));
+        addaId = selectedAddaId;
+      }
+      if (!addaId) {
+        setBookings([]);
+        setVehicles([]);
+        setDrivers([]);
+        setLoadings([]);
+        setTenantBookingIds([]);
+        return;
+      }
+      const bookingIds = await loadBookings(addaId);
+      await Promise.all([
+        loadVehicles(addaId),
+        loadDrivers(addaId),
+        loadLoadings(bookingIds),
+      ]);
+    } catch (loadError) {
+      console.error("Unable to load tenant-scoped loading data:", loadError);
+      alert(t("common.messages.loadFailed"));
+    } finally {
+      setIsLoadingData(false);
+    }
+  });
 
   useEffect(() => {
-    if (loadingId) {
-      loadLoadingItems(loadingId);
-    } else {
-      setLoadingItems([]);
-    }
+    const timer = window.setTimeout(() => void loadInitialData(), 0);
+    return () => window.clearTimeout(timer);
+  }, [selectedAddaId]);
+
+  const syncLoadingItems = useEffectEvent(async (currentLoadingId: string) => {
+    await loadLoadingItems(currentLoadingId);
+  });
+
+  useEffect(() => {
+    const syncTimer = window.setTimeout(() => {
+      if (loadingId) {
+        void syncLoadingItems(loadingId);
+      } else {
+        setLoadingItems([]);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(syncTimer);
   }, [loadingId]);
 
-  async function loadBookings() {
+  async function loadCurrentAddaId(): Promise<string> {
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) {
+      throw authError ?? new Error("Authenticated user is unavailable.");
+    }
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("adda_id, role")
+      .eq("id", authData.user.id)
+      .maybeSingle();
+    if (error || !data) {
+      throw error ?? new Error("Authenticated user has no Adda.");
+    }
+    const addaId = data.role === "super_admin" ? selectedAddaId : data.adda_id;
+    if (!addaId) throw new Error("An explicit Adda selection is required.");
+    return String(addaId);
+  }
+
+  async function loadBookings(addaId: string): Promise<string[]> {
     const { data, error } = await supabase
       .from("bookings")
-      .select("id, booking_no, sender_name, receiver_name, freight")
+      .select("id, adda_id, booking_no, sender_name, receiver_name, freight, party_id, parties(name)")
+      .eq("adda_id", addaId)
       .order("booking_no", { ascending: false });
 
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    if (data) setBookings(data as Booking[]);
+    if (error) throw error;
+    const rows: Booking[] = (data ?? []).map((booking) => ({
+      id: String(booking.id),
+      adda_id: booking.adda_id,
+      booking_no: booking.booking_no,
+      sender_name: booking.sender_name,
+      receiver_name: booking.receiver_name,
+      freight: booking.freight,
+      party_id: booking.party_id,
+      parties: singleRelation(booking.parties),
+    }));
+    const ids = rows.map((booking) => booking.id);
+    setBookings(rows);
+    setTenantBookingIds(ids);
+    return ids;
   }
 
-  async function loadVehicles() {
+  async function loadVehicles(addaId: string) {
     const { data, error } = await supabase
       .from("vehicles")
-      .select("*")
+      .select("id, vehicle_no")
+      .eq("adda_id", addaId)
       .order("vehicle_no");
 
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    if (data) setVehicles(data as Vehicle[]);
+    if (error) throw error;
+    setVehicles((data ?? []) as Vehicle[]);
   }
 
-  async function loadDrivers() {
+  async function loadDrivers(addaId: string) {
     const { data, error } = await supabase
       .from("drivers")
-      .select("*")
+      .select("id, name")
+      .eq("adda_id", addaId)
       .order("name");
 
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    if (data) setDrivers(data as Driver[]);
+    if (error) throw error;
+    setDrivers((data ?? []) as Driver[]);
   }
 
-  async function loadLoadings() {
+  async function loadLoadings(bookingIds = tenantBookingIds) {
+    if (bookingIds.length === 0) {
+      setLoadings([]);
+      return;
+    }
     const { data, error } = await supabase
       .from("loadings")
       .select(
         `
         *,
-        bookings(booking_no, sender_name, receiver_name, freight),
+        bookings(adda_id, booking_no, sender_name, receiver_name, freight, party_id, parties(name)),
         vehicles(vehicle_no),
         drivers(name),
         loading_items(*)
       `
       )
+      .in("booking_id", bookingIds)
       .order("id", { ascending: false });
 
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    if (data) setLoadings(data as LoadingRecord[]);
+    if (error) throw error;
+    const rows: LoadingRecord[] = (data ?? []).map((loading) => {
+      const booking = singleRelation(loading.bookings);
+      return {
+        ...loading,
+        bookings: booking
+          ? {
+              ...booking,
+              parties: singleRelation(booking.parties),
+            }
+          : null,
+        vehicles: singleRelation(loading.vehicles),
+        drivers: singleRelation(loading.drivers),
+      } as LoadingRecord;
+    });
+    setLoadings(rows);
   }
 
   async function loadLoadingItems(currentLoadingId = loadingId) {
@@ -217,7 +280,8 @@ export default function LoadingPage() {
       .order("id", { ascending: false });
 
     if (error) {
-      alert(error.message);
+      console.error("Unable to load loading items:", error);
+      alert(t("common.messages.loadFailed"));
       return;
     }
 
@@ -233,9 +297,11 @@ export default function LoadingPage() {
     setRoute("");
     setAdvanceAmount("");
     setEditingLoadingId(null);
+    loadingCreateRequestId.current = null;
   }
 
   function resetItemForm() {
+    setEditingItemId(null);
     setItemName("");
     setQuantity("");
     setWeight("");
@@ -245,37 +311,42 @@ export default function LoadingPage() {
 
   function validateLoadingForm() {
     if (!loadingNo.trim()) {
-      alert("Loading Number is required.");
+      alert(t("loadings.validation.numberRequired"));
       return false;
     }
 
     if (!loadingDate) {
-      alert("Loading Date is required.");
+      alert(t("loadings.validation.dateRequired"));
       return false;
     }
 
     if (!bookingId) {
-      alert("Please select a booking.");
+      alert(t("loadings.validation.bookingRequired"));
+      return false;
+    }
+
+    if (!tenantBookingIds.includes(bookingId)) {
+      alert(t("loadings.validation.bookingRequired"));
       return false;
     }
 
     if (!vehicleId) {
-      alert("Please select a vehicle.");
+      alert(t("loadings.validation.vehicleRequired"));
       return false;
     }
 
     if (!driverId) {
-      alert("Please select a driver.");
+      alert(t("loadings.validation.driverRequired"));
       return false;
     }
 
     if (!route.trim()) {
-      alert("Route is required.");
+      alert(t("loadings.validation.routeRequired"));
       return false;
     }
 
     if (advanceAmount && Number(advanceAmount) < 0) {
-      alert("Advance amount cannot be negative.");
+      alert(t("loadings.validation.advanceNonNegative"));
       return false;
     }
 
@@ -284,27 +355,40 @@ export default function LoadingPage() {
 
   function validateItemForm() {
     if (!loadingId) {
-      alert("Please save or select a loading first.");
+      alert(t("loadings.validation.saveFirst"));
       return false;
     }
 
     if (!itemName.trim()) {
-      alert("Item Name is required.");
+      alert(t("loadings.validation.itemRequired"));
       return false;
     }
 
     if (!quantity || Number(quantity) <= 0) {
-      alert("Quantity must be greater than zero.");
+      alert(t("loadings.validation.quantityPositive"));
       return false;
     }
 
     if (!weight || Number(weight) <= 0) {
-      alert("Weight must be greater than zero.");
+      alert(t("loadings.validation.weightPositive"));
       return false;
     }
 
     if (!unit.trim()) {
-      alert("Unit is required.");
+      alert(t("loadings.validation.unitRequired"));
+      return false;
+    }
+
+    const normalizedName = itemName.trim().toLowerCase();
+    if (
+      loadingItems.some(
+        (item) =>
+          item.id !== editingItemId &&
+          item.item_name.trim().toLowerCase() === normalizedName &&
+          item.unit === unit
+      )
+    ) {
+      alert(t("loadings.validation.duplicateItem"));
       return false;
     }
 
@@ -335,7 +419,7 @@ export default function LoadingPage() {
   }
 
   async function handleSaveLoading() {
-    if (!validateLoadingForm()) return;
+    if (isSavingLoading || !validateLoadingForm()) return;
 
     const { advance, remaining, paymentStatus } = getPaymentValues();
 
@@ -355,78 +439,155 @@ export default function LoadingPage() {
           remaining_amount: remaining,
           payment_status: paymentStatus,
         })
-        .eq("id", editingLoadingId);
+        .eq("id", editingLoadingId)
+        .in("booking_id", tenantBookingIds);
 
       setIsSavingLoading(false);
 
       if (error) {
-        alert(error.message);
+        console.error("Unable to update loading:", error);
+        const backendMessage = String(error.message ?? "").toUpperCase();
+        alert(backendMessage.includes("BILTY_FINANCIAL_FIELDS_LOCKED_AFTER_LOADING_MARGIN")
+          ? t("loadings.messages.marginFinancialLocked")
+          : backendMessage.includes("LOADING_MARGIN_BOOKING_LINK_LOCKED") || backendMessage.includes("LOADING_MARGIN_RECOGNIZED_DELETE_BLOCKED")
+            ? t("loadings.messages.marginSourceLocked")
+            : t("common.messages.saveFailed"));
         return;
       }
 
       setLoadingId(editingLoadingId);
-      alert("Loading updated successfully!");
+      alert(t("loadings.messages.updatedSuccessfully"));
       await loadLoadings();
       resetLoadingForm();
       return;
     }
 
-    const { data, error } = await supabase
-      .from("loadings")
-      .insert({
-        loading_no: loadingNo.trim(),
-        loading_date: loadingDate,
-        booking_id: bookingId,
-        vehicle_id: vehicleId,
-        driver_id: driverId,
-        route: route.trim(),
-        advance_amount: advance,
-        remaining_amount: remaining,
-        payment_status: paymentStatus,
-      })
-      .select();
-
-    setIsSavingLoading(false);
-
-    if (error) {
-      alert(error.message);
+    const requestId = loadingCreateRequestId.current ?? crypto.randomUUID();
+    loadingCreateRequestId.current = requestId;
+    let createdLoadingId: unknown = null;
+    let createError: { message?: string; code?: string } | null = null;
+    try {
+      const addaId = await loadCurrentAddaId();
+      const response = await supabase.rpc("create_loading_with_adda_margin", {
+        p_adda_id: addaId,
+        p_loading_no: loadingNo.trim(),
+        p_loading_date: loadingDate,
+        p_booking_id: bookingId,
+        p_vehicle_id: vehicleId,
+        p_driver_id: driverId,
+        p_route: route.trim(),
+        p_advance_amount: advance,
+        p_remaining_amount: remaining,
+        p_payment_status: paymentStatus,
+        p_items: [],
+        p_request_id: requestId,
+      } as never);
+      createdLoadingId = response.data;
+      createError = response.error;
+    } catch (requestError) {
+      setIsSavingLoading(false);
+      console.error("Unable to save loading:", requestError);
+      alert(t("common.messages.saveFailed"));
       return;
     }
 
-    if (data && data.length > 0) {
-      setLoadingId(data[0].id as string);
+    setIsSavingLoading(false);
+
+    if (createError) {
+      console.error("Unable to save loading:", createError);
+      const backendMessage = String(createError.message ?? "").toUpperCase();
+      const messageKey = backendMessage.includes("LOADING_MARGIN_BOOKING_ADDA_REQUIRED")
+        ? "loadings.messages.bookingAddaRequired"
+        : createError.code === "23505" || backendMessage.includes("BOOKING_ALREADY_HAS_LOADING") || backendMessage.includes("BOOKING_ALREADY_HAS_DIFFERENT_LOADING")
+          ? "loadings.messages.loadingAlreadyExists"
+          : backendMessage.includes("TENANT_MISMATCH") || backendMessage.includes("VEHICLE_ADDA_MISMATCH") || backendMessage.includes("DRIVER_ADDA_MISMATCH")
+            ? "loadings.messages.tenantMismatch"
+            : "common.messages.saveFailed";
+      alert(t(messageKey));
+      return;
     }
 
-    alert("Loading saved successfully!");
+    if (createdLoadingId !== null) setLoadingId(String(createdLoadingId));
+
+    alert(t("loadings.messages.savedSuccessfully"));
     await loadLoadings();
     resetLoadingForm();
   }
 
   async function handleAddItem() {
-    if (!validateItemForm()) return;
+    if (isSavingItem || !validateItemForm()) return;
 
     setIsSavingItem(true);
 
-    const { error } = await supabase.from("loading_items").insert({
+    const values = {
       loading_id: loadingId,
       item_name: itemName.trim(),
       quantity: Number(quantity),
       weight: Number(weight),
       unit,
       remarks: remarks.trim(),
-    });
+    };
+    const { error } = editingItemId
+      ? await supabase
+          .from("loading_items")
+          .update(values)
+          .eq("id", editingItemId)
+          .eq("loading_id", loadingId)
+      : await supabase.from("loading_items").insert(values);
 
     setIsSavingItem(false);
 
     if (error) {
-      alert(error.message);
+      console.error("Unable to add loading item:", error);
+      alert(t("common.messages.saveFailed"));
       return;
     }
 
-    alert("Item Added Successfully!");
+    alert(
+      t(
+        editingItemId
+          ? "loadings.messages.itemUpdated"
+          : "loadings.messages.itemAdded"
+      )
+    );
     await loadLoadingItems();
     await loadLoadings();
     resetItemForm();
+  }
+
+  function handleEditItem(item: LoadingItem) {
+    setEditingItemId(item.id);
+    setItemName(item.item_name);
+    setQuantity(String(item.quantity));
+    setWeight(String(item.weight));
+    setUnit(item.unit);
+    setRemarks(item.remarks ?? "");
+  }
+
+  async function handleDeleteItem(item: LoadingItem) {
+    if (
+      isSavingItem ||
+      !loadingId ||
+      item.loading_id !== loadingId ||
+      !window.confirm(t("loadings.items.deleteConfirm"))
+    ) {
+      return;
+    }
+    setIsSavingItem(true);
+    const { error } = await supabase
+      .from("loading_items")
+      .delete()
+      .eq("id", item.id)
+      .eq("loading_id", loadingId);
+    if (error) {
+      console.error("Unable to delete loading item:", error);
+      alert(t("common.messages.deleteFailed"));
+    } else {
+      if (editingItemId === item.id) resetItemForm();
+      await Promise.all([loadLoadingItems(loadingId), loadLoadings()]);
+      alert(t("loadings.messages.itemDeleted"));
+    }
+    setIsSavingItem(false);
   }
 
   function handleViewLoading(loading: LoadingRecord) {
@@ -434,17 +595,21 @@ export default function LoadingPage() {
     setEditingLoadingId(null);
 
     alert(
-      `Loading No: ${loading.loading_no}\nDate: ${
+      `${t("common.loadingNo")}: ${loading.loading_no}\n${t("common.date")}: ${
         loading.loading_date
-      }\nBooking: ${loading.bookings?.booking_no ?? "-"}\nVehicle: ${
+      }\n${t("common.booking")}: ${loading.bookings?.booking_no ?? "-"}\n${t("common.vehicle")}: ${
         loading.vehicles?.vehicle_no ?? "-"
-      }\nDriver: ${loading.drivers?.name ?? "-"}\nRoute: ${
+      }\n${t("common.driver")}: ${loading.drivers?.name ?? "-"}\n${t("common.route")}: ${
         loading.route
-      }\nFreight: ${loading.bookings?.freight ?? 0}\nAdvance: ${
+      }\n${t("common.party")}: ${loading.bookings?.parties?.name ?? loading.bookings?.sender_name ?? "-"}\n${t("common.freight")}: ${loading.bookings?.freight ?? 0}\n${t("common.advance")}: ${
         loading.advance_amount ?? 0
-      }\nRemaining: ${loading.remaining_amount ?? 0}\nPayment Status: ${
-        loading.payment_status ?? "Unpaid"
-      }\nItems: ${loading.loading_items?.length ?? 0}`
+      }\n${t("common.remaining")}: ${loading.remaining_amount ?? 0}\n${t(
+        "printLabels.paymentStatus"
+      )}: ${t(
+        `common.paymentStatus.${String(
+          loading.payment_status ?? "unpaid"
+        ).toLowerCase()}`
+      )}\n${t("common.items")}: ${loading.loading_items?.length ?? 0}`
     );
   }
 
@@ -461,34 +626,39 @@ export default function LoadingPage() {
   }
 
   async function handleDeleteLoading(loading: LoadingRecord) {
+    if (isDeleting || !loading.booking_id || !tenantBookingIds.includes(loading.booking_id)) {
+      return;
+    }
     const confirmed = window.confirm(
-      `Delete loading ${loading.loading_no}? This will also delete its loading items.`
+      `${t("loadings.deleteConfirm")} ${loading.loading_no}?`
     );
 
     if (!confirmed) return;
 
     setIsDeleting(true);
 
-    const { error: itemsError } = await supabase
-      .from("loading_items")
-      .delete()
-      .eq("loading_id", loading.id);
-
-    if (itemsError) {
-      setIsDeleting(false);
-      alert(itemsError.message);
-      return;
+    let loadingError: { message?: string; code?: string } | null = null;
+    try {
+      const addaId = await loadCurrentAddaId();
+      const response = await supabase.rpc("delete_loading_if_unrecognized", {
+        p_adda_id: addaId,
+        p_loading_id: Number(loading.id),
+      } as never);
+      loadingError = response.error;
+    } catch (error) {
+      loadingError = { message: error instanceof Error ? error.message : String(error) };
     }
-
-    const { error: loadingError } = await supabase
-      .from("loadings")
-      .delete()
-      .eq("id", loading.id);
 
     setIsDeleting(false);
 
     if (loadingError) {
-      alert(loadingError.message);
+      console.error("Unable to delete loading:", loadingError);
+      const backendMessage = String(loadingError.message ?? "").toUpperCase();
+      alert(backendMessage.includes("LOADING_MARGIN_RECOGNIZED_DELETE_BLOCKED")
+        ? t("loadings.messages.marginSourceLocked")
+        : backendMessage.includes("TENANT_MISMATCH")
+          ? t("loadings.messages.tenantMismatch")
+          : t("common.messages.deleteFailed"));
       return;
     }
 
@@ -501,20 +671,24 @@ export default function LoadingPage() {
       resetLoadingForm();
     }
 
-    alert("Loading deleted successfully!");
+    alert(t("loadings.messages.deletedSuccessfully"));
     await loadLoadings();
 
     setLoadings((prev) => prev.filter((item) => item.id !== loading.id));
   }
 
-  function handlePrintLoadingSlip(loading: LoadingRecord) {
+  function handlePrintLoadingSlipLegacy(loading: LoadingRecord) {
     const printWindow = window.open("", "_blank", "width=900,height=700");
 
     if (!printWindow) {
-      alert("Please allow popups to print the loading slip.");
+      alert(t("loadings.messages.allowPopups"));
       return;
     }
 
+    const label = (key: string) => escapeHtml(t(key));
+    const value = (input: unknown) => escapeHtml(input);
+    const htmlLanguage = value(language);
+    const htmlDirection = value(dir);
     const items = loading.loading_items ?? [];
     const totalQuantity = items.reduce(
       (total, item) => total + Number(item.quantity || 0),
@@ -532,22 +706,22 @@ export default function LoadingPage() {
               (item, index) => `
                 <tr>
                   <td>${index + 1}</td>
-                  <td>${item.item_name ?? ""}</td>
-                  <td>${item.quantity ?? ""}</td>
-                  <td>${item.weight ?? ""}</td>
-                  <td>${item.unit ?? ""}</td>
-                  <td>${item.remarks ?? ""}</td>
+                  <td>${value(item.item_name)}</td>
+                  <td class="technical">${value(item.quantity)}</td>
+                  <td class="technical">${value(item.weight)}</td>
+                  <td>${value(item.unit)}</td>
+                  <td>${value(item.remarks)}</td>
                 </tr>
               `
             )
             .join("")
-        : `<tr><td colspan="6" class="empty">No items found</td></tr>`;
+        : `<tr><td colspan="6" class="empty">${label("loadings.details.noItems")}</td></tr>`;
 
-    printWindow.document.write(`
+    void writeAddaBrandedPrintDocument(printWindow, `
       <!doctype html>
-      <html>
+      <html lang="${htmlLanguage}" dir="${htmlDirection}">
         <head>
-          <title>Loading Slip - ${loading.loading_no}</title>
+          <title>${label("printLabels.loadingSlip")} - ${value(loading.loading_no)}</title>
           <style>
             * { box-sizing: border-box; }
             body {
@@ -556,6 +730,8 @@ export default function LoadingPage() {
               color: #111827;
               font-family: Arial, sans-serif;
               background: #ffffff;
+              direction: ${htmlDirection};
+              text-align: start;
             }
             .slip {
               max-width: 900px;
@@ -583,7 +759,7 @@ export default function LoadingPage() {
               color: #111827;
             }
             .meta {
-              text-align: right;
+              text-align: end;
               font-size: 14px;
               line-height: 1.7;
               color: #111827;
@@ -607,7 +783,7 @@ export default function LoadingPage() {
             th {
               background: #2563eb;
               color: #ffffff;
-              text-align: left;
+              text-align: start;
               padding: 10px;
               border: 1px solid #2563eb;
             }
@@ -624,6 +800,7 @@ export default function LoadingPage() {
               text-align: center;
               font-weight: 700;
             }
+            .technical { direction: ltr; unicode-bidi: isolate; }
             .signatures {
               display: grid;
               grid-template-columns: repeat(3, 1fr);
@@ -650,42 +827,43 @@ export default function LoadingPage() {
           <div class="slip">
             <div class="header">
               <div>
-                <h1>Loading Slip</h1>
-                <div class="subtitle">Transport Management System</div>
+                <h1>${label("printLabels.loadingSlip")}</h1>
+                <div class="subtitle">${PRINT_ADDA_NAME_TOKEN}</div>
               </div>
               <div class="meta">
-                <div><strong>Loading No:</strong> ${loading.loading_no}</div>
-                <div><strong>Date:</strong> ${loading.loading_date}</div>
+                <div><strong>${label("common.loadingNo")}:</strong> <span class="technical">${value(loading.loading_no)}</span></div>
+                <div><strong>${label("common.date")}:</strong> <span class="technical">${value(loading.loading_date)}</span></div>
               </div>
             </div>
 
             <div class="details">
-              <div><strong>Booking:</strong> ${loading.bookings?.booking_no ?? "-"}</div>
-              <div><strong>Vehicle:</strong> ${loading.vehicles?.vehicle_no ?? "-"}</div>
-              <div><strong>Driver:</strong> ${loading.drivers?.name ?? "-"}</div>
-              <div><strong>Route:</strong> ${loading.route ?? "-"}</div>
-              <div><strong>Freight:</strong> ${loading.bookings?.freight ?? 0}</div>
-              <div><strong>Advance:</strong> ${loading.advance_amount ?? 0}</div>
-              <div><strong>Remaining:</strong> ${loading.remaining_amount ?? 0}</div>
-              <div><strong>Payment Status:</strong> ${loading.payment_status ?? "Unpaid"}</div>
-              <div><strong>Total Items:</strong> ${items.length}</div>
+              <div><strong>${label("common.booking")}:</strong> <span class="technical">${value(loading.bookings?.booking_no ?? "-")}</span></div>
+              <div><strong>${label("common.party")}:</strong> ${value(loading.bookings?.parties?.name ?? loading.bookings?.sender_name ?? "-")}</div>
+              <div><strong>${label("common.vehicle")}:</strong> <span class="technical">${value(loading.vehicles?.vehicle_no ?? "-")}</span></div>
+              <div><strong>${label("common.driver")}:</strong> ${value(loading.drivers?.name ?? "-")}</div>
+              <div><strong>${label("common.route")}:</strong> ${value(loading.route ?? "-")}</div>
+              <div><strong>${label("common.freight")}:</strong> <span class="technical">${value(loading.bookings?.freight ?? 0)}</span></div>
+              <div><strong>${label("common.advance")}:</strong> <span class="technical">${value(loading.advance_amount ?? 0)}</span></div>
+              <div><strong>${label("common.remaining")}:</strong> <span class="technical">${value(loading.remaining_amount ?? 0)}</span></div>
+              <div><strong>${label("printLabels.paymentStatus")}:</strong> ${label(`common.paymentStatus.${String(loading.payment_status ?? "unpaid").toLowerCase()}`)}</div>
+              <div><strong>${label("printLabels.totalItems")}:</strong> ${items.length}</div>
             </div>
 
             <table>
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>Item</th>
-                  <th>Quantity</th>
-                  <th>Weight</th>
-                  <th>Unit</th>
-                  <th>Remarks</th>
+                  <th>${label("common.item")}</th>
+                  <th>${label("common.quantity")}</th>
+                  <th>${label("common.weight")}</th>
+                  <th>${label("common.unit")}</th>
+                  <th>${label("common.remarks")}</th>
                 </tr>
               </thead>
               <tbody>${itemRows}</tbody>
               <tfoot>
                 <tr>
-                  <td colspan="2">Total</td>
+                  <td colspan="2">${label("common.total")}</td>
                   <td>${totalQuantity}</td>
                   <td>${totalWeight}</td>
                   <td colspan="2"></td>
@@ -694,9 +872,9 @@ export default function LoadingPage() {
             </table>
 
             <div class="signatures">
-              <div class="signature">Prepared By</div>
-              <div class="signature">Driver Signature</div>
-              <div class="signature">Manager Signature</div>
+              <div class="signature">${label("printLabels.preparedBy")}</div>
+              <div class="signature">${label("printLabels.driverSignature")}</div>
+              <div class="signature">${label("printLabels.managerSignature")}</div>
             </div>
           </div>
 
@@ -707,21 +885,75 @@ export default function LoadingPage() {
           </script>
         </body>
       </html>
-    `);
+    `, loading.bookings?.adda_id ?? null, language === "ur" ? "ur" : "en");
+  }
 
-    printWindow.document.close();
+  function handlePrintLoadingSlip(loading: LoadingRecord) {
+    const items = loading.loading_items ?? [];
+    const ownerAddaId = loading.booking_id != null ? loading.bookings?.adda_id ?? null : null;
+    const presentation: ModulePrintPresentation = {
+      documentType: "loading",
+      title: printLabel("printLabels.loadingSlip"),
+      documentNo: printValue(loading.loading_no),
+      documentDate: printValue(loading.loading_date),
+      fields: [
+        { label: printLabel("common.booking"), value: printValue(loading.bookings?.booking_no) },
+        { label: printLabel("common.party"), value: printValue(loading.bookings?.parties?.name ?? loading.bookings?.sender_name) },
+        { label: printLabel("common.vehicle"), value: printValue(loading.vehicles?.vehicle_no) },
+        { label: printLabel("common.driver"), value: printValue(loading.drivers?.name) },
+        { label: printLabel("common.route"), value: printValue(loading.route) },
+        { label: printLabel("common.freight"), value: printValue(loading.bookings?.freight) },
+        { label: printLabel("common.advance"), value: printValue(loading.advance_amount) },
+        { label: printLabel("common.remaining"), value: printValue(loading.remaining_amount) },
+        { label: printLabel("printLabels.paymentStatus"), value: printValue(t(`common.paymentStatus.${String(loading.payment_status ?? "unpaid").toLowerCase()}`)) },
+      ],
+      tables: [{
+        title: printLabel("common.items"),
+        columns: [printLabel("common.item"), printLabel("common.quantity"), printLabel("common.weight"), printLabel("common.unit"), printLabel("common.remarks")],
+        rows: items.map((item) => [printValue(item.item_name), printValue(item.quantity), printValue(item.weight), printValue(item.unit), printValue(item.remarks)]),
+      }],
+    };
+    modulePrint.openPresentation(presentation, () => handlePrintLoadingSlipLegacy(loading), ownerAddaId);
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
+    <div dir={dir} className="mx-auto max-w-7xl space-y-8">
       <div>
         <h1 className="text-4xl font-bold text-gray-900">
-          🚛 Loading Management
+          {t("loadings.title")}
         </h1>
         <p className="mt-2 text-base font-medium text-gray-900">
-          Create loadings, add goods, search records, and print loading slips.
+          {t("loadings.description")}
         </p>
       </div>
+
+      {profileRole === "super_admin" && (
+        <section className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
+          <label htmlFor="loading-adda-scope" className="block max-w-xl text-sm font-bold text-slate-700">
+            {t("common.selectAdda")}
+            <select
+              id="loading-adda-scope"
+              className="mt-2 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              value={selectedAddaId}
+              onChange={(event) => {
+                setSelectedAddaId(event.target.value);
+                setBookingId("");
+                setLoadingId(null);
+                setEditingLoadingId(null);
+                setBookings([]);
+                setVehicles([]);
+                setDrivers([]);
+                setLoadings([]);
+                setLoadingItems([]);
+                setTenantBookingIds([]);
+              }}
+            >
+              <option value="">{t("common.selectAdda")}</option>
+              {addas.map((adda) => <option key={adda.id} value={adda.id}>{adda.name}</option>)}
+            </select>
+          </label>
+        </section>
+      )}
 
       <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
         <LoadingForm
@@ -730,7 +962,10 @@ export default function LoadingPage() {
           loadingDate={loadingDate}
           setLoadingDate={setLoadingDate}
           bookingId={bookingId}
-          setBookingId={setBookingId}
+          setBookingId={(value) => {
+            setBookingId(value);
+            setAdvanceAmount("");
+          }}
           bookings={bookings}
           vehicleId={vehicleId}
           setVehicleId={setVehicleId}
@@ -764,6 +999,10 @@ export default function LoadingPage() {
             setRemarks={setRemarks}
             loadingItems={loadingItems}
             onAddItem={handleAddItem}
+            onEditItem={handleEditItem}
+            onDeleteItem={handleDeleteItem}
+            onCancelEdit={resetItemForm}
+            isEditing={Boolean(editingItemId)}
             isSaving={isSavingItem}
           />
         )}
@@ -778,7 +1017,9 @@ export default function LoadingPage() {
         onDelete={handleDeleteLoading}
         onPrint={handlePrintLoadingSlip}
         isDeleting={isDeleting}
+        isLoading={isLoadingData}
       />
+      {modulePrint.dialog}
     </div>
   );
 }

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://utsoftware.local/schemas/pakistan-locations.schema.json",
+  "title": "Reviewed Pakistan Location Hierarchy",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["key", "parentKey", "type", "name"],
+    "properties": {
+      "key": { "type": "string", "minLength": 1, "description": "Stable dataset-local identifier." },
+      "parentKey": { "type": ["string", "null"], "description": "Parent key, or null for a root Province." },
+      "type": { "enum": ["province", "division", "district", "tehsil", "city", "town", "village", "locality"] },
+      "name": { "type": "string", "minLength": 1 }
+    }
+  }
+}

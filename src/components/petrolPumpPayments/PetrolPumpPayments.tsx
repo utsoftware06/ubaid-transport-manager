@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PetrolPumpPaymentForm from "@/components/petrolPumpPayments/PetrolPumpPaymentForm";
 import PetrolPumpPaymentTable from "@/components/petrolPumpPayments/PetrolPumpPaymentTable";
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/contexts/LanguageContext";
+import ModulePageHeading from "@/components/shared/ModulePageHeading";
 
-export type PumpBalanceStatus = "Payable" | "Settled" | "Advance";
+export type PumpBalanceStatus = "Payable" | "Paid" | "Advance";
 
 export type PetrolPumpPaymentMethod =
   | "Cash"
@@ -34,6 +36,13 @@ export type PetrolPumpPaymentRow = {
   pumpName: string;
   ownerName: string;
   amount: number;
+  advanceUsed: number;
+  paymentNow: number;
+  availableAdvanceBefore: number;
+  currentPayableBefore: number;
+  remainingPayable: number;
+  remainingAdvance: number;
+  settlementStatus: PumpBalanceStatus;
   paymentMethod: PetrolPumpPaymentMethod;
   referenceNo: string;
   remarks: string;
@@ -61,6 +70,15 @@ type PetrolPumpPaymentDatabaseRow = {
   petrol_pump_id: string | null;
   payment_date: string | null;
   amount: number | string | null;
+  advance_used: number | string | null;
+  payment_now: number | string | null;
+  opening_applied: number | string | null;
+  advance_created: number | string | null;
+  available_advance_before: number | string | null;
+  current_payable_before: number | string | null;
+  remaining_payable: number | string | null;
+  remaining_advance: number | string | null;
+  settlement_status: string | null;
   payment_method: string | null;
   reference_no: string | null;
   remarks: string | null;
@@ -91,16 +109,22 @@ function toPaymentMethod(value: string | null): PetrolPumpPaymentMethod {
   return "Cash";
 }
 
-function getBalanceStatus(balance: number): PumpBalanceStatus {
-  if (balance > 0) return "Payable";
-  if (balance < 0) return "Advance";
-  return "Settled";
+function getBalanceStatus(
+  payableAmount: number,
+  advanceAmount: number
+): PumpBalanceStatus {
+  if (payableAmount > 0) return "Payable";
+  if (advanceAmount > 0) return "Advance";
+  return "Paid";
 }
 
 export default function PetrolPumpPayments() {
+  const { t, dir } = useLanguage();
+  const [addaId, setAddaId] = useState<string | null>(null);
   const [paymentDate, setPaymentDate] = useState("");
   const [petrolPumpId, setPetrolPumpId] = useState("");
-  const [amount, setAmount] = useState("");
+  const [advanceUsed, setAdvanceUsed] = useState("0");
+  const [paymentNow, setPaymentNow] = useState("0");
   const [paymentMethod, setPaymentMethod] =
     useState<PetrolPumpPaymentMethod>("Cash");
   const [referenceNo, setReferenceNo] = useState("");
@@ -113,71 +137,84 @@ export default function PetrolPumpPayments() {
   const [payments, setPayments] = useState<PetrolPumpPaymentDatabaseRow[]>([]);
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editingOriginalAmount, setEditingOriginalAmount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const saveInProgressRef = useRef(false);
+  const deleteInProgressRef = useRef(false);
 
   useEffect(() => {
-    loadInitialData();
+    let active = true;
+    void supabase.auth.getUser().then(async ({ data }) => {
+      if (!data.user) return;
+      const { data: profile } = await supabase.from("profiles").select("adda_id,is_active").eq("id", data.user.id).maybeSingle();
+      if (active && profile?.is_active && profile.adda_id) setAddaId(String(profile.adda_id));
+    });
+    return () => { active = false; };
   }, []);
 
-  async function loadInitialData() {
-    setIsLoading(true);
-    setErrorMessage("");
-
-    await Promise.all([loadPumps(), loadDieselEntries(), loadPayments()]);
-
-    setIsLoading(false);
-  }
-
-  async function loadPumps() {
+  const loadPumps = useCallback(async () => {
     const { data, error } = await supabase
       .from("petrol_pumps")
       .select("id, pump_name, owner_name, opening_balance")
       .order("pump_name", { ascending: true });
 
     if (error) {
-      setErrorMessage(error.message);
+      console.error("Failed to load petrol pumps for payments:", error);
+      setErrorMessage(t("petrolPumpPayments.messages.loadFailed"));
       setPumpRows([]);
       return;
     }
 
     setPumpRows((data ?? []) as PetrolPumpDatabaseRow[]);
-  }
+  }, [t]);
 
-  async function loadDieselEntries() {
+  const loadDieselEntries = useCallback(async () => {
     const { data, error } = await supabase
       .from("diesel_entries")
       .select("id, petrol_pump_id, total_amount, paid_amount, remaining_amount, entry_date");
 
     if (error) {
-      setErrorMessage(error.message);
+      console.error("Failed to load diesel balances for payments:", error);
+      setErrorMessage(t("petrolPumpPayments.messages.loadFailed"));
       setDieselEntries([]);
       return;
     }
 
     setDieselEntries((data ?? []) as DieselEntryDatabaseRow[]);
-  }
+  }, [t]);
 
-  async function loadPayments() {
+  const loadPayments = useCallback(async () => {
     const { data, error } = await supabase
       .from("petrol_pump_payments")
       .select(
-        "id, petrol_pump_id, payment_date, amount, payment_method, reference_no, remarks, created_at"
+        "id, petrol_pump_id, payment_date, amount, advance_used, payment_now, opening_applied, advance_created, available_advance_before, current_payable_before, remaining_payable, remaining_advance, settlement_status, payment_method, reference_no, remarks, created_at"
       )
       .order("payment_date", { ascending: false })
       .order("created_at", { ascending: false });
 
     if (error) {
-      setErrorMessage(error.message);
+      console.error("Failed to load petrol pump payments:", error);
+      setErrorMessage(t("petrolPumpPayments.messages.loadFailed"));
       setPayments([]);
       return;
     }
 
     setPayments((data ?? []) as PetrolPumpPaymentDatabaseRow[]);
-  }
+  }, [t]);
+
+  const loadInitialData = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage("");
+    await Promise.all([loadPumps(), loadDieselEntries(), loadPayments()]);
+    setIsLoading(false);
+  }, [loadDieselEntries, loadPayments, loadPumps]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadInitialData(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadInitialData]);
 
   const pumps = useMemo<PetrolPumpOption[]>(() => {
     return pumpRows.map((pump) => {
@@ -198,10 +235,29 @@ export default function PetrolPumpPayments() {
         0
       );
       const manualPayments = linkedPayments.reduce(
-        (total, payment) => total + toNumber(payment.amount),
+        (total, payment) => total + toNumber(payment.payment_now),
         0
       );
-      const currentBalance = openingBalance + totalDiesel - manualPayments;
+      const payableAmount = linkedDiesel.reduce(
+          (total, entry) => total + toNumber(entry.remaining_amount),
+          Math.max(
+            Math.max(openingBalance, 0) -
+              linkedPayments.reduce(
+                (total, payment) =>
+                  total + toNumber(payment.opening_applied),
+                0
+              ),
+            0
+          )
+        );
+      const advanceAmount = linkedPayments.reduce(
+          (total, payment) =>
+            total +
+            toNumber(payment.advance_created) -
+            toNumber(payment.advance_used),
+          Math.max(-openingBalance, 0)
+        );
+      const currentBalance = payableAmount - Math.max(advanceAmount, 0);
 
       return {
         id: pump.id,
@@ -212,9 +268,9 @@ export default function PetrolPumpPayments() {
         dieselPaid,
         manualPayments,
         currentBalance,
-        payableAmount: currentBalance > 0 ? currentBalance : 0,
-        advanceAmount: currentBalance < 0 ? Math.abs(currentBalance) : 0,
-        balanceStatus: getBalanceStatus(currentBalance),
+        payableAmount,
+        advanceAmount: Math.max(advanceAmount, 0),
+        balanceStatus: getBalanceStatus(payableAmount, advanceAmount),
       };
     });
   }, [dieselEntries, payments, pumpRows]);
@@ -230,6 +286,17 @@ export default function PetrolPumpPayments() {
         pumpName: pump?.pumpName ?? "-",
         ownerName: pump?.ownerName ?? "-",
         amount: toNumber(payment.amount),
+        advanceUsed: toNumber(payment.advance_used),
+        paymentNow: toNumber(payment.payment_now),
+        availableAdvanceBefore: toNumber(payment.available_advance_before),
+        currentPayableBefore: toNumber(payment.current_payable_before),
+        remainingPayable: toNumber(payment.remaining_payable),
+        remainingAdvance: toNumber(payment.remaining_advance),
+        settlementStatus:
+          payment.settlement_status === "Paid" ||
+          payment.settlement_status === "Advance"
+            ? payment.settlement_status
+            : "Payable",
         paymentMethod: toPaymentMethod(payment.payment_method),
         referenceNo: payment.reference_no ?? "-",
         remarks: payment.remarks ?? "-",
@@ -266,216 +333,154 @@ export default function PetrolPumpPayments() {
   function resetForm() {
     setPaymentDate("");
     setPetrolPumpId("");
-    setAmount("");
+    setAdvanceUsed("0");
+    setPaymentNow("0");
     setPaymentMethod("Cash");
     setReferenceNo("");
     setRemarks("");
     setEditingId(null);
-    setEditingOriginalAmount(0);
   }
 
   function validateForm() {
     if (!paymentDate) {
-      alert("Payment date is required.");
+      alert(t("petrolPumpPayments.validation.dateRequired"));
       return false;
     }
 
     if (!petrolPumpId) {
-      alert("Please select a petrol pump.");
+      alert(t("petrolPumpPayments.validation.pumpRequired"));
       return false;
     }
 
-    if (!amount || Number(amount) <= 0) {
-      alert("Amount must be greater than 0.");
+    const advanceValue = Number(advanceUsed);
+    const paymentValue = Number(paymentNow);
+    if (
+      !Number.isFinite(advanceValue) ||
+      !Number.isFinite(paymentValue) ||
+      advanceValue < 0 ||
+      paymentValue < 0
+    ) {
+      alert(t("petrolPumpPayments.validation.splitAmountsNonNegative"));
+      return false;
+    }
+    if (advanceValue + paymentValue <= 0) {
+      alert(t("petrolPumpPayments.validation.settlementPositive"));
+      return false;
+    }
+    const availableAdvance = editingId
+      ? paymentRows.find((row) => row.id === editingId)?.availableAdvanceBefore ?? 0
+      : selectedPump?.advanceAmount ?? 0;
+    const currentPayable = editingId
+      ? paymentRows.find((row) => row.id === editingId)?.currentPayableBefore ?? 0
+      : selectedPump?.payableAmount ?? 0;
+    if (advanceValue > availableAdvance || advanceValue > currentPayable) {
+      alert(t("petrolPumpPayments.validation.advanceExceedsLimit"));
       return false;
     }
 
     if (!paymentMethod) {
-      alert("Payment method is required.");
+      alert(t("petrolPumpPayments.validation.methodRequired"));
       return false;
     }
 
     return true;
   }
 
-  async function syncCashbookEntry(paymentId: number) {
-    const selected = pumps.find((pump) => pump.id === petrolPumpId);
-
-    if (!selected) {
-      throw new Error("Selected petrol pump was not found for Cashbook sync.");
-    }
-
-    const payload = {
-      entry_date: paymentDate,
-      entry_type: "Cash Out",
-      person_type: "Petrol Pump",
-      person_name: selected.pumpName,
-      vehicle_id: null,
-      driver_id: null,
-      loading_id: null,
-      payment_method: paymentMethod,
-      amount: Number(amount),
-      description: `Payment to petrol pump ${selected.pumpName}`,
-      reference_type: "petrol_pump_payment",
-      reference_id: String(paymentId),
-    };
-
-    const { data: existingEntry, error: checkError } = await supabase
-      .from("cashbook_entries")
-      .select("id")
-      .eq("reference_type", "petrol_pump_payment")
-      .eq("reference_id", String(paymentId))
-      .maybeSingle();
-
-    if (checkError) {
-      throw new Error(checkError.message);
-    }
-
-    if (existingEntry) {
-      const { error } = await supabase
-        .from("cashbook_entries")
-        .update(payload)
-        .eq("id", existingEntry.id);
-
-      if (error) throw new Error(error.message);
-      return;
-    }
-
-    const { error } = await supabase.from("cashbook_entries").insert(payload);
-
-    if (error) throw new Error(error.message);
-  }
-
-  async function deleteLinkedCashbookEntry(paymentId: number) {
-    const { error } = await supabase
-      .from("cashbook_entries")
-      .delete()
-      .eq("reference_type", "petrol_pump_payment")
-      .eq("reference_id", String(paymentId));
-
-    if (error) throw new Error(error.message);
-  }
-
   async function handleSave() {
+    if (saveInProgressRef.current) return;
     if (!validateForm()) return;
 
+    saveInProgressRef.current = true;
     setIsSaving(true);
 
     try {
-      if (editingId) {
-        const { error } = await supabase
-          .from("petrol_pump_payments")
-          .update({
-            petrol_pump_id: petrolPumpId,
-            payment_date: paymentDate,
-            amount: Number(amount),
-            payment_method: paymentMethod,
-            reference_no: referenceNo.trim(),
-            remarks: remarks.trim(),
-          })
-          .eq("id", editingId);
-
-        if (error) throw new Error(error.message);
-
-        await syncCashbookEntry(editingId);
-
-        alert("Petrol pump payment updated successfully!");
-        resetForm();
-        await Promise.all([loadPayments(), loadDieselEntries()]);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("petrol_pump_payments")
-        .insert({
-          petrol_pump_id: petrolPumpId,
-          payment_date: paymentDate,
-          amount: Number(amount),
-          payment_method: paymentMethod,
-          reference_no: referenceNo.trim(),
-          remarks: remarks.trim(),
-        })
-        .select("id")
-        .single();
+      const { error } = await supabase.rpc("save_petrol_pump_payment", {
+        p_payment_id: editingId,
+        p_petrol_pump_id: petrolPumpId,
+        p_payment_date: paymentDate,
+        p_advance_used: Number(advanceUsed),
+        p_payment_now: Number(paymentNow),
+        p_payment_method: paymentMethod,
+        p_reference_no: referenceNo.trim(),
+        p_remarks: remarks.trim(),
+      });
 
       if (error) throw new Error(error.message);
-
-      await syncCashbookEntry(Number(data.id));
-
-      alert("Petrol pump payment saved successfully!");
+      alert(
+        t(
+          editingId
+            ? "petrolPumpPayments.messages.updated"
+            : "petrolPumpPayments.messages.saved"
+        )
+      );
       resetForm();
       await Promise.all([loadPayments(), loadDieselEntries()]);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to save payment.";
-      alert(message);
+      console.error("Failed to save petrol pump payment:", error);
+      alert(t("petrolPumpPayments.messages.saveFailed"));
     } finally {
+      saveInProgressRef.current = false;
       setIsSaving(false);
     }
   }
 
   function handleEdit(row: PetrolPumpPaymentRow) {
     setEditingId(row.id);
-    setEditingOriginalAmount(row.amount);
     setPaymentDate(row.paymentDate);
     setPetrolPumpId(row.petrolPumpId);
-    setAmount(String(row.amount));
+    setAdvanceUsed(String(row.advanceUsed));
+    setPaymentNow(String(row.paymentNow));
     setPaymentMethod(row.paymentMethod);
     setReferenceNo(row.referenceNo === "-" ? "" : row.referenceNo);
     setRemarks(row.remarks === "-" ? "" : row.remarks);
   }
 
   async function handleDelete(row: PetrolPumpPaymentRow) {
+    if (deleteInProgressRef.current) return;
     const confirmed = window.confirm(
-      `Delete payment for ${row.pumpName} (${formatAmount(row.amount)})?`
+      `${t("petrolPumpPayments.messages.deleteConfirm")} ${row.pumpName} (${formatAmount(row.amount)})?`
     );
 
     if (!confirmed) return;
 
+    deleteInProgressRef.current = true;
     setIsDeleting(true);
 
     try {
-      await deleteLinkedCashbookEntry(row.id);
-
-      const { error } = await supabase
-        .from("petrol_pump_payments")
-        .delete()
-        .eq("id", row.id);
+      const { error } = await supabase.rpc("delete_petrol_pump_payment", {
+        p_payment_id: row.id,
+      });
 
       if (error) throw new Error(error.message);
 
       if (editingId === row.id) resetForm();
 
-      alert("Petrol pump payment deleted successfully!");
+      alert(t("petrolPumpPayments.messages.deleted"));
       await Promise.all([loadPayments(), loadDieselEntries()]);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to delete payment.";
-      alert(message);
+      console.error("Failed to delete petrol pump payment:", error);
+      alert(t("petrolPumpPayments.messages.deleteFailed"));
     } finally {
+      deleteInProgressRef.current = false;
       setIsDeleting(false);
     }
   }
 
   return (
-    <div className="space-y-8">
-      <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Petrol Pump Payments
-        </h1>
-        <p className="mt-2 text-base font-medium text-gray-900">
-          Record petrol pump payments, allow advance payments and sync paid
-          amounts with Cashbook.
-        </p>
-      </div>
+    <div dir={dir} className="ut-module-page space-y-6">
+      <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <ModulePageHeading icon="payment" accent="green" title={t("petrolPumpPayments.title")} description={t("petrolPumpPayments.description")} />
+      </header>
 
       <PetrolPumpPaymentForm
         paymentDate={paymentDate}
         setPaymentDate={setPaymentDate}
         petrolPumpId={petrolPumpId}
         setPetrolPumpId={setPetrolPumpId}
-        amount={amount}
-        setAmount={setAmount}
+        advanceUsed={advanceUsed}
+        setAdvanceUsed={setAdvanceUsed}
+        paymentNow={paymentNow}
+        setPaymentNow={setPaymentNow}
         paymentMethod={paymentMethod}
         setPaymentMethod={setPaymentMethod}
         referenceNo={referenceNo}
@@ -484,7 +489,11 @@ export default function PetrolPumpPayments() {
         setRemarks={setRemarks}
         pumps={pumps}
         selectedPump={selectedPump}
-        editingOriginalAmount={editingOriginalAmount}
+        editingPayment={
+          editingId
+            ? paymentRows.find((row) => row.id === editingId) ?? null
+            : null
+        }
         onSave={handleSave}
         isSaving={isSaving}
         isEditing={Boolean(editingId)}
@@ -493,6 +502,7 @@ export default function PetrolPumpPayments() {
 
       <PetrolPumpPaymentTable
         rows={filteredRows}
+        addaId={addaId}
         search={search}
         setSearch={setSearch}
         onEdit={handleEdit}

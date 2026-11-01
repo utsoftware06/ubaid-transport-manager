@@ -2,14 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { escapeHtml } from "@/lib/print/escapeHtml";
+import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
+import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
+import { singleResolvedAddaId } from "@/components/print/LedgerStatementPrint";
+import { bilingual, printLabel, printValue, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
+import VoiceTypingField from "@/components/shared/VoiceTypingField";
 
 type RelatedRecord<T> = T | T[] | null;
 
 type VehicleRelation = {
   vehicle_no: string | null;
+  adda_id: string | null;
 };
 
 type BookingRelation = {
+  adda_id: string | null;
   freight: number | string | null;
 };
 
@@ -24,6 +33,7 @@ type ExpenseRelation = {
 type LoadingRecord = {
   id: number | string;
   loading_no: string;
+  booking_id: number | string | null;
   vehicle_id: string;
   loading_date: string;
   route: string | null;
@@ -53,18 +63,18 @@ type DateFilter =
 
 type DateFilterOption = {
   value: DateFilter;
-  label: string;
+  labelKey: string;
 };
 
 const dateFilterOptions: DateFilterOption[] = [
-  { value: "all", label: "All Time" },
-  { value: "today", label: "Today" },
-  { value: "last7Days", label: "Last 7 Days" },
-  { value: "thisMonth", label: "This Month" },
-  { value: "last6Months", label: "Last 6 Months" },
-  { value: "thisYear", label: "This Year" },
-  { value: "last10Years", label: "Last 10 Years" },
-  { value: "custom", label: "Custom Date" },
+  { value: "all", labelKey: "common.dateFilters.allTime" },
+  { value: "today", labelKey: "common.dateFilters.today" },
+  { value: "last7Days", labelKey: "common.dateFilters.last7Days" },
+  { value: "thisMonth", labelKey: "common.dateFilters.thisMonth" },
+  { value: "last6Months", labelKey: "common.dateFilters.last6Months" },
+  { value: "thisYear", labelKey: "common.dateFilters.thisYear" },
+  { value: "last10Years", labelKey: "common.dateFilters.last10Years" },
+  { value: "custom", labelKey: "common.dateFilters.custom" },
 ];
 
 function getSingleRelation<T>(relation: RelatedRecord<T>): T | null {
@@ -95,16 +105,8 @@ function formatInputDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 export default function VehicleWiseReport() {
+  const { t, dir, language } = useLanguage();
   const [loadings, setLoadings] = useState<LoadingRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -114,6 +116,11 @@ export default function VehicleWiseReport() {
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(
     null
   );
+  const invalidCustomDateRange =
+    dateFilter === "custom" &&
+    Boolean(customFromDate) &&
+    Boolean(customToDate) &&
+    customFromDate > customToDate;
 
   useEffect(() => {
     let isMounted = true;
@@ -128,13 +135,16 @@ export default function VehicleWiseReport() {
           `
           id,
           loading_no,
+          booking_id,
           vehicle_id,
           loading_date,
           route,
           vehicles(
-            vehicle_no
+            vehicle_no,
+            adda_id
           ),
           bookings(
+            adda_id,
             freight
           ),
           expenses(
@@ -149,8 +159,9 @@ export default function VehicleWiseReport() {
       if (!isMounted) return;
 
       if (error) {
+        console.error("Unable to load vehicle report:", error);
         setLoadings([]);
-        setErrorMessage(error.message);
+        setErrorMessage(t("reports.vehicleWise.loadError"));
         setIsLoading(false);
         return;
       }
@@ -164,7 +175,7 @@ export default function VehicleWiseReport() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [t]);
 
   function getLoadingIncome(loading: LoadingRecord): number {
     const booking = getSingleRelation(loading.bookings);
@@ -184,6 +195,7 @@ export default function VehicleWiseReport() {
   }
 
   const filteredLoadings = useMemo(() => {
+    if (invalidCustomDateRange) return [];
     if (dateFilter === "all") return loadings;
 
     const today = new Date();
@@ -232,7 +244,21 @@ export default function VehicleWiseReport() {
       if (toDate && loading.loading_date > toDate) return false;
       return true;
     });
-  }, [loadings, dateFilter, customFromDate, customToDate]);
+  }, [
+    loadings,
+    dateFilter,
+    customFromDate,
+    customToDate,
+    invalidCustomDateRange,
+  ]);
+
+  const reportOwnerIds = filteredLoadings.map((loading) => {
+    const booking = getSingleRelation(loading.bookings);
+    const vehicle = getSingleRelation(loading.vehicles);
+    return loading.booking_id != null ? booking?.adda_id ?? null : vehicle?.adda_id ?? null;
+  });
+  const reportAddaId = singleResolvedAddaId(reportOwnerIds);
+  const modulePrint = useModuleTransportPrint("reports", reportAddaId, language === "ur" ? "ur" : "en");
 
   const vehicleReports = useMemo(() => {
     const reportMap = new Map<string, VehicleReport>();
@@ -254,7 +280,7 @@ export default function VehicleWiseReport() {
 
       reportMap.set(loading.vehicle_id, {
         vehicleId: loading.vehicle_id,
-        vehicleNumber: vehicle?.vehicle_no ?? "Unknown Vehicle",
+        vehicleNumber: vehicle?.vehicle_no ?? t("reports.vehicleWise.noVehicle"),
         totalTrips: 1,
         totalIncome: loadingIncome,
         totalExpense: loadingExpense,
@@ -265,7 +291,7 @@ export default function VehicleWiseReport() {
     return Array.from(reportMap.values()).sort((first, second) =>
       first.vehicleNumber.localeCompare(second.vehicleNumber)
     );
-  }, [filteredLoadings]);
+  }, [filteredLoadings, t]);
 
   const selectedVehicleReport = useMemo(
     () =>
@@ -293,22 +319,27 @@ export default function VehicleWiseReport() {
     }
   }
 
-  function handlePrintReport() {
+  function handlePrintReportLegacy() {
+    if (invalidCustomDateRange) {
+      window.alert(t("reports.validation.invalidDateRange"));
+      return;
+    }
     if (vehicleReports.length === 0) {
-      window.alert("No vehicle report data is available to print.");
+      window.alert(t("reports.vehicleWise.noPrintData"));
       return;
     }
 
     const printWindow = window.open("", "_blank", "width=1100,height=800");
 
     if (!printWindow) {
-      window.alert("Please allow popups to print the vehicle report.");
+      window.alert(t("reports.messages.allowPopups"));
       return;
     }
 
     const activeFilter =
-      dateFilterOptions.find((option) => option.value === dateFilter)?.label ??
-      "All Time";
+      t(dateFilterOptions.find((option) => option.value === dateFilter)?.labelKey ??
+      "common.dateFilters.allTime");
+    const printLabel = (key: string) => escapeHtml(t(key));
 
     const vehicleSections = vehicleReports
       .map((report) => {
@@ -345,22 +376,22 @@ export default function VehicleWiseReport() {
 
             <div class="summary-grid">
               <div class="summary-box">
-                <span>Total Trips</span>
+                <span>${printLabel("reports.summary.totalTrips")}</span>
                 <strong>${report.totalTrips.toLocaleString("en-PK")}</strong>
               </div>
 
               <div class="summary-box">
-                <span>Total Income</span>
+                <span>${printLabel("reports.summary.totalIncome")}</span>
                 <strong>Rs. ${formatAmount(report.totalIncome)}</strong>
               </div>
 
               <div class="summary-box">
-                <span>Total Expense</span>
+                <span>${printLabel("reports.summary.totalExpense")}</span>
                 <strong>Rs. ${formatAmount(report.totalExpense)}</strong>
               </div>
 
               <div class="summary-box">
-                <span>Net Profit</span>
+                <span>${printLabel("reports.summary.netProfit")}</span>
                 <strong class="${
                   report.netProfit > 0
                     ? "profit"
@@ -376,12 +407,12 @@ export default function VehicleWiseReport() {
             <table>
               <thead>
                 <tr>
-                  <th>Loading No</th>
-                  <th>Date</th>
-                  <th>Route</th>
-                  <th>Income</th>
-                  <th>Expense</th>
-                  <th>Profit</th>
+                  <th>${printLabel("common.loadingNo")}</th>
+                  <th>${printLabel("common.date")}</th>
+                  <th>${printLabel("common.route")}</th>
+                  <th>${printLabel("common.income")}</th>
+                  <th>${printLabel("common.expense")}</th>
+                  <th>${printLabel("common.profit")}</th>
                 </tr>
               </thead>
               <tbody>${tripRows}</tbody>
@@ -391,11 +422,16 @@ export default function VehicleWiseReport() {
       })
       .join("");
 
-    printWindow.document.write(`
+    const ownerIds = Array.from(new Set(filteredLoadings.map((loading) => {
+      const booking = getSingleRelation(loading.bookings);
+      const vehicle = getSingleRelation(loading.vehicles);
+      return loading.booking_id != null ? booking?.adda_id ?? null : vehicle?.adda_id ?? null;
+    }).filter((id): id is string => Boolean(id))));
+    void writeAddaBrandedPrintDocument(printWindow, `
       <!doctype html>
-      <html>
+      <html dir="${escapeHtml(dir)}" lang="${escapeHtml(language)}">
         <head>
-          <title>Vehicle Wise Detailed Report</title>
+          <title>${printLabel("reports.vehicleWise.detailedTitle")}</title>
           <style>
             * {
               box-sizing: border-box;
@@ -530,14 +566,14 @@ export default function VehicleWiseReport() {
 
         <body>
           <header class="report-header">
-            <h1>UT Software</h1>
-            <h3>Vehicle Wise Detailed Report</h3>
+            <h1>${PRINT_ADDA_NAME_TOKEN}</h1>
+            <h3>${printLabel("reports.vehicleWise.detailedTitle")}</h3>
             <div class="filter-label">
-              Period: ${escapeHtml(activeFilter)}
+              ${printLabel("reports.print.period")}: ${escapeHtml(activeFilter)}
               ${
                 dateFilter === "custom"
-                  ? ` (${escapeHtml(customFromDate || "Start")} to ${escapeHtml(
-                      customToDate || "End"
+                  ? ` (${escapeHtml(customFromDate || t("reports.print.start"))} ${printLabel("reports.print.to")} ${escapeHtml(
+                      customToDate || t("reports.print.end")
                     )})`
                   : ""
               }
@@ -558,30 +594,65 @@ export default function VehicleWiseReport() {
           </script>
         </body>
       </html>
-    `);
+    `, ownerIds.length === 1 ? ownerIds[0] : null, language === "ur" ? "ur" : "en");
+  }
 
-    printWindow.document.close();
+  function handlePrintReport() {
+    if (invalidCustomDateRange) {
+      window.alert(t("reports.validation.invalidDateRange"));
+      return;
+    }
+    if (vehicleReports.length === 0 || !reportAddaId || reportOwnerIds.some((id) => !id)) {
+      window.alert(t("reports.vehicleWise.noPrintData"));
+      return;
+    }
+    const filterKey = dateFilterOptions.find((option) => option.value === dateFilter)?.labelKey ?? "common.dateFilters.allTime";
+    const tables = vehicleReports.map((report) => {
+      const vehicleLoadings = filteredLoadings.filter((loading) => loading.vehicle_id === report.vehicleId);
+      return {
+        title: bilingual(report.vehicleNumber, report.vehicleNumber),
+        columns: [printLabel("common.loadingNo"), printLabel("common.date"), printLabel("common.route"), printLabel("common.income"), printLabel("common.expense"), printLabel("common.profit")],
+        rows: [
+          ...vehicleLoadings.map((loading) => {
+            const income = getLoadingIncome(loading);
+            const expense = getLoadingExpense(loading);
+            return [printValue(loading.loading_no), printValue(loading.loading_date), printValue(loading.route), printValue(formatAmount(income)), printValue(formatAmount(expense)), printValue(formatAmount(income - expense))];
+          }),
+          [printLabel("common.total"), printValue(report.totalTrips), null, printValue(formatAmount(report.totalIncome)), printValue(formatAmount(report.totalExpense)), printValue(formatAmount(report.netProfit))],
+        ],
+      };
+    });
+    const presentation: ModulePrintPresentation = {
+      documentType: "reports",
+      title: printLabel("reports.vehicleWise.detailedTitle"),
+      fields: [
+        { label: printLabel("reports.print.period"), value: printLabel(filterKey) },
+        ...(dateFilter === "custom" ? [{ label: printLabel("common.date"), value: printValue(`${customFromDate || "—"} — ${customToDate || "—"}`) }] : []),
+      ],
+      tables,
+    };
+    modulePrint.openPresentation(presentation, handlePrintReportLegacy, reportAddaId);
   }
 
   return (
-    <section className="rounded-xl bg-white p-6 shadow-md">
+    <section dir={dir} className="rounded-xl bg-white p-6 shadow-md">
       <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
-            Vehicle Wise Report
+            {t("reports.vehicleWise.title")}
           </h2>
           <p className="mt-1 text-sm font-medium text-gray-600">
-            Vehicle-wise trips, income, expenses and net profit summary.
+            {t("reports.vehicleWise.description")}
           </p>
         </div>
 
         <button
           type="button"
           onClick={handlePrintReport}
-          disabled={isLoading || vehicleReports.length === 0}
+          disabled={isLoading || vehicleReports.length === 0 || !reportAddaId || reportOwnerIds.some((id) => !id)}
           className="rounded-lg bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
         >
-          Print Report
+          {t("common.actions.printReport")}
         </button>
       </div>
 
@@ -598,21 +669,22 @@ export default function VehicleWiseReport() {
                   : "border border-gray-300 bg-white text-gray-900 hover:bg-gray-50"
               }`}
             >
-              {option.label}
+              {t(option.labelKey)}
             </button>
           ))}
         </div>
 
-        {dateFilter === "custom" && (
+      {dateFilter === "custom" && (
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+
             <div>
               <label
                 htmlFor="vehicle-report-from-date"
                 className="mb-2 block text-sm font-semibold text-gray-900"
               >
-                From Date
+                {t("common.fromDate")}
               </label>
-              <input
+              <VoiceTypingField fieldLabel="vehicle report from date" mode="date"><input
                 id="vehicle-report-from-date"
                 type="date"
                 value={customFromDate}
@@ -622,17 +694,19 @@ export default function VehicleWiseReport() {
                   setSelectedVehicleId(null);
                 }}
                 className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
-              />
+              /></VoiceTypingField>
             </div>
+
+
 
             <div>
               <label
                 htmlFor="vehicle-report-to-date"
                 className="mb-2 block text-sm font-semibold text-gray-900"
               >
-                To Date
+                {t("common.toDate")}
               </label>
-              <input
+              <VoiceTypingField fieldLabel="vehicle report to date" mode="date"><input
                 id="vehicle-report-to-date"
                 type="date"
                 value={customToDate}
@@ -642,8 +716,9 @@ export default function VehicleWiseReport() {
                   setSelectedVehicleId(null);
                 }}
                 className="w-full rounded-lg border border-gray-300 bg-white p-3 font-medium text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
-              />
+              /></VoiceTypingField>
             </div>
+
           </div>
         )}
       </div>
@@ -652,14 +727,20 @@ export default function VehicleWiseReport() {
         <div className="flex min-h-48 items-center justify-center">
           <div className="flex items-center gap-3 text-gray-900">
             <span className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
-            <span className="font-semibold">Loading vehicle report...</span>
+            <span className="font-semibold">{t("reports.vehicleWise.loading")}</span>
           </div>
+        </div>
+      )}
+
+      {invalidCustomDateRange && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+          {t("reports.validation.invalidDateRange")}
         </div>
       )}
 
       {!isLoading && errorMessage && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-5 text-red-700">
-          <p className="font-bold">Unable to load the vehicle report.</p>
+          <p className="font-bold">{t("reports.vehicleWise.loadError")}</p>
           <p className="mt-1 text-sm font-medium">{errorMessage}</p>
         </div>
       )}
@@ -667,7 +748,7 @@ export default function VehicleWiseReport() {
       {!isLoading && !errorMessage && vehicleReports.length === 0 && (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center">
           <p className="font-semibold text-gray-900">
-            No vehicle loading records found for the selected period.
+            {t("reports.vehicleWise.empty")}
           </p>
         </div>
       )}
@@ -685,7 +766,7 @@ export default function VehicleWiseReport() {
               >
                 <div className="border-b border-gray-200 pb-4">
                   <p className="text-sm font-semibold text-gray-600">
-                    Vehicle Number
+                    {t("reports.vehicleWise.vehicleNumber")}
                   </p>
                   <h3 className="mt-1 text-xl font-bold text-gray-900">
                     {report.vehicleNumber}
@@ -695,7 +776,7 @@ export default function VehicleWiseReport() {
                 <div className="mt-4 grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm font-semibold text-gray-600">
-                      Total Trips
+                      {t("reports.summary.totalTrips")}
                     </p>
                     <p className="mt-1 text-lg font-bold text-gray-900">
                       {report.totalTrips.toLocaleString("en-PK")}
@@ -704,7 +785,7 @@ export default function VehicleWiseReport() {
 
                   <div>
                     <p className="text-sm font-semibold text-gray-600">
-                      Total Income
+                      {t("reports.summary.totalIncome")}
                     </p>
                     <p className="mt-1 text-lg font-bold text-gray-900">
                       Rs. {formatAmount(report.totalIncome)}
@@ -713,7 +794,7 @@ export default function VehicleWiseReport() {
 
                   <div>
                     <p className="text-sm font-semibold text-gray-600">
-                      Total Expense
+                      {t("reports.summary.totalExpense")}
                     </p>
                     <p className="mt-1 text-lg font-bold text-gray-900">
                       Rs. {formatAmount(report.totalExpense)}
@@ -722,7 +803,7 @@ export default function VehicleWiseReport() {
 
                   <div>
                     <p className="text-sm font-semibold text-gray-600">
-                      Net Profit
+                      {t("reports.summary.netProfit")}
                     </p>
                     <p
                       className={`mt-1 text-lg font-bold ${
@@ -748,7 +829,7 @@ export default function VehicleWiseReport() {
                           : "bg-gray-200 text-gray-800"
                     }`}
                   >
-                    {isProfit ? "Profit" : isLoss ? "Loss" : "Break Even"}
+                    {isProfit ? t("common.statuses.profit") : isLoss ? t("common.statuses.loss") : t("common.statuses.breakEven")}
                   </span>
 
                   <button
@@ -756,7 +837,7 @@ export default function VehicleWiseReport() {
                     onClick={() => setSelectedVehicleId(report.vehicleId)}
                     className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
                   >
-                    View Trips
+                    {t("reports.vehicleWise.viewTrips")}
                   </button>
                 </div>
               </article>
@@ -777,17 +858,17 @@ export default function VehicleWiseReport() {
             }
           }}
         >
-          <div className="max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-xl bg-white shadow-xl">
+          <div className="max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
             <div className="flex items-start justify-between gap-4 border-b border-gray-200 p-5">
               <div>
                 <h3
                   id="vehicle-trips-title"
                   className="text-2xl font-bold text-gray-900"
                 >
-                  {selectedVehicleReport.vehicleNumber} Trips
+                  {selectedVehicleReport.vehicleNumber} {t("common.trips")}
                 </h3>
                 <p className="mt-1 text-sm font-medium text-gray-600">
-                  Complete loading-wise income, expense and profit details.
+                  {t("reports.vehicleWise.modalDescription")}
                 </p>
               </div>
 
@@ -796,42 +877,42 @@ export default function VehicleWiseReport() {
                 onClick={() => setSelectedVehicleId(null)}
                 className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold text-gray-900 hover:bg-gray-50"
               >
-                Close
+                {t("common.actions.close")}
               </button>
             </div>
 
             <div className="overflow-auto p-5">
               <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <div className="rounded-lg border border-gray-300 bg-white p-4 shadow-sm">
                   <p className="text-sm font-semibold text-gray-600">
-                    Total Trips
+                    {t("reports.summary.totalTrips")}
                   </p>
                   <p className="mt-1 text-xl font-bold text-gray-900">
                     {selectedVehicleReport.totalTrips}
                   </p>
                 </div>
 
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <div className="rounded-lg border border-gray-300 bg-white p-4 shadow-sm">
                   <p className="text-sm font-semibold text-gray-600">
-                    Total Income
+                    {t("reports.summary.totalIncome")}
                   </p>
                   <p className="mt-1 text-xl font-bold text-gray-900">
                     Rs. {formatAmount(selectedVehicleReport.totalIncome)}
                   </p>
                 </div>
 
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <div className="rounded-lg border border-gray-300 bg-white p-4 shadow-sm">
                   <p className="text-sm font-semibold text-gray-600">
-                    Total Expense
+                    {t("reports.summary.totalExpense")}
                   </p>
                   <p className="mt-1 text-xl font-bold text-gray-900">
                     Rs. {formatAmount(selectedVehicleReport.totalExpense)}
                   </p>
                 </div>
 
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <div className="rounded-lg border border-gray-300 bg-white p-4 shadow-sm">
                   <p className="text-sm font-semibold text-gray-600">
-                    Net Profit
+                    {t("reports.summary.netProfit")}
                   </p>
                   <p
                     className={`mt-1 text-xl font-bold ${
@@ -851,12 +932,12 @@ export default function VehicleWiseReport() {
                 <table className="w-full min-w-[850px] border-collapse text-sm">
                   <thead className="bg-blue-600 text-white">
                     <tr>
-                      <th className="p-3 text-left">Loading No</th>
-                      <th className="p-3 text-left">Date</th>
-                      <th className="p-3 text-left">Route</th>
-                      <th className="p-3 text-right">Income</th>
-                      <th className="p-3 text-right">Expense</th>
-                      <th className="p-3 text-right">Profit</th>
+                      <th className="p-3 text-start">{t("common.loadingNo")}</th>
+                      <th className="p-3 text-start">{t("common.date")}</th>
+                      <th className="p-3 text-start">{t("common.route")}</th>
+                      <th className="p-3 text-end">{t("common.income")}</th>
+                      <th className="p-3 text-end">{t("common.expense")}</th>
+                      <th className="p-3 text-end">{t("common.profit")}</th>
                     </tr>
                   </thead>
 
@@ -880,14 +961,15 @@ export default function VehicleWiseReport() {
                           <td className="p-3 font-medium">
                             {loading.route ?? "-"}
                           </td>
-                          <td className="p-3 text-right font-bold">
+                          <td dir="ltr" className="p-3 text-end font-bold">
                             Rs. {formatAmount(income)}
                           </td>
-                          <td className="p-3 text-right font-bold">
+                          <td dir="ltr" className="p-3 text-end font-bold">
                             Rs. {formatAmount(expense)}
                           </td>
                           <td
-                            className={`p-3 text-right font-bold ${
+                            dir="ltr"
+                            className={`p-3 text-end font-bold ${
                               profit > 0
                                 ? "text-green-700"
                                 : profit < 0
@@ -907,6 +989,7 @@ export default function VehicleWiseReport() {
           </div>
         </div>
       )}
+      {modulePrint.dialog}
     </section>
   );
 }

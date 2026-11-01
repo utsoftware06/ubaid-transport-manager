@@ -1,15 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import CustomerLedgerCards from "./CustomerLedgerCards";
 import CustomerLedgerTable from "./CustomerLedgerTable";
+import CustomerLedgerFilters from "./CustomerLedgerFilters";
+import type {
+  CustomerLedgerFilterValues,
+  SenderOption,
+} from "@/types/customerLedger";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { supabase } from "@/lib/supabase/client";
+import ModulePageHeading from "@/components/shared/ModulePageHeading";
 
 export type PaymentStatus = "Paid" | "Partial" | "Unpaid";
 
 export type CustomerLedgerRow = {
   bookingId: string;
+  addaId: string | null;
   loadingId: number | null;
+  rawDate: string;
   date: string;
   bookingNo: string;
   sender: string;
@@ -34,6 +43,7 @@ type DatabaseRow = Record<string, unknown>;
 
 type BookingRecord = {
   id: string;
+  adda_id: string | null;
   booking_no: string | null;
   booking_date: string | null;
   created_at: string | null;
@@ -58,15 +68,8 @@ type PaymentReceiptRecord = {
   amount: number;
 };
 
-export function formatAmount(value: number) {
-  return new Intl.NumberFormat("en-PK", {
-    style: "currency",
-    currency: "PKR",
-    maximumFractionDigits: 0,
-  })
-    .format(Number(value || 0))
-    .replace("PKR", "Rs.");
-}
+export const formatCurrency = (value: number) =>
+  `₨ ${Math.round(value).toLocaleString("en-PK")}`;
 
 function toNumber(value: unknown) {
   const numericValue = Number(value ?? 0);
@@ -96,6 +99,7 @@ function formatDate(value: string) {
 function mapBooking(row: DatabaseRow): BookingRecord {
   return {
     id: String(row.id ?? ""),
+    adda_id: toStringValue(row.adda_id) || null,
     booking_no: toStringValue(row.booking_no) || null,
     booking_date: toStringValue(row.booking_date) || null,
     created_at: toStringValue(row.created_at) || null,
@@ -132,20 +136,35 @@ function getPaymentStatus(totalReceived: number, remainingAmount: number) {
 }
 
 export default function CustomerLedger() {
+  const { t, dir } = useLanguage();
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      console.info(
+        "[CustomerLedger] rendered from src/components/ledger/CustomerLedger.tsx"
+      );
+    }
+  }, []);
+
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
   const [loadings, setLoadings] = useState<LoadingRecord[]>([]);
   const [paymentReceipts, setPaymentReceipts] = useState<
     PaymentReceiptRecord[]
   >([]);
-  const [search, setSearch] = useState("");
+  const emptyFilters: CustomerLedgerFilterValues = {
+    senderName: "",
+    fromDate: "",
+    toDate: "",
+    search: "",
+  };
+  const [filterValues, setFilterValues] =
+    useState<CustomerLedgerFilterValues>(emptyFilters);
+  const [appliedFilters, setAppliedFilters] =
+    useState<CustomerLedgerFilterValues>(emptyFilters);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
-  useEffect(() => {
-    loadCustomerLedger();
-  }, []);
-
-  async function loadCustomerLedger() {
+  const loadCustomerLedger = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage("");
 
@@ -156,7 +175,8 @@ export default function CustomerLedger() {
     ]);
 
     if (bookingsResult.error) {
-      setErrorMessage(bookingsResult.error.message);
+      console.error("Unable to load customer ledger bookings:", bookingsResult.error);
+      setErrorMessage(t("customerLedger.messages.loadError"));
       setBookings([]);
       setLoadings([]);
       setPaymentReceipts([]);
@@ -165,7 +185,8 @@ export default function CustomerLedger() {
     }
 
     if (loadingsResult.error) {
-      setErrorMessage(loadingsResult.error.message);
+      console.error("Unable to load customer ledger loadings:", loadingsResult.error);
+      setErrorMessage(t("customerLedger.messages.loadError"));
       setBookings([]);
       setLoadings([]);
       setPaymentReceipts([]);
@@ -174,7 +195,8 @@ export default function CustomerLedger() {
     }
 
     if (receiptsResult.error) {
-      setErrorMessage(receiptsResult.error.message);
+      console.error("Unable to load customer ledger receipts:", receiptsResult.error);
+      setErrorMessage(t("customerLedger.messages.loadError"));
       setBookings([]);
       setLoadings([]);
       setPaymentReceipts([]);
@@ -188,7 +210,15 @@ export default function CustomerLedger() {
       ((receiptsResult.data ?? []) as DatabaseRow[]).map(mapPaymentReceipt)
     );
     setIsLoading(false);
-  }
+  }, [t]);
+
+  useEffect(() => {
+    const loadTimer = window.setTimeout(() => {
+      void loadCustomerLedger();
+    }, 0);
+
+    return () => window.clearTimeout(loadTimer);
+  }, [loadCustomerLedger]);
 
   const rows = useMemo<CustomerLedgerRow[]>(() => {
     return bookings.map((booking) => {
@@ -209,7 +239,9 @@ export default function CustomerLedger() {
 
       return {
         bookingId: booking.id,
+        addaId: booking.adda_id,
         loadingId: loading?.id ?? null,
+        rawDate: (booking.booking_date ?? booking.created_at ?? "").slice(0, 10),
         date: formatDate(booking.booking_date ?? booking.created_at ?? ""),
         bookingNo: booking.booking_no ?? "-",
         sender: booking.sender_name ?? "-",
@@ -226,11 +258,22 @@ export default function CustomerLedger() {
   }, [bookings, loadings, paymentReceipts]);
 
   const filteredRows = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-
-    if (!keyword) return rows;
+    const keyword = appliedFilters.search.trim().toLowerCase();
 
     return rows.filter((row) => {
+      if (
+        appliedFilters.senderName &&
+        row.sender !== appliedFilters.senderName
+      ) {
+        return false;
+      }
+      if (appliedFilters.fromDate && row.rawDate < appliedFilters.fromDate) {
+        return false;
+      }
+      if (appliedFilters.toDate && row.rawDate > appliedFilters.toDate) {
+        return false;
+      }
+      if (!keyword) return true;
       const searchableText = [
         row.date,
         row.bookingNo,
@@ -249,7 +292,35 @@ export default function CustomerLedger() {
 
       return searchableText.includes(keyword);
     });
-  }, [rows, search]);
+  }, [appliedFilters, rows]);
+
+  const senders = useMemo<SenderOption[]>(() => {
+    return Array.from(
+      new Set(rows.map((row) => row.sender).filter((name) => name !== "-"))
+    )
+      .sort((first, second) => first.localeCompare(second))
+      .map((name) => ({ name }));
+  }, [rows]);
+
+  function handleSearch() {
+    if (
+      filterValues.fromDate &&
+      filterValues.toDate &&
+      filterValues.fromDate > filterValues.toDate
+    ) {
+      window.alert(t("reports.validation.invalidDateRange"));
+      return;
+    }
+    setAppliedFilters({
+      ...filterValues,
+      search: filterValues.search.trim(),
+    });
+  }
+
+  function handleReset() {
+    setFilterValues(emptyFilters);
+    setAppliedFilters(emptyFilters);
+  }
 
   const summary = useMemo<CustomerLedgerSummary>(() => {
     return filteredRows.reduce(
@@ -269,21 +340,27 @@ export default function CustomerLedger() {
   }, [filteredRows]);
 
   return (
-    <div className="space-y-8">
-      <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
-        <h1 className="text-3xl font-bold text-gray-900">Customer Ledger</h1>
-        <p className="mt-2 text-base font-medium text-gray-900">
-          Track customer freight, received payments, pending balance and payment
-          status.
-        </p>
-      </div>
+    <div dir={dir} className="ut-module-page space-y-6">
+      <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <ModulePageHeading icon="ledger" accent="purple" title={t("customerLedger.title")} description={t("customerLedger.pageDescription")} />
+      </header>
 
       <CustomerLedgerCards summary={summary} />
 
+      <CustomerLedgerFilters
+        senders={senders}
+        filterValues={filterValues}
+        setFilterValues={setFilterValues}
+        onSearch={handleSearch}
+        onReset={handleReset}
+      />
+
       <CustomerLedgerTable
+        key={`${appliedFilters.senderName}|${appliedFilters.fromDate}|${appliedFilters.toDate}|${appliedFilters.search}`}
         rows={filteredRows}
-        search={search}
-        setSearch={setSearch}
+        summary={summary}
+        fromDate={appliedFilters.fromDate}
+        toDate={appliedFilters.toDate}
         isLoading={isLoading}
         errorMessage={errorMessage}
       />

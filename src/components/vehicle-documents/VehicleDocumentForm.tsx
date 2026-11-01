@@ -8,6 +8,8 @@ import {
   type VehicleDocumentWithStatus,
   type VehicleOption,
 } from "./VehicleDocuments";
+import { useLanguage } from "@/contexts/LanguageContext";
+import VoiceTypingField from "@/components/shared/VoiceTypingField";
 
 type Props = {
   vehicles: VehicleOption[];
@@ -45,6 +47,9 @@ export default function VehicleDocumentForm({
   onUpdate,
   onCancel,
 }: Props) {
+  const { t, dir } = useLanguage();
+  const documentTypeLabel = (type: VehicleDocumentType) =>
+    t(`vehicleDocuments.documentTypes.${type.replaceAll(" ", "").replace(/^./, (character) => character.toLowerCase())}`);
   const [vehicleId, setVehicleId] = useState("");
   const [documentType, setDocumentType] = useState<VehicleDocumentType | "">("");
   const [documentNumber, setDocumentNumber] = useState("");
@@ -61,23 +66,27 @@ export default function VehicleDocumentForm({
   const isEditing = Boolean(selectedDocument);
 
   useEffect(() => {
-    if (!selectedDocument) {
-      resetForm();
-      return;
-    }
+    const timer = window.setTimeout(() => {
+      if (!selectedDocument) {
+        resetForm();
+        return;
+      }
 
-    setVehicleId(selectedDocument.vehicle_id);
-    setDocumentType(selectedDocument.document_type);
-    setDocumentNumber(selectedDocument.document_number ?? "");
-    setIssueDate(selectedDocument.issue_date ?? "");
-    setExpiryDate(selectedDocument.expiry_date ?? "");
-    setFeeAmount(String(selectedDocument.fee_amount ?? 0));
-    setPaymentMethod((selectedDocument.payment_method as PaymentMethod) ?? "");
-    setReferenceNo(selectedDocument.reference_no ?? "");
-    setAuthorityName(selectedDocument.authority_name ?? "");
-    setAttachmentUrl(selectedDocument.attachment_url ?? "");
-    setRemarks(selectedDocument.remarks ?? "");
-    setFormErrors({});
+      setVehicleId(selectedDocument.vehicle_id);
+      setDocumentType(selectedDocument.document_type);
+      setDocumentNumber(selectedDocument.document_number ?? "");
+      setIssueDate(selectedDocument.issue_date ?? "");
+      setExpiryDate(selectedDocument.expiry_date ?? "");
+      setFeeAmount(String(selectedDocument.fee_amount ?? 0));
+      setPaymentMethod((selectedDocument.payment_method as PaymentMethod) ?? "");
+      setReferenceNo(selectedDocument.reference_no ?? "");
+      setAuthorityName(selectedDocument.authority_name ?? "");
+      setAttachmentUrl(selectedDocument.attachment_url ?? "");
+      setRemarks(selectedDocument.remarks ?? "");
+      setFormErrors({});
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [selectedDocument]);
 
   function resetForm() {
@@ -100,19 +109,19 @@ export default function VehicleDocumentForm({
     const feeValue = Number(feeAmount || 0);
 
     if (!vehicleId) {
-      nextErrors.vehicleId = "Vehicle is required.";
+      nextErrors.vehicleId = t("vehicleDocuments.validation.vehicleRequired");
     }
 
     if (!documentType) {
-      nextErrors.documentType = "Document Type is required.";
+      nextErrors.documentType = t("vehicleDocuments.validation.typeRequired");
     }
 
     if (!Number.isFinite(feeValue) || feeValue < 0) {
-      nextErrors.feeAmount = "Fee Amount must be zero or greater.";
+      nextErrors.feeAmount = t("vehicleDocuments.validation.feeNonNegative");
     }
 
     if (issueDate && expiryDate && expiryDate < issueDate) {
-      nextErrors.expiryDate = "Expiry Date cannot be before Issue Date.";
+      nextErrors.expiryDate = t("vehicleDocuments.validation.expiryBeforeIssue");
     }
 
     setFormErrors(nextErrors);
@@ -157,14 +166,13 @@ export default function VehicleDocumentForm({
   }
 
   return (
-    <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+    <div dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-900">
-          {isEditing ? "Edit Vehicle Document" : "Add Vehicle Document"}
+          {isEditing ? t("vehicleDocuments.actions.edit") : t("vehicleDocuments.actions.add")}
         </h2>
         <p className="mt-2 text-sm font-medium text-gray-900">
-          Record vehicle documents, expiry dates, fees, authority details and
-          attachment links.
+          {t("vehicleDocuments.formDescription")}
         </p>
       </div>
 
@@ -177,7 +185,7 @@ export default function VehicleDocumentForm({
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Vehicle
+            {t("common.vehicle")}
           </label>
           <select
             value={vehicleId}
@@ -185,10 +193,10 @@ export default function VehicleDocumentForm({
             disabled={saving}
             className="w-full rounded-lg border border-gray-300 bg-white p-3 text-base font-medium text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed"
           >
-            <option value="">Select Vehicle</option>
+            <option value="">{t("vehicleDocuments.placeholders.selectVehicle")}</option>
             {vehicles.map((vehicle) => (
               <option key={vehicle.id} value={vehicle.id}>
-                {vehicle.vehicleNo} - {vehicle.ownerName || "No Owner"}
+                {vehicle.vehicleNo} - {vehicle.ownerName || t("vehicleDocuments.noOwner")}
               </option>
             ))}
           </select>
@@ -201,7 +209,7 @@ export default function VehicleDocumentForm({
 
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Document Type
+            {t("vehicleDocuments.fields.documentType")}
           </label>
           <select
             value={documentType}
@@ -211,10 +219,10 @@ export default function VehicleDocumentForm({
             disabled={saving}
             className="w-full rounded-lg border border-gray-300 bg-white p-3 text-base font-medium text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed"
           >
-            <option value="">Select Document Type</option>
+            <option value="">{t("vehicleDocuments.placeholders.selectType")}</option>
             {VEHICLE_DOCUMENT_TYPES.map((type) => (
               <option key={type} value={type}>
-                {type}
+                {documentTypeLabel(type)}
               </option>
             ))}
           </select>
@@ -225,58 +233,68 @@ export default function VehicleDocumentForm({
           )}
         </div>
 
+
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Document Number
+            {t("vehicleDocuments.fields.documentNumber")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel={t("vehicleDocuments.placeholders.documentNumber")} mode="identifier"><input
             type="text"
             value={documentNumber}
             onChange={(event) => setDocumentNumber(event.target.value)}
             disabled={saving}
-            placeholder="Document Number"
+            placeholder={t("vehicleDocuments.placeholders.documentNumber")}
+            dir="ltr"
             className="w-full rounded-lg border border-gray-300 bg-white p-3 text-base font-medium text-gray-900 outline-none transition placeholder:text-gray-600 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed"
-          />
+          /></VoiceTypingField>
         </div>
+
 
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Authority / Department
+            {t("vehicleDocuments.fields.authority")}
           </label>
-          <input
-            type="text"
-            value={authorityName}
-            onChange={(event) => setAuthorityName(event.target.value)}
-            disabled={saving}
-            placeholder="Authority / Department"
-            className="w-full rounded-lg border border-gray-300 bg-white p-3 text-base font-medium text-gray-900 outline-none transition placeholder:text-gray-600 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed"
-          />
+          <VoiceTypingField fieldLabel={t("vehicleDocuments.fields.authority")} value={authorityName} onValueChange={setAuthorityName} contextKey={selectedDocument?.id ?? vehicleId}>
+            <input
+              type="text"
+              value={authorityName}
+              onChange={(event) => setAuthorityName(event.target.value)}
+              disabled={saving}
+              placeholder={t("vehicleDocuments.placeholders.authority")}
+              className="w-full rounded-lg border border-gray-300 bg-white p-3 text-base font-medium text-gray-900 outline-none transition placeholder:text-gray-600 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed"
+            />
+          </VoiceTypingField>
         </div>
+
 
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Issue Date
+            {t("vehicleDocuments.fields.issueDate")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel={t("vehicleDocuments.fields.issueDate")} mode="date"><input
             type="date"
+            dir="ltr"
             value={issueDate}
             onChange={(event) => setIssueDate(event.target.value)}
             disabled={saving}
             className="w-full rounded-lg border border-gray-300 bg-white p-3 text-base font-medium text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed"
-          />
+          /></VoiceTypingField>
         </div>
+
+
 
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Expiry Date
+            {t("vehicleDocuments.fields.expiryDate")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel={t("vehicleDocuments.fields.expiryDate")} mode="date"><input
             type="date"
+            dir="ltr"
             value={expiryDate}
             onChange={(event) => setExpiryDate(event.target.value)}
             disabled={saving}
             className="w-full rounded-lg border border-gray-300 bg-white p-3 text-base font-medium text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed"
-          />
+          /></VoiceTypingField>
           {formErrors.expiryDate && (
             <p className="mt-2 text-sm font-bold text-red-700">
               {formErrors.expiryDate}
@@ -284,19 +302,22 @@ export default function VehicleDocumentForm({
           )}
         </div>
 
+
+
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Fee Amount
+            {t("vehicleDocuments.fields.feeAmount")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel={t("vehicleDocuments.placeholders.feeAmount")} mode="amount"><input
             type="number"
             min="0"
             value={feeAmount}
             onChange={(event) => setFeeAmount(event.target.value)}
             disabled={saving}
-            placeholder="Fee Amount"
+            placeholder={t("vehicleDocuments.placeholders.feeAmount")}
+            dir="ltr"
             className="w-full rounded-lg border border-gray-300 bg-white p-3 text-base font-medium text-gray-900 outline-none transition placeholder:text-gray-600 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed"
-          />
+          /></VoiceTypingField>
           {formErrors.feeAmount && (
             <p className="mt-2 text-sm font-bold text-red-700">
               {formErrors.feeAmount}
@@ -304,9 +325,10 @@ export default function VehicleDocumentForm({
           )}
         </div>
 
+
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Payment Method
+            {t("vehicleDocuments.fields.paymentMethod")}
           </label>
           <select
             value={paymentMethod}
@@ -316,55 +338,63 @@ export default function VehicleDocumentForm({
             disabled={saving}
             className="w-full rounded-lg border border-gray-300 bg-white p-3 text-base font-medium text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed"
           >
-            <option value="">Select Payment Method</option>
+            <option value="">{t("vehicleDocuments.placeholders.selectPaymentMethod")}</option>
             {paymentMethods.map((method) => (
               <option key={method} value={method}>
-                {method}
+                {t(`vehicleDocuments.paymentMethods.${method === "Online Transfer" ? "onlineTransfer" : method.toLowerCase()}`)}
               </option>
             ))}
           </select>
         </div>
 
+
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Reference Number
+            {t("vehicleDocuments.fields.referenceNumber")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel={t("vehicleDocuments.placeholders.referenceNumber")} mode="identifier"><input
             type="text"
             value={referenceNo}
             onChange={(event) => setReferenceNo(event.target.value)}
             disabled={saving}
-            placeholder="Reference Number"
+            placeholder={t("vehicleDocuments.placeholders.referenceNumber")}
+            dir="ltr"
             className="w-full rounded-lg border border-gray-300 bg-white p-3 text-base font-medium text-gray-900 outline-none transition placeholder:text-gray-600 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed"
-          />
+          /></VoiceTypingField>
         </div>
+
+
 
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Attachment URL
+            {t("vehicleDocuments.fields.attachmentUrl")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel="https://..." mode="url"><input
             type="url"
             value={attachmentUrl}
             onChange={(event) => setAttachmentUrl(event.target.value)}
             disabled={saving}
             placeholder="https://..."
+            dir="ltr"
             className="w-full rounded-lg border border-gray-300 bg-white p-3 text-base font-medium text-gray-900 outline-none transition placeholder:text-gray-600 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed"
-          />
+          /></VoiceTypingField>
         </div>
+
 
         <div className="lg:col-span-2">
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Remarks
+            {t("common.remarks")}
           </label>
-          <textarea
-            value={remarks}
-            onChange={(event) => setRemarks(event.target.value)}
-            disabled={saving}
-            rows={4}
-            placeholder="Remarks"
-            className="w-full resize-none rounded-lg border border-gray-300 bg-white p-3 text-base font-medium text-gray-900 outline-none transition placeholder:text-gray-600 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed"
-          />
+          <VoiceTypingField fieldLabel={t("common.remarks")} value={remarks} onValueChange={setRemarks} contextKey={selectedDocument?.id ?? vehicleId}>
+            <textarea
+              value={remarks}
+              onChange={(event) => setRemarks(event.target.value)}
+              disabled={saving}
+              rows={4}
+              placeholder={t("vehicleDocuments.placeholders.remarks")}
+              className="w-full resize-none rounded-lg border border-gray-300 bg-white p-3 text-base font-medium text-gray-900 outline-none transition placeholder:text-gray-600 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed"
+            />
+          </VoiceTypingField>
         </div>
       </div>
 
@@ -377,11 +407,11 @@ export default function VehicleDocumentForm({
         >
           {saving
             ? isEditing
-              ? "Updating..."
-              : "Saving..."
+              ? t("vehicleDocuments.actions.updating")
+              : t("common.saving")
             : isEditing
-              ? "Update Document"
-              : "Save Document"}
+              ? t("vehicleDocuments.actions.update")
+              : t("vehicleDocuments.actions.save")}
         </button>
 
         {isEditing && (
@@ -391,7 +421,7 @@ export default function VehicleDocumentForm({
             disabled={saving}
             className="rounded-lg border border-gray-300 bg-white px-8 py-3 font-bold text-gray-900 transition hover:bg-gray-100 disabled:cursor-not-allowed"
           >
-            Cancel
+            {t("common.actions.cancel")}
           </button>
         )}
       </div>

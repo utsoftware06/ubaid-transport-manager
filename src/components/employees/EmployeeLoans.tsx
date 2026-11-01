@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import EmployeeLoanCards from "@/components/employees/EmployeeLoanCards";
 import EmployeeLoanForm from "@/components/employees/EmployeeLoanForm";
 import EmployeeLoanTable from "@/components/employees/EmployeeLoanTable";
+import { USER_ROLES } from "@/config/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/contexts/LanguageContext";
+import ModulePageHeading from "@/components/shared/ModulePageHeading";
 
 export type EmployeeLoanStatus = "Active" | "Completed";
+export type EmployeeLoanStatusFilter = EmployeeLoanStatus | "All";
 
 export type EmployeeLoanPaymentMethod =
   | "Cash"
@@ -67,8 +71,15 @@ type EmployeeLoanDbRow = {
   created_at: string | null;
 };
 
-type CashbookEntryLookup = {
-  id: number | string;
+type EmployeeProfileContext = {
+  role: string | null;
+  adda_id: string | null;
+  is_active: boolean | null;
+};
+
+type AddaOption = {
+  id: string;
+  name: string;
 };
 
 export function formatAmount(value: number) {
@@ -84,7 +95,51 @@ function normalizeStatus(value: string | null | undefined): EmployeeLoanStatus {
   return value === "Completed" ? "Completed" : "Active";
 }
 
+function employeeLoanSaveErrorMessage(message: string, fallback: string) {
+  const normalized = message.toUpperCase();
+  const messages: Array<[string, string]> = [
+    ["INVALID_EMPLOYEE_LOAN_INPUT", "Review the loan date, amount, installment, and payment method."],
+    ["EMPLOYEE_NOT_FOUND", "The selected employee could not be found. Refresh and try again."],
+    ["EMPLOYEE_ADDA_UNASSIGNED", "The selected employee has no assigned Adda."],
+    ["EMPLOYEE_ADDA_MISMATCH", "The selected employee belongs to a different Adda."],
+    ["EMPLOYEE_LOAN_NOT_FOUND", "This loan no longer exists. Refresh and try again."],
+    ["HISTORICAL_EMPLOYEE_LOAN_ADDA_UNASSIGNED", "This historical loan has no assigned Adda and cannot be edited."],
+    ["EMPLOYEE_LOAN_ADDA_MISMATCH", "This loan belongs to a different Adda."],
+    ["LOAN_AMOUNT_BELOW_RECOVERED_AMOUNT", "The loan amount cannot be less than the amount already recovered."],
+    ["LOAN_EMPLOYEE_CHANGE_BLOCKED_BY_RECOVERY", "The employee cannot be changed after loan recovery history exists."],
+    ["DUPLICATE_EMPLOYEE_LOAN_CASHBOOK_REFERENCE", "More than one Cashbook row is linked to this loan. Contact an administrator."],
+    ["EMPLOYEE_LOAN_CASHBOOK_REFERENCE_ALREADY_EXISTS", "A Cashbook row already exists for this new loan. Contact an administrator."],
+    ["EMPLOYEE_LOAN_CASHBOOK_ADDA_MISMATCH", "The linked Cashbook row belongs to a different Adda."],
+  ];
+
+  return messages.find(([marker]) => normalized.includes(marker))?.[1] ?? fallback;
+}
+
+function employeeLoanDeleteErrorMessage(
+  message: string,
+  fallback: string,
+  linkedWarning: string
+) {
+  const normalized = message.toUpperCase();
+  if (normalized.includes("EMPLOYEE_LOAN_DELETE_BLOCKED_BY_RECOVERY")) {
+    return linkedWarning;
+  }
+
+  const messages: Array<[string, string]> = [
+    ["EMPLOYEE_LOAN_NOT_FOUND", "This loan no longer exists. Refresh and try again."],
+    ["HISTORICAL_EMPLOYEE_LOAN_ADDA_UNASSIGNED", "This historical loan has no assigned Adda and cannot be deleted."],
+    ["EMPLOYEE_LOAN_ADDA_MISMATCH", "This loan belongs to a different Adda."],
+    ["DUPLICATE_EMPLOYEE_LOAN_CASHBOOK_REFERENCE", "Multiple Cashbook rows are linked to this loan. Contact an administrator."],
+    ["EMPLOYEE_LOAN_CASHBOOK_MISSING", "The required Cashbook row is missing, so the loan was not deleted."],
+    ["EMPLOYEE_LOAN_CASHBOOK_ADDA_UNASSIGNED", "The linked Cashbook row has no assigned Adda, so the loan was not deleted."],
+    ["EMPLOYEE_LOAN_CASHBOOK_ADDA_MISMATCH", "The linked Cashbook row belongs to a different Adda."],
+  ];
+
+  return messages.find(([marker]) => normalized.includes(marker))?.[1] ?? fallback;
+}
+
 export default function EmployeeLoans() {
+  const { t, dir } = useLanguage();
   const [employeeId, setEmployeeId] = useState("");
   const [loanDate, setLoanDate] = useState("");
   const [loanAmount, setLoanAmount] = useState("");
@@ -96,12 +151,92 @@ export default function EmployeeLoans() {
 
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [loans, setLoans] = useState<EmployeeLoanDbRow[]>([]);
+  const [profileAddaId, setProfileAddaId] = useState<string | null>(null);
+  const [selectedAddaId, setSelectedAddaId] = useState("");
+  const [addas, setAddas] = useState<AddaOption[]>([]);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isContextLoading, setIsContextLoading] = useState(true);
+  const [contextError, setContextError] = useState("");
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] =
+    useState<EmployeeLoanStatusFilter>("All");
+  const [page, setPage] = useState(1);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const saveInProgressRef = useRef(false);
+  const deleteInProgressRef = useRef(false);
+  const loadRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadTenantContext() {
+      setIsContextLoading(true);
+      setContextError("");
+
+      try {
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        if (authError || !authData.user) {
+          throw authError ?? new Error("No authenticated user.");
+        }
+
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("role, adda_id, is_active")
+          .eq("id", authData.user.id)
+          .maybeSingle();
+        if (profileError) throw profileError;
+
+        const profile = profileData as EmployeeProfileContext | null;
+        if (
+          !profile ||
+          profile.is_active !== true ||
+          (profile.role !== USER_ROLES.superAdmin &&
+            profile.role !== USER_ROLES.addaAdmin)
+        ) {
+          throw new Error("An active Employee administrator profile is required.");
+        }
+
+        if (profile.role === USER_ROLES.superAdmin) {
+          const { data: addaData, error: addaError } = await supabase
+            .from("addas")
+            .select("id, name")
+            .order("name");
+          if (addaError) throw addaError;
+          if (!isMounted) return;
+
+          setAddas((addaData ?? []) as AddaOption[]);
+          setIsSuperAdmin(true);
+          setProfileAddaId(null);
+          setSelectedAddaId("");
+        } else {
+          if (!profile.adda_id) {
+            throw new Error("The current profile has no assigned Adda.");
+          }
+          if (!isMounted) return;
+
+          setIsSuperAdmin(false);
+          setProfileAddaId(profile.adda_id);
+          setSelectedAddaId("");
+          setAddas([]);
+        }
+      } catch (error) {
+        if (!isMounted) return;
+        console.error("Unable to load Employee Loan tenant context:", error);
+        setContextError(t("employeeLoans.messages.loadFailed"));
+      } finally {
+        if (isMounted) setIsContextLoading(false);
+      }
+    }
+
+    void loadTenantContext();
+    return () => {
+      isMounted = false;
+    };
+  }, [t]);
 
   const selectedEmployee = useMemo(() => {
     return employees.find((employee) => employee.id === employeeId) ?? null;
@@ -130,7 +265,7 @@ export default function EmployeeLoans() {
       return {
         id: loan.id,
         employeeId: loan.employee_id,
-        employeeName: employee?.employeeName ?? "Unknown Employee",
+        employeeName: employee?.employeeName ?? t("employeeLoans.unknownEmployee"),
         employeeType: employee?.employeeType ?? "-",
         loanDate: loan.loan_date ?? "",
         loanAmount: loanAmountValue,
@@ -144,12 +279,10 @@ export default function EmployeeLoans() {
         createdAt: loan.created_at ?? "",
       };
     });
-  }, [employees, loans]);
+  }, [employees, loans, t]);
 
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
-
-    if (!keyword) return rows;
 
     return rows.filter((row) => {
       const searchableText = [
@@ -165,9 +298,19 @@ export default function EmployeeLoans() {
         .join(" ")
         .toLowerCase();
 
-      return searchableText.includes(keyword);
+      return (
+        (!keyword || searchableText.includes(keyword)) &&
+        (statusFilter === "All" || row.status === statusFilter)
+      );
     });
-  }, [rows, search]);
+  }, [rows, search, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / 10));
+  const currentPage = Math.min(Math.max(page, 1), totalPages);
+  const paginatedRows = useMemo(
+    () => filteredRows.slice((currentPage - 1) * 10, currentPage * 10),
+    [currentPage, filteredRows]
+  );
 
   const summary = useMemo<EmployeeLoanSummary>(() => {
     return filteredRows.reduce(
@@ -196,47 +339,32 @@ export default function EmployeeLoans() {
     );
   }, [filteredRows]);
 
-  useEffect(() => {
-    loadInitialData();
-  }, []);
-
-  async function loadInitialData() {
+  const loadInitialData = useCallback(async (addaId: string) => {
+    const requestId = ++loadRequestIdRef.current;
     setIsLoading(true);
     setErrorMessage("");
 
     const [employeesResponse, loansResponse] = await Promise.all([
-      supabase
-        .from("employees")
-        .select("id, employee_name, employee_type")
-        .order("employee_name", { ascending: true }),
-      supabase
-        .from("employee_loans")
-        .select(
-          `
-          id,
-          employee_id,
-          loan_date,
-          loan_amount,
-          monthly_installment,
-          recovered_amount,
-          remaining_amount,
-          status,
-          reference_no,
-          remarks,
-          created_at
-        `
-        )
-        .order("id", { ascending: false }),
+      supabase.rpc("get_employees", { p_adda_id: addaId }),
+      supabase.rpc("get_employee_loans_for_adda", { p_adda_id: addaId }),
     ]);
 
+    if (requestId !== loadRequestIdRef.current) return;
+
     if (employeesResponse.error) {
-      setErrorMessage(employeesResponse.error.message);
+      console.error("Failed to load employee options:", employeesResponse.error);
+      setErrorMessage(t("employeeLoans.messages.loadFailed"));
+      setEmployees([]);
+      setLoans([]);
       setIsLoading(false);
       return;
     }
 
     if (loansResponse.error) {
-      setErrorMessage(loansResponse.error.message);
+      console.error("Failed to load employee loans:", loansResponse.error);
+      setErrorMessage(t("employeeLoans.messages.loadFailed"));
+      setEmployees([]);
+      setLoans([]);
       setIsLoading(false);
       return;
     }
@@ -254,35 +382,59 @@ export default function EmployeeLoans() {
 
     setLoans(loanRows);
     setIsLoading(false);
-  }
+  }, [t]);
 
-  async function loadLoans() {
-    const { data, error } = await supabase
-      .from("employee_loans")
-      .select(
-        `
-        id,
-        employee_id,
-        loan_date,
-        loan_amount,
-        monthly_installment,
-        recovered_amount,
-        remaining_amount,
-        status,
-        reference_no,
-        remarks,
-        created_at
-      `
-      )
-      .order("id", { ascending: false });
+  useEffect(() => {
+    if (isContextLoading) return;
 
+    const addaId = isSuperAdmin ? selectedAddaId : profileAddaId;
+    if (contextError || !addaId) {
+      const clearTimer = window.setTimeout(() => {
+        loadRequestIdRef.current += 1;
+        setEmployees([]);
+        setLoans([]);
+        setErrorMessage(contextError);
+        setIsLoading(false);
+      }, 0);
+      return () => window.clearTimeout(clearTimer);
+    }
+
+    const timer = window.setTimeout(() => {
+      void loadInitialData(addaId);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [contextError, isContextLoading, isSuperAdmin, loadInitialData, profileAddaId, selectedAddaId]);
+
+  async function loadLoans(addaId: string) {
+    const requestId = ++loadRequestIdRef.current;
+    const { data, error } = await supabase.rpc(
+      "get_employee_loans_for_adda",
+      { p_adda_id: addaId }
+    );
+
+    if (requestId !== loadRequestIdRef.current) return;
     if (error) {
-      setErrorMessage(error.message);
+      console.error("Failed to reload employee loans:", error);
+      setErrorMessage(t("employeeLoans.messages.loadFailed"));
+      setLoans([]);
       return;
     }
 
     setLoans((data ?? []) as EmployeeLoanDbRow[]);
   }
+
+  function handleAddaChange(value: string) {
+    loadRequestIdRef.current += 1;
+    setSelectedAddaId(value);
+    setEmployees([]);
+    setLoans([]);
+    resetForm();
+    setErrorMessage("");
+    setIsLoading(Boolean(value));
+  }
+
+  const currentAddaId = isSuperAdmin ? selectedAddaId : profileAddaId;
 
   function resetForm() {
     setEmployeeId("");
@@ -300,186 +452,108 @@ export default function EmployeeLoans() {
     const installmentValue = Number(monthlyInstallment || 0);
 
     if (!employeeId) {
-      alert("Please select an employee.");
+      alert(t("employeeLoans.validation.selectEmployee"));
       return false;
     }
 
     if (!loanDate) {
-      alert("Loan Date is required.");
+      alert(t("employeeLoans.validation.dateRequired"));
       return false;
     }
 
     if (!loanAmount || !Number.isFinite(loanValue) || loanValue <= 0) {
-      alert("Loan Amount must be greater than zero.");
+      alert(t("employeeLoans.validation.amountPositive"));
       return false;
     }
 
     if (!Number.isFinite(installmentValue) || installmentValue < 0) {
-      alert("Monthly Installment cannot be negative.");
+      alert(t("employeeLoans.validation.installmentNonNegative"));
       return false;
     }
 
     if (installmentValue > loanValue) {
-      alert("Monthly Installment cannot be greater than Loan Amount.");
+      alert(t("employeeLoans.validation.installmentExceedsLoan"));
+      return false;
+    }
+
+    if (editingId && loanValue < existingRecoveredAmount) {
+      alert(t("employeeLoans.validation.amountBelowRecovered"));
       return false;
     }
 
     if (!paymentMethod) {
-      alert("Payment Method is required.");
+      alert(t("employeeLoans.validation.paymentMethodRequired"));
       return false;
     }
 
     return true;
   }
 
-  async function syncLoanCashbookEntry(loanId: number, amountValue: number) {
-    const employee = employees.find((item) => item.id === employeeId);
-
-    if (!employee) {
-      return "Selected employee was not found for Cashbook sync.";
-    }
-
-    const { data: existingCashbookEntry, error: lookupError } = await supabase
-      .from("cashbook_entries")
-      .select("id")
-      .eq("reference_type", "employee_loan")
-      .eq("reference_id", String(loanId))
-      .maybeSingle();
-
-    if (lookupError) {
-      return lookupError.message;
-    }
-
-    const cashbookPayload = {
-      entry_date: loanDate,
-      entry_type: "Cash Out",
-      person_type: employee.employeeType === "Driver" ? "Driver" : "Other",
-      person_name: employee.employeeName,
-      vehicle_id: null,
-      driver_id: null,
-      loading_id: null,
-      payment_method: paymentMethod,
-      amount: amountValue,
-      description: `Employee loan paid to ${employee.employeeName}`,
-      reference_type: "employee_loan",
-      reference_id: String(loanId),
-    };
-
-    const existingEntry = existingCashbookEntry as CashbookEntryLookup | null;
-
-    if (existingEntry?.id) {
-      const { error } = await supabase
-        .from("cashbook_entries")
-        .update(cashbookPayload)
-        .eq("id", existingEntry.id);
-
-      return error?.message ?? "";
-    }
-
-    const { error } = await supabase
-      .from("cashbook_entries")
-      .insert(cashbookPayload);
-
-    return error?.message ?? "";
-  }
-
   async function handleSaveLoan() {
+    if (saveInProgressRef.current) return;
     if (!validateForm()) return;
 
+    if (isContextLoading || contextError) {
+      alert(contextError || t("employeeLoans.messages.loadFailed"));
+      return;
+    }
+
+    const addaId = isSuperAdmin ? selectedAddaId : profileAddaId;
+    if (!addaId) {
+      alert(isSuperAdmin ? t("drivers.selectAdda") : t("employeeLoans.messages.loadFailed"));
+      return;
+    }
+
+    saveInProgressRef.current = true;
     setIsSaving(true);
     setErrorMessage("");
 
     const loanValue = Number(loanAmount);
     const installmentValue = Number(monthlyInstallment || 0);
-    const now = new Date().toISOString();
-
-    if (editingId) {
-      const existingLoan = loans.find((loan) => loan.id === editingId);
-
-      if (!existingLoan) {
-        alert("Selected loan record was not found.");
-        setIsSaving(false);
-        return;
-      }
-
-      const recoveredValue = toNumber(existingLoan.recovered_amount);
-      const remainingValue = Math.max(loanValue - recoveredValue, 0);
-      const statusValue: EmployeeLoanStatus =
-        remainingValue <= 0 ? "Completed" : "Active";
-
-      const { error } = await supabase
-        .from("employee_loans")
-        .update({
-          employee_id: employeeId,
-          loan_date: loanDate,
-          loan_amount: loanValue,
-          monthly_installment: installmentValue,
-          remaining_amount: remainingValue,
-          status: statusValue,
-          reference_no: referenceNo.trim() || null,
-          remarks: remarks.trim() || null,
-          updated_at: now,
-        })
-        .eq("id", editingId);
+    try {
+      const { error } = await supabase.rpc("save_employee_loan", {
+        p_employee_id: employeeId,
+        p_loan_date: loanDate,
+        p_loan_amount: loanValue,
+        p_monthly_installment: installmentValue,
+        p_payment_method: paymentMethod,
+        p_reference_no: referenceNo.trim() || null,
+        p_remarks: remarks.trim() || null,
+        p_adda_id: addaId,
+        p_id: editingId,
+      });
 
       if (error) {
-        setIsSaving(false);
-        alert(error.message);
+        console.error("Failed to save employee loan:", error);
+        alert(
+          employeeLoanSaveErrorMessage(
+            error.message,
+            editingId
+              ? t("employeeLoans.messages.updateFailed")
+              : t("employeeLoans.messages.saveFailed")
+          )
+        );
         return;
       }
 
-      const cashbookError = await syncLoanCashbookEntry(editingId, loanValue);
-
-      if (cashbookError) {
-        alert(`Loan updated, but Cashbook sync failed: ${cashbookError}`);
-      } else {
-        alert("Employee loan updated successfully!");
-      }
-
-      await loadLoans();
+      alert(
+        editingId
+          ? t("employeeLoans.messages.updated")
+          : t("employeeLoans.messages.saved")
+      );
       resetForm();
+      await loadLoans(addaId);
+    } catch (error) {
+      console.error("Failed to save employee loan:", error);
+      alert(
+        editingId
+          ? t("employeeLoans.messages.updateFailed")
+          : t("employeeLoans.messages.saveFailed")
+      );
+    } finally {
       setIsSaving(false);
-      return;
+      saveInProgressRef.current = false;
     }
-
-    const { data, error } = await supabase
-      .from("employee_loans")
-      .insert({
-        employee_id: employeeId,
-        loan_date: loanDate,
-        loan_amount: loanValue,
-        monthly_installment: installmentValue,
-        recovered_amount: 0,
-        remaining_amount: loanValue,
-        status: "Active",
-        reference_no: referenceNo.trim() || null,
-        remarks: remarks.trim() || null,
-        updated_at: now,
-      })
-      .select("id")
-      .single();
-
-    if (error) {
-      setIsSaving(false);
-      alert(error.message);
-      return;
-    }
-
-    const insertedLoan = data as { id: number };
-    const cashbookError = await syncLoanCashbookEntry(
-      insertedLoan.id,
-      loanValue
-    );
-
-    if (cashbookError) {
-      alert(`Loan saved, but Cashbook sync failed: ${cashbookError}`);
-    } else {
-      alert("Employee loan saved successfully!");
-    }
-
-    await loadLoans();
-    resetForm();
-    setIsSaving(false);
   }
 
   function handleEditLoan(row: EmployeeLoanRow) {
@@ -494,64 +568,104 @@ export default function EmployeeLoans() {
   }
 
   async function handleDeleteLoan(row: EmployeeLoanRow) {
+    if (deleteInProgressRef.current) return;
     const confirmed = window.confirm(
-      `Delete loan record for ${row.employeeName}? This will also remove the linked Cashbook entry.`
+      `${t("employeeLoans.messages.deleteConfirm")} ${row.employeeName}? ${t("employeeLoans.messages.deleteConfirmSuffix")}`
     );
 
     if (!confirmed) return;
 
+    if (isContextLoading || contextError || !currentAddaId) {
+      alert(
+        contextError ||
+          (isSuperAdmin
+            ? t("drivers.selectAdda")
+            : t("employeeLoans.messages.loadFailed"))
+      );
+      return;
+    }
+
+    const addaId = currentAddaId;
+
+    deleteInProgressRef.current = true;
     setIsDeleting(true);
     setErrorMessage("");
 
-    const { error: cashbookError } = await supabase
-      .from("cashbook_entries")
-      .delete()
-      .eq("reference_type", "employee_loan")
-      .eq("reference_id", String(row.id));
+    try {
+      const { error } = await supabase.rpc("delete_employee_loan", {
+        p_id: row.id,
+        p_adda_id: addaId,
+      });
 
-    if (cashbookError) {
+      if (error) {
+        console.error("Failed to delete employee loan:", error);
+        alert(
+          employeeLoanDeleteErrorMessage(
+            error.message,
+            t("employeeLoans.messages.deleteFailed"),
+            t("employeeLoans.messages.deleteLinked")
+          )
+        );
+        return;
+      }
+
+      if (editingId === row.id) resetForm();
+
+      await loadLoans(addaId);
+      alert(t("employeeLoans.messages.deleted"));
+    } catch (error) {
+      console.error("Failed to delete employee loan:", error);
+      const message = error instanceof Error ? error.message : String(error);
+      alert(
+        employeeLoanDeleteErrorMessage(
+          message,
+          t("employeeLoans.messages.deleteFailed"),
+          t("employeeLoans.messages.deleteLinked")
+        )
+      );
+    } finally {
       setIsDeleting(false);
-      alert(cashbookError.message);
-      return;
+      deleteInProgressRef.current = false;
     }
-
-    const { error } = await supabase
-      .from("employee_loans")
-      .delete()
-      .eq("id", row.id);
-
-    if (error) {
-      setIsDeleting(false);
-      alert(error.message);
-      return;
-    }
-
-    if (editingId === row.id) {
-      resetForm();
-    }
-
-    await loadLoans();
-    alert("Employee loan deleted successfully!");
-    setIsDeleting(false);
   }
 
   return (
-    <div className="space-y-8">
-      <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">
-            Employee Loan Management
-          </h1>
-          <p className="mt-2 text-base font-medium text-gray-900">
-            Manage employee loans, monthly installments, balances and Cashbook
-            entries.
-          </p>
+    <div dir={dir} className="ut-module-page space-y-6">
+      <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <ModulePageHeading icon="payment" accent="cyan" title={t("employeeLoans.title")} description={t("employeeLoans.description")} />
+      </header>
+
+      {isSuperAdmin && !isContextLoading && (
+        <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+          <label
+            htmlFor="employee-loan-adda"
+            className="mb-2 block text-sm font-bold text-gray-900"
+          >
+            Adda
+          </label>
+          <select
+            required
+            id="employee-loan-adda"
+            name="addaId"
+            value={selectedAddaId}
+            onChange={(event) => handleAddaChange(event.target.value)}
+            disabled={isSaving}
+            className="w-full max-w-md rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+          >
+            <option value="">{t("drivers.selectAdda")}</option>
+            {addas.map((adda) => (
+              <option key={adda.id} value={adda.id}>
+                {adda.name}
+              </option>
+            ))}
+          </select>
         </div>
-      </div>
+      )}
 
       <EmployeeLoanCards summary={summary} />
 
       <EmployeeLoanForm
+        recordId={editingId}
         employeeId={employeeId}
         setEmployeeId={setEmployeeId}
         loanDate={loanDate}
@@ -576,9 +690,27 @@ export default function EmployeeLoans() {
       />
 
       <EmployeeLoanTable
-        rows={filteredRows}
+        addaId={currentAddaId}
+        rows={paginatedRows}
+        reportRows={filteredRows}
         search={search}
-        setSearch={setSearch}
+        setSearch={(value) => {
+          setSearch(value);
+          setPage(1);
+        }}
+        statusFilter={statusFilter}
+        setStatusFilter={(value) => {
+          setStatusFilter(value);
+          setPage(1);
+        }}
+        onResetFilters={() => {
+          setSearch("");
+          setStatusFilter("All");
+          setPage(1);
+        }}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        setPage={setPage}
         onEdit={handleEditLoan}
         onDelete={handleDeleteLoan}
         isDeleting={isDeleting}

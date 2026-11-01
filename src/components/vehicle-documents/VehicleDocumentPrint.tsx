@@ -6,6 +6,11 @@ import {
   type VehicleDocumentSummary,
   type VehicleDocumentWithStatus,
 } from "./VehicleDocuments";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { usePrintAddaName } from "@/lib/print/usePrintAddaName";
+import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
+import { singleResolvedAddaId } from "@/components/print/LedgerStatementPrint";
+import { bilingual, printValue, modulePrintLabel, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
 
 type Props = {
   documents: VehicleDocumentWithStatus[];
@@ -34,25 +39,6 @@ function displayValue(value: string | null) {
   return value;
 }
 
-function formatDaysRemaining(document: VehicleDocumentWithStatus) {
-  if (document.status === "Permanent" || document.daysRemaining === null) {
-    return "-";
-  }
-
-  if (document.daysRemaining < 0) {
-    const expiredDays = Math.abs(document.daysRemaining);
-    return `Expired ${expiredDays} ${expiredDays === 1 ? "day" : "days"} ago`;
-  }
-
-  if (document.daysRemaining === 0) {
-    return "Expires today";
-  }
-
-  return `${document.daysRemaining} ${
-    document.daysRemaining === 1 ? "day" : "days"
-  }`;
-}
-
 function getPrintedDateTime() {
   return new Date().toLocaleString("en-PK", {
     day: "2-digit",
@@ -68,7 +54,25 @@ export default function VehicleDocumentPrint({
   summary,
   selectedDocument,
 }: Props) {
+  const { t, dir, language } = useLanguage();
   const [printMode, setPrintMode] = useState<PrintMode>("all");
+  const sourceDocuments = printMode === "single" && selectedDocument ? [selectedDocument] : documents;
+  const ownerAddaId = singleResolvedAddaId(sourceDocuments.map((document) => document.adda_id));
+  const addaName = usePrintAddaName(ownerAddaId, language === "ur" ? "ur" : "en");
+  const modulePrint = useModuleTransportPrint("vehicle_document", ownerAddaId, language === "ur" ? "ur" : "en");
+  const statusLabel = (status: VehicleDocumentWithStatus["status"]) =>
+    t(`vehicleDocuments.statuses.${status === "Expiring Soon" ? "expiringSoon" : status.toLowerCase()}`);
+  const documentTypeLabel = (type: string) =>
+    t(`vehicleDocuments.documentTypes.${type.replaceAll(" ", "").replace(/^./, (character) => character.toLowerCase())}`);
+  const formatDaysRemaining = (document: VehicleDocumentWithStatus) => {
+    if (document.status === "Permanent" || document.daysRemaining === null) return "-";
+    if (document.daysRemaining < 0) {
+      const days = Math.abs(document.daysRemaining);
+      return `${t("vehicleDocuments.days.expired")} ${days} ${t(days === 1 ? "vehicleDocuments.days.day" : "vehicleDocuments.days.days")} ${t("vehicleDocuments.days.ago")}`;
+    }
+    if (document.daysRemaining === 0) return t("vehicleDocuments.days.expiresToday");
+    return `${document.daysRemaining} ${t(document.daysRemaining === 1 ? "vehicleDocuments.days.day" : "vehicleDocuments.days.days")}`;
+  };
 
   function printAfterRender() {
     requestAnimationFrame(() => {
@@ -79,56 +83,98 @@ export default function VehicleDocumentPrint({
   }
 
   function handlePrintAll() {
-    setPrintMode("all");
-    printAfterRender();
+    const owner = singleResolvedAddaId(documents.map((document) => document.adda_id));
+    if (!owner || documents.some((document) => !document.adda_id)) return;
+    const p = (key: string) => bilingual(modulePrintLabel("en", key), modulePrintLabel("ur", key));
+    const presentation: ModulePrintPresentation = {
+      documentType: "vehicle_document",
+      title: p("vehicleDocuments.print.reportTitle"),
+      subtitle: p("vehicleDocuments.print.filteredRecords"),
+      fields: [],
+      tables: [{
+        title: p("vehicleDocuments.print.reportTitle"),
+        columns: [p("common.vehicle"), p("common.owner"), p("vehicleDocuments.fields.documentType"), p("vehicleDocuments.fields.documentNumber"), p("vehicleDocuments.fields.issueDate"), p("vehicleDocuments.fields.expiryDate"), p("common.status"), p("vehicleDocuments.fields.daysRemaining"), p("vehicleDocuments.print.fee"), p("vehicleDocuments.fields.authority"), p("vehicleDocuments.fields.paymentMethod")],
+        rows: documents.map((document) => [printValue(document.vehicleNo), printValue(document.ownerName), p(`vehicleDocuments.documentTypes.${document.document_type.replaceAll(" ", "").replace(/^./, (character) => character.toLowerCase())}`), printValue(document.document_number), printValue(formatDate(document.issue_date)), printValue(formatDate(document.expiry_date)), p(`vehicleDocuments.statuses.${document.status === "Expiring Soon" ? "expiringSoon" : document.status.toLowerCase()}`), printValue(formatDaysRemaining(document)), printValue(formatAmount(document.fee_amount)), printValue(document.authority_name), printValue(document.payment_method)]),
+      }],
+      totals: [
+        { label: p("vehicleDocuments.cards.totalDocuments"), value: printValue(summary.totalDocuments) },
+        { label: p("vehicleDocuments.statuses.active"), value: printValue(summary.activeDocuments) },
+        { label: p("vehicleDocuments.statuses.expiringSoon"), value: printValue(summary.expiringSoonDocuments) },
+        { label: p("vehicleDocuments.statuses.expired"), value: printValue(summary.expiredDocuments) },
+        { label: p("vehicleDocuments.statuses.permanent"), value: printValue(summary.permanentDocuments) },
+        { label: p("vehicleDocuments.cards.totalFees"), value: printValue(formatAmount(summary.totalFees)) },
+      ],
+    };
+    modulePrint.openPresentation(presentation, () => { setPrintMode("all"); printAfterRender(); }, owner);
   }
 
   function handlePrintSelected() {
     if (!selectedDocument) return;
 
-    setPrintMode("single");
-    printAfterRender();
+    const owner = selectedDocument.adda_id;
+    if (!owner) return;
+    const p = (key: string) => bilingual(modulePrintLabel("en", key), modulePrintLabel("ur", key));
+    const presentation: ModulePrintPresentation = {
+      documentType: "vehicle_document",
+      title: p("vehicleDocuments.fields.documentType"),
+      documentNo: printValue(selectedDocument.document_number),
+      documentDate: printValue(formatDate(selectedDocument.issue_date)),
+      fields: [
+        { label: p("common.vehicle"), value: printValue(selectedDocument.vehicleNo) },
+        { label: p("common.owner"), value: printValue(selectedDocument.ownerName) },
+        { label: p("vehicleDocuments.fields.documentType"), value: p(`vehicleDocuments.documentTypes.${selectedDocument.document_type.replaceAll(" ", "").replace(/^./, (character) => character.toLowerCase())}`) },
+        { label: p("vehicleDocuments.fields.expiryDate"), value: printValue(formatDate(selectedDocument.expiry_date)) },
+        { label: p("common.status"), value: p(`vehicleDocuments.statuses.${selectedDocument.status === "Expiring Soon" ? "expiringSoon" : selectedDocument.status.toLowerCase()}`) },
+        { label: p("vehicleDocuments.fields.daysRemaining"), value: printValue(formatDaysRemaining(selectedDocument)) },
+        { label: p("vehicleDocuments.fields.authority"), value: printValue(selectedDocument.authority_name) },
+        { label: p("vehicleDocuments.fields.paymentMethod"), value: printValue(selectedDocument.payment_method) },
+        { label: p("common.reference"), value: printValue(selectedDocument.reference_no) },
+      ],
+      totals: [{ label: p("vehicleDocuments.print.fee"), value: printValue(formatAmount(selectedDocument.fee_amount)) }],
+      remarks: printValue(selectedDocument.remarks),
+    };
+    modulePrint.openPresentation(presentation, () => { setPrintMode("single"); printAfterRender(); }, owner);
   }
 
   return (
     <>
-      <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+      <div dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">
-              Vehicle Document Printing
+              {t("vehicleDocuments.print.title")}
             </h2>
             <p className="mt-2 text-sm font-medium text-gray-900">
-              Print filtered records or the currently selected vehicle document.
+              {t("vehicleDocuments.print.description")}
             </p>
 
             <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <div className="rounded-lg border border-gray-300 bg-white p-4 shadow-sm">
                 <p className="text-xs font-bold uppercase text-gray-900">
-                  Filtered Records
+                  {t("vehicleDocuments.print.filteredRecords")}
                 </p>
                 <p className="mt-2 text-xl font-extrabold text-gray-900">
                   {documents.length}
                 </p>
               </div>
 
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <div className="rounded-lg border border-gray-300 bg-white p-4 shadow-sm">
                 <p className="text-xs font-bold uppercase text-gray-900">
-                  Total Fees
+                  {t("vehicleDocuments.cards.totalFees")}
                 </p>
                 <p className="mt-2 text-xl font-extrabold text-blue-700">
                   {formatAmount(summary.totalFees)}
                 </p>
               </div>
 
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <div className="rounded-lg border border-gray-300 bg-white p-4 shadow-sm">
                 <p className="text-xs font-bold uppercase text-gray-900">
-                  Selected
+                  {t("vehicleDocuments.print.selected")}
                 </p>
                 <p className="mt-2 text-base font-extrabold text-gray-900">
                   {selectedDocument
                     ? `${selectedDocument.vehicleNo} - ${selectedDocument.document_type}`
-                    : "None"}
+                    : t("vehicleDocuments.print.none")}
                 </p>
               </div>
             </div>
@@ -138,9 +184,10 @@ export default function VehicleDocumentPrint({
             <button
               type="button"
               onClick={handlePrintAll}
+              disabled={!singleResolvedAddaId(documents.map((document) => document.adda_id)) || documents.some((document) => !document.adda_id)}
               className="rounded-lg bg-blue-600 px-6 py-3 text-sm font-bold text-white transition hover:bg-blue-700"
             >
-              Print All Records
+              {t("vehicleDocuments.print.printAll")}
             </button>
 
             <button
@@ -149,75 +196,75 @@ export default function VehicleDocumentPrint({
               disabled={!selectedDocument}
               className="rounded-lg bg-gray-900 px-6 py-3 text-sm font-bold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-gray-500"
             >
-              Print Selected Document
+              {t("vehicleDocuments.print.printSelected")}
             </button>
           </div>
         </div>
       </div>
 
-      <section className="vehicle-document-print-area">
+      <section dir={dir} className="vehicle-document-print-area">
         {printMode === "all" && (
           <div className="print-document">
             <div className="print-header">
               <div>
-                <h1>Vehicle Documents Report</h1>
-                <p>UT Software</p>
+                <h1>{t("vehicleDocuments.print.reportTitle")}</h1>
+                <p>{addaName}</p>
               </div>
               <div className="print-meta">
                 <p>
-                  <strong>Generated:</strong> {getPrintedDateTime()}
+                  <strong>{t("vehicleDocuments.print.generated")}:</strong> <span dir="ltr">{getPrintedDateTime()}</span>
                 </p>
                 <p>
-                  <strong>Total Records:</strong> {documents.length}
+                  <strong>{t("vehicleDocuments.print.totalRecords")}:</strong> {documents.length}
                 </p>
               </div>
             </div>
 
             <div className="print-summary print-summary-six">
               <div>
-                <span>Total Documents</span>
+                <span>{t("vehicleDocuments.cards.totalDocuments")}</span>
                 <strong>{summary.totalDocuments}</strong>
               </div>
               <div>
-                <span>Active</span>
+                <span>{t("vehicleDocuments.statuses.active")}</span>
                 <strong>{summary.activeDocuments}</strong>
               </div>
               <div>
-                <span>Expiring Soon</span>
+                <span>{t("vehicleDocuments.statuses.expiringSoon")}</span>
                 <strong>{summary.expiringSoonDocuments}</strong>
               </div>
               <div>
-                <span>Expired</span>
+                <span>{t("vehicleDocuments.statuses.expired")}</span>
                 <strong>{summary.expiredDocuments}</strong>
               </div>
               <div>
-                <span>Permanent</span>
+                <span>{t("vehicleDocuments.statuses.permanent")}</span>
                 <strong>{summary.permanentDocuments}</strong>
               </div>
               <div>
-                <span>Total Fees</span>
+                <span>{t("vehicleDocuments.cards.totalFees")}</span>
                 <strong>{formatAmount(summary.totalFees)}</strong>
               </div>
             </div>
 
             {documents.length === 0 ? (
-              <div className="print-empty">No vehicle document records found.</div>
+              <div className="print-empty">{t("vehicleDocuments.empty")}</div>
             ) : (
               <table className="print-table">
                 <thead>
                   <tr>
                     <th>#</th>
-                    <th>Vehicle</th>
-                    <th>Owner</th>
-                    <th>Document Type</th>
-                    <th>Document Number</th>
-                    <th>Issue Date</th>
-                    <th>Expiry Date</th>
-                    <th>Status</th>
-                    <th>Days Remaining</th>
-                    <th>Fee</th>
-                    <th>Authority</th>
-                    <th>Payment Method</th>
+                    <th>{t("common.vehicle")}</th>
+                    <th>{t("common.owner")}</th>
+                    <th>{t("vehicleDocuments.fields.documentType")}</th>
+                    <th>{t("vehicleDocuments.fields.documentNumber")}</th>
+                    <th>{t("vehicleDocuments.fields.issueDate")}</th>
+                    <th>{t("vehicleDocuments.fields.expiryDate")}</th>
+                    <th>{t("common.status")}</th>
+                    <th>{t("vehicleDocuments.fields.daysRemaining")}</th>
+                    <th>{t("vehicleDocuments.print.fee")}</th>
+                    <th>{t("vehicleDocuments.fields.authority")}</th>
+                    <th>{t("vehicleDocuments.fields.paymentMethod")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -226,11 +273,11 @@ export default function VehicleDocumentPrint({
                       <td>{index + 1}</td>
                       <td>{displayValue(document.vehicleNo)}</td>
                       <td>{displayValue(document.ownerName)}</td>
-                      <td>{document.document_type}</td>
+                      <td>{documentTypeLabel(document.document_type)}</td>
                       <td>{displayValue(document.document_number)}</td>
                       <td>{formatDate(document.issue_date)}</td>
                       <td>{formatDate(document.expiry_date)}</td>
-                      <td>{document.status}</td>
+                      <td>{statusLabel(document.status)}</td>
                       <td>{formatDaysRemaining(document)}</td>
                       <td className="print-amount">
                         {formatAmount(document.fee_amount)}
@@ -242,7 +289,7 @@ export default function VehicleDocumentPrint({
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colSpan={9}>Total Fee Amount</td>
+                    <td colSpan={9}>{t("vehicleDocuments.cards.totalFees")}</td>
                     <td className="print-amount">
                       {formatAmount(summary.totalFees)}
                     </td>
@@ -258,80 +305,81 @@ export default function VehicleDocumentPrint({
           <div className="print-document print-single-document">
             <div className="print-header">
               <div>
-                <h1>Vehicle Document Record</h1>
-                <p>UT Software</p>
+                <h1>{t("vehicleDocuments.print.recordTitle")}</h1>
+                <p>{addaName}</p>
               </div>
               <div className="print-meta">
                 <p>
-                  <strong>Printed On:</strong> {getPrintedDateTime()}
+                  <strong>{t("vehicleDocuments.print.printedOn")}:</strong> <span dir="ltr">{getPrintedDateTime()}</span>
                 </p>
                 <p>
-                  <strong>Status:</strong> {selectedDocument.status}
+                  <strong>{t("common.status")}:</strong> {statusLabel(selectedDocument.status)}
                 </p>
               </div>
             </div>
 
             <div className="print-detail-grid">
               <div>
-                <span>Vehicle</span>
+                <span>{t("common.vehicle")}</span>
                 <strong>{displayValue(selectedDocument.vehicleNo)}</strong>
               </div>
               <div>
-                <span>Owner</span>
+                <span>{t("common.owner")}</span>
                 <strong>{displayValue(selectedDocument.ownerName)}</strong>
               </div>
               <div>
-                <span>Document Type</span>
-                <strong>{selectedDocument.document_type}</strong>
+                <span>{t("vehicleDocuments.fields.documentType")}</span>
+                <strong>{documentTypeLabel(selectedDocument.document_type)}</strong>
               </div>
               <div>
-                <span>Document Number</span>
+                <span>{t("vehicleDocuments.fields.documentNumber")}</span>
                 <strong>{displayValue(selectedDocument.document_number)}</strong>
               </div>
               <div>
-                <span>Issue Date</span>
+                <span>{t("vehicleDocuments.fields.issueDate")}</span>
                 <strong>{formatDate(selectedDocument.issue_date)}</strong>
               </div>
               <div>
-                <span>Expiry Date</span>
+                <span>{t("vehicleDocuments.fields.expiryDate")}</span>
                 <strong>{formatDate(selectedDocument.expiry_date)}</strong>
               </div>
               <div>
-                <span>Status</span>
-                <strong>{selectedDocument.status}</strong>
+                <span>{t("common.status")}</span>
+                <strong>{statusLabel(selectedDocument.status)}</strong>
               </div>
               <div>
-                <span>Days Remaining</span>
+                <span>{t("vehicleDocuments.fields.daysRemaining")}</span>
                 <strong>{formatDaysRemaining(selectedDocument)}</strong>
               </div>
               <div>
-                <span>Fee Amount</span>
+                <span>{t("vehicleDocuments.fields.feeAmount")}</span>
                 <strong>{formatAmount(selectedDocument.fee_amount)}</strong>
               </div>
               <div>
-                <span>Payment Method</span>
+                <span>{t("vehicleDocuments.fields.paymentMethod")}</span>
                 <strong>{displayValue(selectedDocument.payment_method)}</strong>
               </div>
               <div>
-                <span>Reference Number</span>
+                <span>{t("vehicleDocuments.fields.referenceNumber")}</span>
                 <strong>{displayValue(selectedDocument.reference_no)}</strong>
               </div>
               <div>
-                <span>Authority / Department</span>
+                <span>{t("vehicleDocuments.fields.authority")}</span>
                 <strong>{displayValue(selectedDocument.authority_name)}</strong>
               </div>
               <div className="print-detail-full">
-                <span>Attachment URL</span>
+                <span>{t("vehicleDocuments.fields.attachmentUrl")}</span>
                 <strong>{displayValue(selectedDocument.attachment_url)}</strong>
               </div>
               <div className="print-detail-full">
-                <span>Remarks</span>
+                <span>{t("common.remarks")}</span>
                 <strong>{displayValue(selectedDocument.remarks)}</strong>
               </div>
             </div>
           </div>
         )}
       </section>
+      {modulePrint.dialog}
 
       <style jsx global>{`
         .vehicle-document-print-area {

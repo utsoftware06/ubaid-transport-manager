@@ -1,10 +1,17 @@
 "use client";
 
+import { useMemo, useState } from "react";
+
 import {
   type VehicleOption,
   type WorkshopPaymentStatus,
+  type WorkshopOption,
   formatAmount,
 } from "./Workshop";
+import { useLanguage } from "@/contexts/LanguageContext";
+import VoiceTypingField from "@/components/shared/VoiceTypingField";
+import WorkshopWorkItems from "./WorkshopWorkItems";
+import type { WorkshopWorkItem } from "./workshopWorkTypes";
 
 type Props = {
   workDate: string;
@@ -12,17 +19,15 @@ type Props = {
   vehicleId: string;
   setVehicleId: (value: string) => void;
   workshopName: string;
-  setWorkshopName: (value: string) => void;
+  workshopId: string;
+  onWorkshopChange: (value: string) => void;
+  workshops: WorkshopOption[];
   mechanicName: string;
   setMechanicName: (value: string) => void;
-  workType: string;
-  setWorkType: (value: string) => void;
+  workItems: WorkshopWorkItem[];
+  setWorkItems: (value: WorkshopWorkItem[]) => void;
   billNo: string;
   setBillNo: (value: string) => void;
-  partsCost: string;
-  setPartsCost: (value: string) => void;
-  labourCost: string;
-  setLabourCost: (value: string) => void;
   paidAmount: string;
   setPaidAmount: (value: string) => void;
   nextServiceDate: string;
@@ -36,6 +41,7 @@ type Props = {
   isSaving: boolean;
   isEditing: boolean;
   onCancelEdit: () => void;
+  vehicleLocked?: boolean;
 };
 
 function getPaymentStatus(
@@ -61,17 +67,15 @@ export default function WorkshopForm({
   vehicleId,
   setVehicleId,
   workshopName,
-  setWorkshopName,
+  workshopId,
+  onWorkshopChange,
+  workshops,
   mechanicName,
   setMechanicName,
-  workType,
-  setWorkType,
+  workItems,
+  setWorkItems,
   billNo,
   setBillNo,
-  partsCost,
-  setPartsCost,
-  labourCost,
-  setLabourCost,
   paidAmount,
   setPaidAmount,
   nextServiceDate,
@@ -85,214 +89,235 @@ export default function WorkshopForm({
   isSaving,
   isEditing,
   onCancelEdit,
+  vehicleLocked = false,
 }: Props) {
-  const parts = Number(partsCost || 0);
-  const labour = Number(labourCost || 0);
+  const { t, dir } = useLanguage();
+  const [workshopSearch, setWorkshopSearch] = useState("");
+  const visibleWorkshops = useMemo(() => {
+    const keyword = workshopSearch.trim().toLowerCase();
+    if (!keyword) return workshops;
+    return workshops.filter((workshop) =>
+      [workshop.workshopName, workshop.ownerName, workshop.phone]
+        .join(" ")
+        .toLowerCase()
+        .includes(keyword)
+    );
+  }, [workshopSearch, workshops]);
   const paid = Number(paidAmount || 0);
-  const totalCost = parts + labour;
+  const totalCost = workItems.reduce((total, item) => total + item.amount, 0);
   const remainingAmount = Math.max(totalCost - paid, 0);
   const paymentStatus = getPaymentStatus(paid, totalCost);
 
   return (
-    <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+    <div dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-900">
-          {isEditing ? "Edit Workshop Entry" : "Add Workshop Entry"}
+          {isEditing ? t("workshop.actions.edit") : t("workshop.actions.add")}
         </h2>
         <p className="mt-1 text-sm font-medium text-gray-900">
-          Enter repair, service, parts and payment details.
+          {t("workshop.formDescription")}
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Work Date
+            {t("workshop.fields.workDate")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel={t("workshop.fields.workDate")} mode="date"><input
             type="date"
+            dir="ltr"
             value={workDate}
             onChange={(event) => setWorkDate(event.target.value)}
             className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
+
 
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Vehicle
+            {t("common.vehicle")}
           </label>
+          {vehicleLocked ? (
+            <input
+              type="text"
+              value={vehicles.find((vehicle) => vehicle.id === vehicleId)?.vehicleNo ?? ""}
+              readOnly
+              aria-readonly="true"
+              className="w-full rounded-lg border border-gray-300 bg-gray-100 px-4 py-3 text-sm font-semibold text-gray-900"
+            />
+          ) : (
+            <select
+              value={vehicleId}
+              onChange={(event) => setVehicleId(event.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+            >
+              <option value="">{t("workshop.placeholders.selectVehicle")}</option>
+              {vehicles.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id}>
+                  {vehicle.vehicleNo} - {vehicle.ownerName}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+
+        <div>
+          <label className="mb-2 block text-sm font-bold text-gray-900">
+            {t("workshop.fields.workshopName")}
+          </label>
+          <VoiceTypingField fieldLabel={t("workshop.placeholders.searchWorkshop")} mode="text"><input
+            type="search"
+            value={workshopSearch}
+            onChange={(event) => setWorkshopSearch(event.target.value)}
+            placeholder={t("workshop.placeholders.searchWorkshop")}
+            className="mb-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-900 placeholder:text-gray-600 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+          /></VoiceTypingField>
           <select
-            value={vehicleId}
-            onChange={(event) => setVehicleId(event.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+            value={workshopId}
+            onChange={(event) => onWorkshopChange(event.target.value)}
+            aria-label={t("workshop.placeholders.selectWorkshop")}
+            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
           >
-            <option value="">Select Vehicle</option>
-            {vehicles.map((vehicle) => (
-              <option key={vehicle.id} value={vehicle.id}>
-                {vehicle.vehicleNo} - {vehicle.ownerName}
+            <option value="">{t("workshop.placeholders.selectWorkshop")}</option>
+            {visibleWorkshops.map((workshop) => (
+              <option key={workshop.id} value={workshop.id}>
+                {workshop.workshopName}{workshop.ownerName ? ` — ${workshop.ownerName}` : ""}
               </option>
             ))}
           </select>
+          {!workshopId && workshopName && (
+            <p className="mt-2 text-xs font-semibold text-amber-800">
+              {t("workshop.messages.legacyWorkshop")}: {workshopName}
+            </p>
+          )}
         </div>
+
 
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Workshop Name
+            {t("workshop.fields.mechanicName")}
           </label>
-          <input
-            type="text"
-            value={workshopName}
-            onChange={(event) => setWorkshopName(event.target.value)}
-            placeholder="Workshop name"
-            className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          <VoiceTypingField fieldLabel={t("workshop.fields.mechanicName")} value={mechanicName} onValueChange={setMechanicName} contextKey={`${vehicleId}:${workshopId}`}>
+            <input
+              type="text"
+              value={mechanicName}
+              onChange={(event) => setMechanicName(event.target.value)}
+              placeholder={t("workshop.placeholders.mechanicName")}
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+            />
+          </VoiceTypingField>
         </div>
+
 
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Mechanic Name
+            {t("workshop.fields.billNo")}
           </label>
-          <input
-            type="text"
-            value={mechanicName}
-            onChange={(event) => setMechanicName(event.target.value)}
-            placeholder="Mechanic name"
-            className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Work Type
-          </label>
-          <input
-            type="text"
-            value={workType}
-            onChange={(event) => setWorkType(event.target.value)}
-            placeholder="Oil, tyre, repair..."
-            className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Bill No
-          </label>
-          <input
+          <VoiceTypingField fieldLabel={t("workshop.placeholders.billNo")} mode="identifier"><input
             type="text"
             value={billNo}
             onChange={(event) => setBillNo(event.target.value)}
-            placeholder="Bill no"
+            placeholder={t("workshop.placeholders.billNo")}
+            dir="ltr"
             className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
 
-        <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Parts Cost
-          </label>
-          <input
-            type="number"
-            min="0"
-            value={partsCost}
-            onChange={(event) => setPartsCost(event.target.value)}
-            placeholder="0"
-            className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
-        </div>
 
-        <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Labour Cost
-          </label>
-          <input
-            type="number"
-            min="0"
-            value={labourCost}
-            onChange={(event) => setLabourCost(event.target.value)}
-            placeholder="0"
-            className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
-        </div>
-
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-          <p className="text-sm font-bold text-gray-900">Total Cost</p>
-          <p className="mt-2 text-xl font-extrabold text-gray-900">
+        <div className="rounded-lg border border-gray-300 bg-white p-4 shadow-sm">
+          <p className="text-sm font-bold text-gray-900">{t("workshop.fields.totalCost")}</p>
+          <p dir="ltr" className="mt-2 text-xl font-extrabold text-gray-900">
             {formatAmount(totalCost)}
           </p>
         </div>
 
+
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Paid Amount
+            {t("workshop.fields.paidAmount")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel={t("workshop.fields.paidAmount")} mode="amount"><input
             type="number"
             min="0"
             value={paidAmount}
             onChange={(event) => setPaidAmount(event.target.value)}
             placeholder="0"
+            dir="ltr"
             className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
 
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-          <p className="text-sm font-bold text-gray-900">Remaining Amount</p>
-          <p className="mt-2 text-xl font-extrabold text-red-700">
+
+        <div className="rounded-lg border border-gray-300 bg-white p-4 shadow-sm">
+          <p className="text-sm font-bold text-gray-900">{t("workshop.fields.remainingAmount")}</p>
+          <p dir="ltr" className="mt-2 text-xl font-extrabold text-red-700">
             {formatAmount(remainingAmount)}
           </p>
         </div>
 
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-          <p className="text-sm font-bold text-gray-900">Payment Status</p>
+        <div className="rounded-lg border border-gray-300 bg-white p-4 shadow-sm">
+          <p className="text-sm font-bold text-gray-900">{t("workshop.fields.paymentStatus")}</p>
           <span
             className={`mt-3 inline-flex rounded-full border px-3 py-1 text-sm font-bold ${getStatusClass(
               paymentStatus
             )}`}
           >
-            {paymentStatus}
+            {t(`workshop.statuses.${paymentStatus.toLowerCase()}`)}
           </span>
         </div>
 
-        <div>
-          <label className="mb-2 block text-sm font-bold text-gray-900">
-            Next Service Date
-          </label>
-          <input
-            type="date"
-            value={nextServiceDate}
-            onChange={(event) => setNextServiceDate(event.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
-        </div>
 
         <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Odometer
+            {t("workshop.fields.nextServiceDate")}
           </label>
-          <input
+          <VoiceTypingField fieldLabel={t("workshop.fields.nextServiceDate")} mode="date"><input
+            type="date"
+            dir="ltr"
+            value={nextServiceDate}
+            onChange={(event) => setNextServiceDate(event.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+          /></VoiceTypingField>
+        </div>
+
+
+
+        <div>
+          <label className="mb-2 block text-sm font-bold text-gray-900">
+            {t("workshop.fields.odometer")}
+          </label>
+          <VoiceTypingField fieldLabel={t("workshop.placeholders.odometer")} mode="number"><input
             type="number"
             min="0"
             value={odometer}
             onChange={(event) => setOdometer(event.target.value)}
-            placeholder="Odometer reading"
+            placeholder={t("workshop.placeholders.odometer")}
+            dir="ltr"
             className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          /></VoiceTypingField>
         </div>
+
 
         <div className="md:col-span-2 xl:col-span-3">
           <label className="mb-2 block text-sm font-bold text-gray-900">
-            Remarks
+            {t("common.remarks")}
           </label>
-          <input
-            type="text"
-            value={remarks}
-            onChange={(event) => setRemarks(event.target.value)}
-            placeholder="Remarks"
-            className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
+          <VoiceTypingField fieldLabel={t("common.remarks")} value={remarks} onValueChange={setRemarks} contextKey={`${vehicleId}:${workshopId}`}>
+            <input
+              type="text"
+              value={remarks}
+              onChange={(event) => setRemarks(event.target.value)}
+              placeholder={t("workshop.placeholders.remarks")}
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-900 placeholder:text-gray-700 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+            />
+          </VoiceTypingField>
         </div>
       </div>
+
+      <WorkshopWorkItems items={workItems} onChange={setWorkItems} />
 
       <div className="mt-6 flex flex-col justify-end gap-3 sm:flex-row">
         {isEditing && (
@@ -301,7 +326,7 @@ export default function WorkshopForm({
             onClick={onCancelEdit}
             className="rounded-lg bg-gray-200 px-6 py-3 text-sm font-bold text-gray-900 transition hover:bg-gray-300"
           >
-            Cancel Edit
+            {t("common.cancelEdit")}
           </button>
         )}
 
@@ -312,10 +337,10 @@ export default function WorkshopForm({
           className="rounded-lg bg-blue-600 px-8 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed"
         >
           {isSaving
-            ? "Saving..."
+            ? t("common.saving")
             : isEditing
-              ? "Update Workshop Entry"
-              : "Save Workshop Entry"}
+              ? t("workshop.actions.update")
+              : t("workshop.actions.save")}
         </button>
       </div>
     </div>

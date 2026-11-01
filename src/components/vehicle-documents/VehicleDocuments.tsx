@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import VehicleDocumentCards from "@/components/vehicle-documents/VehicleDocumentCards";
 import VehicleDocumentFilters from "@/components/vehicle-documents/VehicleDocumentFilters";
 import VehicleDocumentForm from "@/components/vehicle-documents/VehicleDocumentForm";
 import VehicleDocumentPrint from "@/components/vehicle-documents/VehicleDocumentPrint";
+import { useLanguage } from "@/contexts/LanguageContext";
+import ModulePageHeading from "@/components/shared/ModulePageHeading";
 import VehicleDocumentTable from "@/components/vehicle-documents/VehicleDocumentTable";
 import { supabase } from "@/lib/supabase/client";
 
@@ -198,10 +200,12 @@ function mapDocumentRow(row: VehicleDocumentDbRow): VehicleDocumentRecord {
 }
 
 export default function VehicleDocuments() {
+  const { t, dir } = useLanguage();
   const [documents, setDocuments] = useState<VehicleDocumentRecord[]>([]);
   const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const mutationInFlightRef = useRef(false);
   const [error, setError] = useState("");
   const [selectedDocument, setSelectedDocument] =
     useState<VehicleDocumentWithStatus | null>(null);
@@ -300,11 +304,7 @@ export default function VehicleDocuments() {
     );
   }, [filteredDocuments]);
 
-  useEffect(() => {
-    refreshDocuments();
-  }, []);
-
-  async function loadVehicles() {
+  const loadVehicles = useCallback(async () => {
     const { data, error: vehiclesError } = await supabase
       .from("vehicles")
       .select("id, vehicle_no, owner_name")
@@ -323,9 +323,9 @@ export default function VehicleDocuments() {
         ownerName: vehicle.owner_name ?? "",
       }))
     );
-  }
+  }, []);
 
-  async function loadDocuments() {
+  const loadDocuments = useCallback(async () => {
     const { data, error: documentsError } = await supabase
       .from("vehicle_documents")
       .select(
@@ -356,26 +356,30 @@ export default function VehicleDocuments() {
 
     const documentRows = (data ?? []) as VehicleDocumentDbRow[];
     setDocuments(documentRows.map(mapDocumentRow));
-  }
+  }, []);
 
-  async function refreshDocuments() {
+  const refreshDocuments = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
       await Promise.all([loadVehicles(), loadDocuments()]);
     } catch (refreshError) {
-      setError(
-        refreshError instanceof Error
-          ? refreshError.message
-          : "Unable to load vehicle documents."
-      );
+      console.error("Failed to load vehicle documents:", refreshError);
+      setError(t("vehicleDocuments.messages.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }
+  }, [loadDocuments, loadVehicles, t]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void refreshDocuments(), 0);
+    return () => window.clearTimeout(timer);
+  }, [refreshDocuments]);
 
   async function createDocument(payload: VehicleDocumentPayload) {
+    if (mutationInFlightRef.current) return false;
+    mutationInFlightRef.current = true;
     setSaving(true);
     setError("");
 
@@ -394,18 +398,18 @@ export default function VehicleDocuments() {
       await loadDocuments();
       return true;
     } catch (createError) {
-      setError(
-        createError instanceof Error
-          ? createError.message
-          : "Unable to create vehicle document."
-      );
+      console.error("Failed to create vehicle document:", createError);
+      setError(t("vehicleDocuments.messages.createFailed"));
       return false;
     } finally {
+      mutationInFlightRef.current = false;
       setSaving(false);
     }
   }
 
   async function updateDocument(id: string, payload: VehicleDocumentPayload) {
+    if (mutationInFlightRef.current) return false;
+    mutationInFlightRef.current = true;
     setSaving(true);
     setError("");
 
@@ -426,22 +430,22 @@ export default function VehicleDocuments() {
       await loadDocuments();
       return true;
     } catch (updateError) {
-      setError(
-        updateError instanceof Error
-          ? updateError.message
-          : "Unable to update vehicle document."
-      );
+      console.error("Failed to update vehicle document:", updateError);
+      setError(t("vehicleDocuments.messages.updateFailed"));
       return false;
     } finally {
+      mutationInFlightRef.current = false;
       setSaving(false);
     }
   }
 
   async function deleteDocument(id: string) {
-    const confirmed = window.confirm("Delete this vehicle document record?");
+    if (mutationInFlightRef.current) return false;
+    const confirmed = window.confirm(t("vehicleDocuments.messages.deleteConfirm"));
 
     if (!confirmed) return false;
 
+    mutationInFlightRef.current = true;
     setSaving(true);
     setError("");
 
@@ -462,28 +466,20 @@ export default function VehicleDocuments() {
       await loadDocuments();
       return true;
     } catch (deleteError) {
-      setError(
-        deleteError instanceof Error
-          ? deleteError.message
-          : "Unable to delete vehicle document."
-      );
+      console.error("Failed to delete vehicle document:", deleteError);
+      setError(t("vehicleDocuments.messages.deleteFailed"));
       return false;
     } finally {
+      mutationInFlightRef.current = false;
       setSaving(false);
     }
   }
 
   return (
-    <div className="space-y-8">
-      <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Vehicle Documents
-        </h1>
-        <p className="mt-2 text-base font-medium text-gray-900">
-          Manage vehicle permits, fitness, route permits, insurance and document
-          expiry tracking.
-        </p>
-      </div>
+    <div dir={dir} className="ut-module-page space-y-6">
+      <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <ModulePageHeading icon="vehicle" accent="blue" title={t("vehicleDocuments.title")} description={t("vehicleDocuments.description")} />
+      </header>
 
       <VehicleDocumentCards summary={summary} loading={loading} />
 

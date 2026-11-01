@@ -1,32 +1,29 @@
 "use client";
 
+import { type Dispatch, type SetStateAction, useState } from "react";
+import EmployeeAccountingDetails from "./EmployeeAccountingDetails";
 import {
   type EmployeeLedgerFilterValues,
   type EmployeeLedgerTransactionRow,
   formatAmount,
 } from "./EmployeeLedger";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { escapeHtml } from "@/lib/print/escapeHtml";
+import { usePrintAddaName } from "@/lib/print/usePrintAddaName";
+import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
+import { bilingual, printLabel, printValue, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
 
 type Props = {
+  addaId: string | null;
   rows: EmployeeLedgerTransactionRow[];
+  reportRows: EmployeeLedgerTransactionRow[];
   isLoading: boolean;
   errorMessage: string;
   filters: EmployeeLedgerFilterValues;
+  currentPage: number;
+  totalPages: number;
+  setPage: Dispatch<SetStateAction<number>>;
 };
-
-function escapeHtml(value: string | number) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function getBalanceStatus(balance: number) {
-  if ( balance > 0) return "Payable";
-  if (balance < 0) return "Receivable";
-  return "Settled";
-}
 
 function getStatusClass(balance: number) {
   if (balance > 0) return "bg-red-100 text-red-700";
@@ -106,14 +103,43 @@ function getLatestEmployeeBalances(rows: EmployeeLedgerTransactionRow[]) {
 }
 
 export default function EmployeeLedgerTable({
+  addaId,
   rows,
+  reportRows,
   isLoading,
   errorMessage,
   filters,
+  currentPage,
+  totalPages,
+  setPage,
 }: Props) {
-  const totalDebit = rows.reduce((total, row) => total + row.debit, 0);
-  const totalCredit = rows.reduce((total, row) => total + row.credit, 0);
-  const latestBalances = getLatestEmployeeBalances(rows);
+  const { t, dir, language } = useLanguage();
+  const addaName = usePrintAddaName(addaId, language === "ur" ? "ur" : "en");
+  const modulePrint = useModuleTransportPrint("employee", addaId, language === "ur" ? "ur" : "en");
+  const [viewingRow, setViewingRow] =
+    useState<EmployeeLedgerTransactionRow | null>(null);
+  const getBalanceStatus = (balance: number) => {
+    if (balance > 0) return t("employeeLedger.statuses.payable");
+    if (balance < 0) return t("employeeLedger.statuses.receivable");
+    return t("employeeLedger.statuses.settled");
+  };
+  const transactionTypeLabel = (type: string) => {
+    const keyByType: Record<string, string> = {
+      "Salary Generated": "salaryGenerated",
+      "Salary Paid": "salaryPaid",
+      "Employee Loan": "employeeLoan",
+      "Loan Recovery": "loanRecovery",
+      "Advance Salary": "advanceSalary",
+      "Advance Recovery": "advanceRecovery",
+      "Adjustment Debit": "adjustmentDebit",
+      "Adjustment Credit": "adjustmentCredit",
+    };
+    const key = keyByType[type];
+    return key ? t(`employeeLedger.transactionTypes.${key}`) : type;
+  };
+  const totalDebit = reportRows.reduce((total, row) => total + row.debit, 0);
+  const totalCredit = reportRows.reduce((total, row) => total + row.credit, 0);
+  const latestBalances = getLatestEmployeeBalances(reportRows);
   const netClosingBalance = latestBalances.netClosingBalance;
 
   function getPrintableRows(targetRows: EmployeeLedgerTransactionRow[]) {
@@ -121,16 +147,16 @@ export default function EmployeeLedgerTable({
       .map(
         (row) => `
           <tr>
-            <td>${escapeHtml(row.transactionDate)}</td>
+            <td dir="ltr">${escapeHtml(row.transactionDate)}</td>
             <td>${escapeHtml(row.employeeName)}</td>
             <td>${escapeHtml(row.employeeType)}</td>
-            <td>${escapeHtml(row.transactionType)}</td>
+            <td>${escapeHtml(transactionTypeLabel(row.transactionType))}</td>
             <td>${escapeHtml(row.description || "-")}</td>
             <td>${escapeHtml(row.paymentMethod || "-")}</td>
-            <td>${escapeHtml(row.referenceNo || "-")}</td>
-            <td class="amount debit">${escapeHtml(formatAmount(row.debit))}</td>
-            <td class="amount credit">${escapeHtml(formatAmount(row.credit))}</td>
-            <td class="amount">${escapeHtml(formatAmount(row.runningBalance))}</td>
+            <td dir="ltr">${escapeHtml(row.referenceNo || "-")}</td>
+            <td dir="ltr" class="amount debit">${escapeHtml(formatAmount(row.debit))}</td>
+            <td dir="ltr" class="amount credit">${escapeHtml(formatAmount(row.credit))}</td>
+            <td dir="ltr" class="amount">${escapeHtml(formatAmount(row.runningBalance))}</td>
             <td>${escapeHtml(getBalanceStatus(row.runningBalance))}</td>
           </tr>
         `
@@ -142,13 +168,13 @@ export default function EmployeeLedgerTable({
     const printWindow = window.open("", "_blank", "width=1200,height=800");
 
     if (!printWindow) {
-      alert("Please allow popups to print the ledger.");
+      alert(t("employeeLedger.messages.allowPopups"));
       return;
     }
 
     printWindow.document.write(`
       <!doctype html>
-      <html>
+      <html lang="${escapeHtml(language)}" dir="${escapeHtml(dir)}">
         <head>
           <title>${escapeHtml(title)}</title>
           <style>
@@ -165,7 +191,7 @@ export default function EmployeeLedgerTable({
             }
             h1 { margin: 0; font-size: 26px; font-weight: 800; }
             .subtitle { margin-top: 5px; font-size: 15px; font-weight: 700; }
-            .meta { text-align: right; font-size: 13px; font-weight: 700; line-height: 1.6; }
+            .meta { text-align: end; font-size: 13px; font-weight: 700; line-height: 1.6; }
             .summary {
               display: grid;
               grid-template-columns: repeat(var(--columns, 3), 1fr);
@@ -181,10 +207,10 @@ export default function EmployeeLedgerTable({
             .label { font-size: 11px; font-weight: 800; text-transform: uppercase; }
             .value { margin-top: 5px; font-size: 16px; font-weight: 900; }
             table { width: 100%; border-collapse: collapse; font-size: 10px; }
-            th { background: #2563eb; color: #fff; padding: 7px; border: 1px solid #2563eb; text-align: left; }
+            th { background: #2563eb; color: #fff; padding: 7px; border: 1px solid #2563eb; text-align: start; }
             td { padding: 6px; border: 1px solid #d1d5db; color: #111827; vertical-align: top; }
             tfoot td { background: #f3f4f6; font-weight: 900; }
-            .amount { text-align: right; white-space: nowrap; }
+            .amount { direction: ltr; text-align: right; white-space: nowrap; }
             .debit { color: #b91c1c; font-weight: 800; }
             .credit { color: #15803d; font-weight: 800; }
             .signatures {
@@ -202,7 +228,7 @@ export default function EmployeeLedgerTable({
             }
           </style>
         </head>
-        <body>
+        <body dir="${escapeHtml(dir)}">
           ${html}
           <script>
             window.onload = function () { window.print(); };
@@ -218,52 +244,74 @@ export default function EmployeeLedgerTable({
   function handlePrintEntry(row: EmployeeLedgerTransactionRow) {
     const status = getBalanceStatus(row.runningBalance);
 
+    modulePrint.openPresentation({
+      documentType: "employee",
+      title: printLabel("employeeLedger.print.entryTitle"),
+      documentNo: printValue(row.referenceNo),
+      documentDate: printValue(row.transactionDate),
+      fields: [
+        { label: printLabel("employeeLedger.fields.employee"), value: printValue(row.employeeName) },
+        { label: printLabel("employeeLedger.fields.type"), value: printValue(row.employeeType) },
+        { label: printLabel("employeeLedger.fields.transactionType"), value: printValue(transactionTypeLabel(row.transactionType)) },
+        { label: printLabel("employeeLedger.fields.description"), value: printValue(row.description) },
+        { label: printLabel("employeeLedger.fields.paymentMethod"), value: printValue(row.paymentMethod) },
+        { label: printLabel("employeeLedger.fields.status"), value: printValue(status) },
+      ],
+      totals: [
+        { label: printLabel("employeeLedger.fields.debit"), value: printValue(formatAmount(row.debit)) },
+        { label: printLabel("employeeLedger.fields.credit"), value: printValue(formatAmount(row.credit)) },
+        { label: printLabel("employeeLedger.fields.runningBalance"), value: printValue(formatAmount(row.runningBalance)) },
+      ],
+      remarks: printValue(row.remarks),
+    }, () => openPrintWindow(`${t("employeeLedger.print.entryTitle")} - ${row.employeeName}`, `<table><tbody><tr><th>${escapeHtml(t("employeeLedger.fields.employee"))}</th><td>${escapeHtml(row.employeeName)}</td></tr><tr><th>${escapeHtml(t("employeeLedger.fields.transactionType"))}</th><td>${escapeHtml(transactionTypeLabel(row.transactionType))}</td></tr><tr><th>${escapeHtml(t("employeeLedger.fields.amount"))}</th><td>${escapeHtml(formatAmount(row.amount))}</td></tr><tr><th>${escapeHtml(t("employeeLedger.fields.debit"))}</th><td>${escapeHtml(formatAmount(row.debit))}</td></tr><tr><th>${escapeHtml(t("employeeLedger.fields.credit"))}</th><td>${escapeHtml(formatAmount(row.credit))}</td></tr><tr><th>${escapeHtml(t("employeeLedger.fields.runningBalance"))}</th><td>${escapeHtml(formatAmount(row.runningBalance))}</td></tr></tbody></table>`), addaId);
+    return;
+
     openPrintWindow(
-      `Employee Ledger Entry - ${row.employeeName}`,
+      `${t("employeeLedger.print.entryTitle")} - ${row.employeeName}`,
       `
         <div class="header">
           <div>
-            <h1>UT Software</h1>
-            <div class="subtitle">Employee Ledger Entry</div>
+            <h1>${escapeHtml(addaName)}</h1>
+            <div class="subtitle">${escapeHtml(t("employeeLedger.print.entryTitle"))}</div>
           </div>
           <div class="meta">
-            <div>Date: ${escapeHtml(row.transactionDate)}</div>
-            <div>Employee: ${escapeHtml(row.employeeName)}</div>
+            <div>${escapeHtml(t("employeeLedger.fields.date"))}: <span dir="ltr">${escapeHtml(row.transactionDate)}</span></div>
+            <div>${escapeHtml(t("employeeLedger.fields.employee"))}: ${escapeHtml(row.employeeName)}</div>
           </div>
         </div>
 
         <div class="summary" style="--columns: 3;">
           <div class="card">
-            <div class="label">Debit</div>
-            <div class="value">${escapeHtml(formatAmount(row.debit))}</div>
+            <div class="label">${escapeHtml(t("employeeLedger.fields.debit"))}</div>
+            <div class="value" dir="ltr">${escapeHtml(formatAmount(row.debit))}</div>
           </div>
           <div class="card">
-            <div class="label">Credit</div>
-            <div class="value">${escapeHtml(formatAmount(row.credit))}</div>
+            <div class="label">${escapeHtml(t("employeeLedger.fields.credit"))}</div>
+            <div class="value" dir="ltr">${escapeHtml(formatAmount(row.credit))}</div>
           </div>
           <div class="card">
-            <div class="label">Running Balance</div>
-            <div class="value">${escapeHtml(formatAmount(row.runningBalance))}</div>
+            <div class="label">${escapeHtml(t("employeeLedger.fields.runningBalance"))}</div>
+            <div class="value" dir="ltr">${escapeHtml(formatAmount(row.runningBalance))}</div>
           </div>
         </div>
 
         <table>
           <tbody>
-            <tr><th>Employee</th><td>${escapeHtml(row.employeeName)}</td></tr>
-            <tr><th>Employee Type</th><td>${escapeHtml(row.employeeType)}</td></tr>
-            <tr><th>Transaction Date</th><td>${escapeHtml(row.transactionDate)}</td></tr>
-            <tr><th>Transaction Type</th><td>${escapeHtml(row.transactionType)}</td></tr>
-            <tr><th>Description</th><td>${escapeHtml(row.description || "-")}</td></tr>
-            <tr><th>Payment Method</th><td>${escapeHtml(row.paymentMethod || "-")}</td></tr>
-            <tr><th>Reference</th><td>${escapeHtml(row.referenceNo || "-")}</td></tr>
-            <tr><th>Status</th><td>${escapeHtml(status)}</td></tr>
-            <tr><th>Remarks</th><td>${escapeHtml(row.remarks || "-")}</td></tr>
+            <tr><th>${escapeHtml(t("employeeLedger.fields.employee"))}</th><td>${escapeHtml(row.employeeName)}</td></tr>
+            <tr><th>${escapeHtml(t("employeeLedger.fields.employeeType"))}</th><td>${escapeHtml(row.employeeType)}</td></tr>
+            <tr><th>${escapeHtml(t("employeeLedger.fields.transactionDate"))}</th><td dir="ltr">${escapeHtml(row.transactionDate)}</td></tr>
+            <tr><th>${escapeHtml(t("employeeLedger.fields.transactionType"))}</th><td>${escapeHtml(transactionTypeLabel(row.transactionType))}</td></tr>
+            <tr><th>${escapeHtml(t("employeeLedger.fields.description"))}</th><td>${escapeHtml(row.description || "-")}</td></tr>
+            <tr><th>${escapeHtml(t("employeeLedger.fields.paymentMethod"))}</th><td>${escapeHtml(row.paymentMethod || "-")}</td></tr>
+            <tr><th>${escapeHtml(t("employeeLedger.fields.reference"))}</th><td dir="ltr">${escapeHtml(row.referenceNo || "-")}</td></tr>
+            <tr><th>${escapeHtml(t("employeeLedger.fields.status"))}</th><td>${escapeHtml(status)}</td></tr>
+            <tr><th>${escapeHtml(t("employeeLedger.fields.remarks"))}</th><td>${escapeHtml(row.remarks || "-")}</td></tr>
           </tbody>
         </table>
 
         <div class="signatures">
-          <div class="signature">Prepared By</div>
-          <div class="signature">Employee Signature</div>
+          <div class="signature">${escapeHtml(t("employeeLedger.print.preparedBy"))}</div>
+          <div class="signature">${escapeHtml(t("employeeLedger.print.employeeSignature"))}</div>
         </div>
       `
     );
@@ -271,7 +319,7 @@ export default function EmployeeLedgerTable({
 
   function handlePrintEmployeeLedger(row: EmployeeLedgerTransactionRow) {
     const employeeRows = sortRowsByEmployeeLedgerOrder(
-      rows.filter((item) => item.employeeId === row.employeeId)
+      reportRows.filter((item) => item.employeeId === row.employeeId)
     );
     const firstEmployeeRow = employeeRows[0] ?? null;
     const lastEmployeeRow = employeeRows[employeeRows.length - 1] ?? null;
@@ -290,48 +338,70 @@ export default function EmployeeLedgerTable({
     );
     const closingBalance = lastEmployeeRow?.runningBalance ?? 0;
 
+    const presentation: ModulePrintPresentation = {
+      documentType: "employee",
+      title: printLabel("employeeLedger.title"),
+      subtitle: bilingual(row.employeeName, row.employeeName),
+      fields: [
+        { label: printLabel("employeeLedger.fields.type"), value: printValue(row.employeeType) },
+        { label: printLabel("employeeLedger.print.dateRange"), value: printValue(`${filters.fromDate || t("employeeLedger.filters.all")} — ${filters.toDate || t("employeeLedger.filters.all")}`) },
+      ],
+      totals: [
+        { label: printLabel("employeeLedger.fields.openingBalance"), value: printValue(formatAmount(openingBalance)) },
+        { label: printLabel("employeeLedger.fields.periodDebit"), value: printValue(formatAmount(periodDebit)) },
+        { label: printLabel("employeeLedger.fields.periodCredit"), value: printValue(formatAmount(periodCredit)) },
+        { label: printLabel("employeeLedger.fields.closingBalance"), value: printValue(formatAmount(closingBalance)) },
+      ],
+      tables: [{
+        columns: [printLabel("employeeLedger.fields.date"), printLabel("employeeLedger.fields.employee"), printLabel("employeeLedger.fields.type"), printLabel("employeeLedger.fields.transactionType"), printLabel("employeeLedger.fields.description"), printLabel("employeeLedger.fields.paymentMethod"), printLabel("employeeLedger.fields.reference"), printLabel("employeeLedger.fields.debit"), printLabel("employeeLedger.fields.credit"), printLabel("employeeLedger.fields.runningBalance"), printLabel("employeeLedger.fields.status")],
+        rows: employeeRows.map((item) => [printValue(item.transactionDate), printValue(item.employeeName), printValue(item.employeeType), printValue(transactionTypeLabel(item.transactionType)), printValue(item.description), printValue(item.paymentMethod), printValue(item.referenceNo), printValue(formatAmount(item.debit)), printValue(formatAmount(item.credit)), printValue(formatAmount(item.runningBalance)), printValue(getBalanceStatus(item.runningBalance))]),
+      }],
+    };
+    modulePrint.openPresentation(presentation, () => openPrintWindow(`${t("employeeLedger.title")} - ${row.employeeName}`, `<table><tbody>${getPrintableRows(employeeRows)}</tbody></table>`), addaId);
+    return;
+
     openPrintWindow(
-      `Employee Ledger - ${row.employeeName}`,
+      `${t("employeeLedger.title")} - ${row.employeeName}`,
       `
         <div class="header">
           <div>
-            <h1>UT Software</h1>
-            <div class="subtitle">Employee Ledger</div>
+              <h1>${escapeHtml(addaName)}</h1>
+            <div class="subtitle">${escapeHtml(t("employeeLedger.title"))}</div>
           </div>
           <div class="meta">
-            <div>Employee: ${escapeHtml(row.employeeName)}</div>
-            <div>Type: ${escapeHtml(row.employeeType)}</div>
-            <div>Date Range: ${escapeHtml(filters.fromDate || "All")} to ${escapeHtml(filters.toDate || "All")}</div>
+            <div>${escapeHtml(t("employeeLedger.fields.employee"))}: ${escapeHtml(row.employeeName)}</div>
+            <div>${escapeHtml(t("employeeLedger.fields.type"))}: ${escapeHtml(row.employeeType)}</div>
+            <div>${escapeHtml(t("employeeLedger.print.dateRange"))}: <span dir="ltr">${escapeHtml(filters.fromDate || t("employeeLedger.filters.all"))} ${escapeHtml(t("employeeLedger.print.to"))} ${escapeHtml(filters.toDate || t("employeeLedger.filters.all"))}</span></div>
           </div>
         </div>
 
         <div class="summary" style="--columns: 4;">
-          <div class="card"><div class="label">Opening Balance</div><div class="value">${escapeHtml(formatAmount(openingBalance))}</div></div>
-          <div class="card"><div class="label">Period Debit</div><div class="value">${escapeHtml(formatAmount(periodDebit))}</div></div>
-          <div class="card"><div class="label">Period Credit</div><div class="value">${escapeHtml(formatAmount(periodCredit))}</div></div>
-          <div class="card"><div class="label">Closing Balance</div><div class="value">${escapeHtml(formatAmount(closingBalance))}</div></div>
+          <div class="card"><div class="label">${escapeHtml(t("employeeLedger.fields.openingBalance"))}</div><div class="value" dir="ltr">${escapeHtml(formatAmount(openingBalance))}</div></div>
+          <div class="card"><div class="label">${escapeHtml(t("employeeLedger.fields.periodDebit"))}</div><div class="value" dir="ltr">${escapeHtml(formatAmount(periodDebit))}</div></div>
+          <div class="card"><div class="label">${escapeHtml(t("employeeLedger.fields.periodCredit"))}</div><div class="value" dir="ltr">${escapeHtml(formatAmount(periodCredit))}</div></div>
+          <div class="card"><div class="label">${escapeHtml(t("employeeLedger.fields.closingBalance"))}</div><div class="value" dir="ltr">${escapeHtml(formatAmount(closingBalance))}</div></div>
         </div>
 
         <table>
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Employee</th>
-              <th>Type</th>
-              <th>Transaction Type</th>
-              <th>Description</th>
-              <th>Payment Method</th>
-              <th>Reference</th>
-              <th>Debit</th>
-              <th>Credit</th>
-              <th>Running Balance</th>
-              <th>Status</th>
+              <th>${escapeHtml(t("employeeLedger.fields.date"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.employee"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.type"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.transactionType"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.description"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.paymentMethod"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.reference"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.debit"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.credit"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.runningBalance"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.status"))}</th>
             </tr>
           </thead>
           <tbody>${getPrintableRows(employeeRows)}</tbody>
           <tfoot>
             <tr>
-              <td colspan="7">Totals</td>
+              <td colspan="7">${escapeHtml(t("employeeLedger.totals"))}</td>
               <td class="amount debit">${escapeHtml(formatAmount(periodDebit))}</td>
               <td class="amount credit">${escapeHtml(formatAmount(periodCredit))}</td>
               <td class="amount">${escapeHtml(formatAmount(closingBalance))}</td>
@@ -344,49 +414,70 @@ export default function EmployeeLedgerTable({
   }
 
   function handlePrintFullReport() {
+    const presentation: ModulePrintPresentation = {
+      documentType: "employee",
+      title: printLabel("employeeLedger.print.reportTitle"),
+      fields: [
+        { label: printLabel("employeeLedger.print.dateRange"), value: printValue(`${filters.fromDate || t("employeeLedger.filters.all")} — ${filters.toDate || t("employeeLedger.filters.all")}`) },
+        { label: printLabel("employeeLedger.fields.totalRecords"), value: printValue(reportRows.length) },
+      ],
+      totals: [
+        { label: printLabel("employeeLedger.cards.totalDebit"), value: printValue(formatAmount(totalDebit)) },
+        { label: printLabel("employeeLedger.cards.totalCredit"), value: printValue(formatAmount(totalCredit)) },
+        { label: printLabel("employeeLedger.cards.companyPayable"), value: printValue(formatAmount(latestBalances.companyPayable)) },
+        { label: printLabel("employeeLedger.cards.employeeReceivable"), value: printValue(formatAmount(latestBalances.employeeReceivable)) },
+        { label: printLabel("employeeLedger.fields.netClosingBalance"), value: printValue(formatAmount(netClosingBalance)) },
+      ],
+      tables: [{
+        columns: [printLabel("employeeLedger.fields.date"), printLabel("employeeLedger.fields.employee"), printLabel("employeeLedger.fields.type"), printLabel("employeeLedger.fields.transactionType"), printLabel("employeeLedger.fields.description"), printLabel("employeeLedger.fields.paymentMethod"), printLabel("employeeLedger.fields.reference"), printLabel("employeeLedger.fields.debit"), printLabel("employeeLedger.fields.credit"), printLabel("employeeLedger.fields.runningBalance"), printLabel("employeeLedger.fields.status")],
+        rows: reportRows.map((item) => [printValue(item.transactionDate), printValue(item.employeeName), printValue(item.employeeType), printValue(transactionTypeLabel(item.transactionType)), printValue(item.description), printValue(item.paymentMethod), printValue(item.referenceNo), printValue(formatAmount(item.debit)), printValue(formatAmount(item.credit)), printValue(formatAmount(item.runningBalance)), printValue(getBalanceStatus(item.runningBalance))]),
+      }],
+    };
+    modulePrint.openPresentation(presentation, () => openPrintWindow(t("employeeLedger.print.reportTitle"), `<table><tbody>${getPrintableRows(reportRows)}</tbody></table>`), addaId);
+    return;
     openPrintWindow(
-      "Employee Ledger Report",
+      t("employeeLedger.print.reportTitle"),
       `
         <div class="header">
           <div>
-            <h1>UT Software</h1>
-            <div class="subtitle">Employee Ledger Report</div>
+              <h1>${escapeHtml(addaName)}</h1>
+            <div class="subtitle">${escapeHtml(t("employeeLedger.print.reportTitle"))}</div>
           </div>
           <div class="meta">
-            <div>Printed: ${escapeHtml(new Date().toLocaleString())}</div>
-            <div>Date Range: ${escapeHtml(filters.fromDate || "All")} to ${escapeHtml(filters.toDate || "All")}</div>
-            <div>Total Records: ${rows.length}</div>
+            <div>${escapeHtml(t("employeeLedger.print.printed"))}: <span dir="ltr">${escapeHtml(new Date().toLocaleString())}</span></div>
+            <div>${escapeHtml(t("employeeLedger.print.dateRange"))}: <span dir="ltr">${escapeHtml(filters.fromDate || t("employeeLedger.filters.all"))} ${escapeHtml(t("employeeLedger.print.to"))} ${escapeHtml(filters.toDate || t("employeeLedger.filters.all"))}</span></div>
+            <div>${escapeHtml(t("employeeLedger.fields.totalRecords"))}: <span dir="ltr">${reportRows.length}</span></div>
           </div>
         </div>
 
         <div class="summary" style="--columns: 5;">
-          <div class="card"><div class="label">Total Debit</div><div class="value">${escapeHtml(formatAmount(totalDebit))}</div></div>
-          <div class="card"><div class="label">Total Credit</div><div class="value">${escapeHtml(formatAmount(totalCredit))}</div></div>
-          <div class="card"><div class="label">Company Payable</div><div class="value">${escapeHtml(formatAmount(latestBalances.companyPayable))}</div></div>
-          <div class="card"><div class="label">Employee Receivable</div><div class="value">${escapeHtml(formatAmount(latestBalances.employeeReceivable))}</div></div>
-          <div class="card"><div class="label">Net Closing Balance</div><div class="value">${escapeHtml(formatAmount(netClosingBalance))}</div></div>
+          <div class="card"><div class="label">${escapeHtml(t("employeeLedger.cards.totalDebit"))}</div><div class="value" dir="ltr">${escapeHtml(formatAmount(totalDebit))}</div></div>
+          <div class="card"><div class="label">${escapeHtml(t("employeeLedger.cards.totalCredit"))}</div><div class="value" dir="ltr">${escapeHtml(formatAmount(totalCredit))}</div></div>
+          <div class="card"><div class="label">${escapeHtml(t("employeeLedger.cards.companyPayable"))}</div><div class="value" dir="ltr">${escapeHtml(formatAmount(latestBalances.companyPayable))}</div></div>
+          <div class="card"><div class="label">${escapeHtml(t("employeeLedger.cards.employeeReceivable"))}</div><div class="value" dir="ltr">${escapeHtml(formatAmount(latestBalances.employeeReceivable))}</div></div>
+          <div class="card"><div class="label">${escapeHtml(t("employeeLedger.fields.netClosingBalance"))}</div><div class="value" dir="ltr">${escapeHtml(formatAmount(netClosingBalance))}</div></div>
         </div>
 
         <table>
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Employee</th>
-              <th>Type</th>
-              <th>Transaction Type</th>
-              <th>Description</th>
-              <th>Payment Method</th>
-              <th>Reference</th>
-              <th>Debit</th>
-              <th>Credit</th>
-              <th>Running Balance</th>
-              <th>Status</th>
+              <th>${escapeHtml(t("employeeLedger.fields.date"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.employee"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.type"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.transactionType"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.description"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.paymentMethod"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.reference"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.debit"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.credit"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.runningBalance"))}</th>
+              <th>${escapeHtml(t("employeeLedger.fields.status"))}</th>
             </tr>
           </thead>
-          <tbody>${getPrintableRows(rows)}</tbody>
+          <tbody>${getPrintableRows(reportRows)}</tbody>
           <tfoot>
             <tr>
-              <td colspan="7">Totals</td>
+              <td colspan="7">${escapeHtml(t("employeeLedger.totals"))}</td>
               <td class="amount debit">${escapeHtml(formatAmount(totalDebit))}</td>
               <td class="amount credit">${escapeHtml(formatAmount(totalCredit))}</td>
               <td class="amount">${escapeHtml(formatAmount(netClosingBalance))}</td>
@@ -399,14 +490,14 @@ export default function EmployeeLedgerTable({
   }
 
   return (
-    <div className="rounded-xl bg-white p-6 shadow-md md:p-8">
+    <div dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
-            Employee Ledger Transactions
+            {t("employeeLedger.recordsTitle")}
           </h2>
           <p className="mt-1 text-sm font-medium text-gray-900">
-            Running balance by employee with debit and credit transaction view.
+            {t("employeeLedger.recordsDescription")}
           </p>
         </div>
 
@@ -415,7 +506,7 @@ export default function EmployeeLedgerTable({
           onClick={handlePrintFullReport}
           className="rounded-lg bg-blue-600 px-5 py-3 text-sm font-bold text-white hover:bg-blue-700"
         >
-          Print Full Ledger Report
+          {t("employeeLedger.actions.printFullReport")}
         </button>
       </div>
 
@@ -427,37 +518,37 @@ export default function EmployeeLedgerTable({
 
       {isLoading ? (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center font-bold text-gray-900">
-          Loading employee ledger...
+          {t("employeeLedger.loading")}
         </div>
-      ) : rows.length === 0 ? (
+      ) : reportRows.length === 0 ? (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center font-bold text-gray-900">
-          No ledger transactions found.
+          {t("employeeLedger.empty")}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="min-w-[1700px] w-full border-collapse bg-white text-sm text-gray-900">
             <thead className="bg-blue-600 text-white">
               <tr>
-                <th className="p-3 text-left font-bold">Date</th>
-                <th className="p-3 text-left font-bold">Employee</th>
-                <th className="p-3 text-left font-bold">Type</th>
-                <th className="p-3 text-left font-bold">Transaction Type</th>
-                <th className="p-3 text-left font-bold">Description</th>
-                <th className="p-3 text-left font-bold">Payment Method</th>
-                <th className="p-3 text-left font-bold">Reference</th>
-                <th className="p-3 text-right font-bold">Debit</th>
-                <th className="p-3 text-right font-bold">Credit</th>
-                <th className="p-3 text-right font-bold">Running Balance</th>
-                <th className="p-3 text-left font-bold">Status</th>
-                <th className="p-3 text-left font-bold">Remarks</th>
-                <th className="p-3 text-left font-bold">Actions</th>
+                <th className="p-3 text-start font-bold">{t("employeeLedger.fields.date")}</th>
+                <th className="p-3 text-start font-bold">{t("employeeLedger.fields.employee")}</th>
+                <th className="p-3 text-start font-bold">{t("employeeLedger.fields.type")}</th>
+                <th className="p-3 text-start font-bold">{t("employeeLedger.fields.transactionType")}</th>
+                <th className="p-3 text-start font-bold">{t("employeeLedger.fields.description")}</th>
+                <th className="p-3 text-start font-bold">{t("employeeLedger.fields.paymentMethod")}</th>
+                <th className="p-3 text-start font-bold">{t("employeeLedger.fields.reference")}</th>
+                <th className="p-3 text-end font-bold">{t("employeeLedger.fields.debit")}</th>
+                <th className="p-3 text-end font-bold">{t("employeeLedger.fields.credit")}</th>
+                <th className="p-3 text-end font-bold">{t("employeeLedger.fields.runningBalance")}</th>
+                <th className="p-3 text-start font-bold">{t("employeeLedger.fields.status")}</th>
+                <th className="p-3 text-start font-bold">{t("employeeLedger.fields.remarks")}</th>
+                <th className="p-3 text-start font-bold">{t("common.actions.title")}</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-gray-200">
               {rows.map((row) => (
                 <tr key={row.id} className="hover:bg-blue-50">
-                  <td className="p-3 font-medium text-gray-900">
+                  <td dir="ltr" className="p-3 font-medium text-gray-900">
                     {row.transactionDate || "-"}
                   </td>
                   <td className="p-3 font-bold text-gray-900">
@@ -467,27 +558,28 @@ export default function EmployeeLedgerTable({
                     {row.employeeType}
                   </td>
                   <td className="p-3 font-medium text-gray-900">
-                    {row.transactionType}
+                    {transactionTypeLabel(row.transactionType)}
                   </td>
                   <td className="max-w-[280px] p-3 font-medium text-gray-900">
                     <div className="whitespace-normal break-words">
                       {row.description || "-"}
                     </div>
                   </td>
-                  <td className="p-3 font-medium text-gray-900">
+                  <td dir="ltr" className="p-3 font-medium text-gray-900">
                     {row.paymentMethod || "-"}
                   </td>
                   <td className="p-3 font-medium text-gray-900">
                     {row.referenceNo || "-"}
                   </td>
-                  <td className="p-3 text-right font-bold text-red-700">
+                  <td dir="ltr" className="p-3 text-end font-bold text-red-700">
                     {row.debit > 0 ? formatAmount(row.debit) : "-"}
                   </td>
-                  <td className="p-3 text-right font-bold text-green-700">
+                  <td dir="ltr" className="p-3 text-end font-bold text-green-700">
                     {row.credit > 0 ? formatAmount(row.credit) : "-"}
                   </td>
                   <td
-                    className={`p-3 text-right font-extrabold ${getBalanceTextClass(
+                    dir="ltr"
+                    className={`p-3 text-end font-extrabold ${getBalanceTextClass(
                       row.runningBalance
                     )}`}
                   >
@@ -511,17 +603,27 @@ export default function EmployeeLedgerTable({
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => handlePrintEntry(row)}
-                        className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-bold text-white hover:bg-black"
+                        aria-label={`${t("common.actions.details")}: ${row.employeeName}`}
+                        onClick={() => setViewingRow(row)}
+                        className="rounded-lg bg-gray-700 px-3 py-2 text-xs font-bold text-white hover:bg-gray-800"
                       >
-                        Print Entry
+                        {t("common.actions.details")}
                       </button>
                       <button
                         type="button"
+                        aria-label={`${t("employeeLedger.actions.printEntry")}: ${row.employeeName}`}
+                        onClick={() => handlePrintEntry(row)}
+                        className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-bold text-white hover:bg-black"
+                      >
+                        {t("employeeLedger.actions.printEntry")}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`${t("employeeLedger.actions.printEmployeeLedger")}: ${row.employeeName}`}
                         onClick={() => handlePrintEmployeeLedger(row)}
                         className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700"
                       >
-                        Print Employee Ledger
+                        {t("employeeLedger.actions.printEmployeeLedger")}
                       </button>
                     </div>
                   </td>
@@ -533,18 +635,19 @@ export default function EmployeeLedgerTable({
               <tr>
                 <td
                   colSpan={7}
-                  className="p-3 text-right font-extrabold text-gray-900"
+                  className="p-3 text-end font-extrabold text-gray-900"
                 >
-                  Totals
+                  {t("employeeLedger.totals")}
                 </td>
-                <td className="p-3 text-right font-extrabold text-red-700">
+                <td dir="ltr" className="p-3 text-end font-extrabold text-red-700">
                   {formatAmount(totalDebit)}
                 </td>
-                <td className="p-3 text-right font-extrabold text-green-700">
+                <td dir="ltr" className="p-3 text-end font-extrabold text-green-700">
                   {formatAmount(totalCredit)}
                 </td>
                 <td
-                  className={`p-3 text-right font-extrabold ${getBalanceTextClass(
+                  dir="ltr"
+                  className={`p-3 text-end font-extrabold ${getBalanceTextClass(
                     netClosingBalance
                   )}`}
                 >
@@ -565,6 +668,42 @@ export default function EmployeeLedgerTable({
           </table>
         </div>
       )}
+
+      {!isLoading && !errorMessage && reportRows.length > 0 && (
+        <nav aria-label={t("common.pagination.page")} className="mt-5 flex flex-wrap items-center justify-between gap-3">
+          <span className="font-semibold">{t("common.pagination.page")} <span dir="ltr">{currentPage}</span> {t("common.pagination.of")} <span dir="ltr">{totalPages}</span></span>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" aria-label={t("common.pagination.previous")} disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold text-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600">{t("common.pagination.previous")}</button>
+            {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
+              <button key={pageNumber} type="button" aria-label={`${t("common.pagination.page")} ${pageNumber}`} aria-current={pageNumber === currentPage ? "page" : undefined} onClick={() => setPage(pageNumber)} className={`h-10 min-w-10 rounded-lg border px-3 font-bold ${pageNumber === currentPage ? "border-blue-600 bg-blue-600 text-white" : "border-gray-300 bg-white text-gray-900"}`}><span dir="ltr">{pageNumber}</span></button>
+            ))}
+            <button type="button" aria-label={t("common.pagination.next")} disabled={currentPage === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold text-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600">{t("common.pagination.next")}</button>
+          </div>
+        </nav>
+      )}
+
+      {viewingRow && (
+        <EmployeeAccountingDetails
+          title={t("employeeLedger.detailsTitle")}
+          description={viewingRow.employeeName}
+          onClose={() => setViewingRow(null)}
+          details={[
+            { label: t("employeeLedger.fields.date"), value: viewingRow.transactionDate, technical: true },
+            { label: t("employeeLedger.fields.employee"), value: viewingRow.employeeName },
+            { label: t("employeeLedger.fields.type"), value: viewingRow.employeeType },
+            { label: t("employeeLedger.fields.transactionType"), value: transactionTypeLabel(viewingRow.transactionType) },
+            { label: t("employeeLedger.fields.description"), value: viewingRow.description },
+            { label: t("employeeLedger.fields.amount"), value: formatAmount(viewingRow.amount), technical: true },
+            { label: t("employeeLedger.fields.debit"), value: formatAmount(viewingRow.debit), technical: true },
+            { label: t("employeeLedger.fields.credit"), value: formatAmount(viewingRow.credit), technical: true },
+            { label: t("employeeLedger.fields.runningBalance"), value: formatAmount(viewingRow.runningBalance), technical: true },
+            { label: t("employeeLedger.fields.paymentMethod"), value: viewingRow.paymentMethod },
+            { label: t("employeeLedger.fields.reference"), value: viewingRow.referenceNo, technical: true },
+            { label: t("employeeLedger.fields.remarks"), value: viewingRow.remarks },
+          ]}
+        />
+      )}
+      {modulePrint.dialog}
     </div>
   );
 }

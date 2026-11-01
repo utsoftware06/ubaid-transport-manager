@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f3f6fb;
+  --foreground: #14213a;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -12,18 +13,162 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+.dashboard-hero-art {
+  background-image:
+    url("/images/dashboard/ut-hero.png"),
+    url("/images/dashboard/ut-hero-placeholder.svg");
+  background-position: right center, center;
+  background-repeat: no-repeat;
+  background-size: cover, cover;
+}
+@media (max-width: 767px) {
+  .dashboard-hero-art {
+    background-position: 72% center, center;
+  }
+}
+
+.sidebar-transport-art {
+  background-image:
+    linear-gradient(180deg, #0a1d40 0%, rgb(10 29 64 / 24%) 48%, rgb(7 24 49 / 68%) 100%),
+    url("/images/dashboard/ut-hero.png");
+  background-position: center, 86% 58%;
+  background-repeat: no-repeat;
+  background-size: cover, auto 520px;
+  opacity: 0.42;
+}
+
+@media screen {
+  .ut-module-page {
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    color: #14213a;
+  }
+
+  .ut-module-page h1:not(.text-white) {
+    color: #14213a;
+    font-size: 1.625rem;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    line-height: 1.2;
+  }
+
+  .ut-module-page h1.ut-page-heading-title {
+    font-size: 1.25rem;
+    line-height: 1.2;
+  }
+
+  .ut-module-page h2:not(.text-white) {
+    color: #1e3150;
+    font-size: 1.125rem;
+    font-weight: 750;
+    letter-spacing: -0.01em;
+  }
+
+  .ut-module-page h3:not(.text-white) {
+    color: #243852;
+    font-weight: 700;
+  }
+
+  .ut-module-page :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]) {
+    min-width: 0;
+    min-height: 42px;
+    border-color: #cbd5e1;
+    border-radius: 0.625rem;
+    background-color: #fff;
+    color: #14213a;
+    font-size: 0.875rem;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .ut-module-page textarea {
+    min-height: 5.5rem;
+  }
+
+  .ut-module-page :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]):focus-visible {
+    border-color: #3b82f6;
+    outline: none;
+    box-shadow: 0 0 0 3px rgb(59 130 246 / 16%);
+  }
+
+  .ut-module-page :is(input, select, textarea):disabled {
+    cursor: not-allowed;
+    background-color: #f1f5f9;
+    color: #64748b;
+    opacity: 0.8;
+  }
+
+  .ut-module-page :is(button, a) {
+    transition-duration: 150ms;
+  }
+
+  .ut-module-page :is(button, a):focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+  }
+
+  .ut-module-page [class*="rounded-"][class*="bg-white"] {
+    border-color: #e4ebf4;
+    border-radius: 1rem;
+  }
+
+  .ut-module-page [class*="shadow-"] {
+    box-shadow: 0 5px 18px rgb(18 44 77 / 7%);
+  }
+
+  .ut-module-page [class~="p-8"],
+  .ut-module-page [class~="md:p-8"] {
+    padding: 1.25rem;
+  }
+
+  .ut-module-page table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.8125rem;
+  }
+
+  .ut-module-page thead th {
+    background-color: #eff5fc;
+    color: #354762;
+    font-size: 0.75rem;
+    font-weight: 750;
+    letter-spacing: 0.015em;
+  }
+
+  .ut-module-page tbody td {
+    border-bottom: 1px solid #edf1f6;
+  }
+
+  .ut-module-page tbody tr:hover {
+    background-color: #f8fbff;
+  }
+
+  .ut-module-page :is(div, section):has(> table) {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  @media (max-width: 640px) {
+    .ut-module-page h1:not(.text-white) {
+      font-size: 1.4rem;
+    }
+
+    .ut-module-page [class~="p-6"],
+    .ut-module-page [class~="md:p-6"],
+    .ut-module-page [class~="p-8"],
+    .ut-module-page [class~="md:p-8"] {
+      padding: 1rem;
+    }
+  }
+}
+
 @media print {
 
   body * {
@@ -42,4 +187,568 @@ body {
     width: 100%;
   }
 
+  #print-template-foundation-preview,
+  #print-template-foundation-preview * {
+    visibility: visible !important;
+  }
+
+  #print-template-foundation-preview {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  #ledger-statement-print,
+  #ledger-statement-print * {
+    visibility: visible !important;
+  }
+
+  #ledger-statement-print {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .print-foundation-no-print {
+    display: none !important;
+  }
+
+  .print-foundation-sheet {
+    box-sizing: border-box;
+    min-height: 0;
+    padding: 5mm;
+    color: #111 !important;
+    background: #fff !important;
+    font-family: system-ui, "Noto Nastaliq Urdu", "Noto Naskh Arabic", serif;
+    font-size: 10pt;
+    line-height: 1.45;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .print-foundation-header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4mm;
+    padding-bottom: 4mm;
+    border-bottom: 1.5pt solid #111;
+  }
+
+  .print-foundation-logo {
+    width: 22mm;
+    height: 22mm;
+    object-fit: contain;
+  }
+
+  .print-foundation-brand h1 {
+    margin: 0;
+    font-size: 18pt;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+
+  .print-foundation-brand p {
+    margin: 1mm 0 0;
+    font-size: 8.5pt;
+  }
+
+  .print-foundation-serial {
+    max-width: 36mm;
+    text-align: end;
+    overflow-wrap: anywhere;
+    font-size: 8pt;
+  }
+
+  .print-foundation-serial span {
+    display: block;
+    font-weight: 800;
+  }
+
+  .print-foundation-title-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4mm;
+    margin-top: 5mm;
+    padding-bottom: 2mm;
+    border-bottom: 0.5pt solid #555;
+  }
+
+  .print-foundation-title-row h2 {
+    margin: 0;
+    font-size: 15pt;
+  }
+
+  .print-foundation-title-row span {
+    font-size: 8pt;
+    font-weight: 700;
+  }
+
+  .print-foundation-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2.5mm;
+    margin-top: 4mm;
+  }
+
+  .print-foundation-field {
+    min-height: 13mm;
+    padding: 2.5mm;
+    border: 0.5pt solid #555;
+    break-inside: avoid;
+  }
+
+  .print-foundation-field-wide {
+    grid-column: 1 / -1;
+  }
+
+  .print-foundation-field span {
+    display: block;
+    margin-bottom: 1mm;
+    font-size: 8pt;
+    font-weight: 700;
+  }
+
+  .print-foundation-field strong {
+    display: block;
+    overflow-wrap: anywhere;
+    font-size: 10pt;
+  }
+
+  .print-foundation-notice {
+    margin: 4mm 0 0;
+    padding: 2mm;
+    border: 1pt dashed #333;
+    text-align: center;
+    font-size: 9pt;
+    font-weight: 800;
+  }
+
+  .print-foundation-footer {
+    margin-top: 9mm;
+  }
+
+  .print-foundation-custom-footer {
+    border-top: 0.5pt solid #777;
+    padding-top: 2mm;
+    overflow-wrap: anywhere;
+  }
+
+  .print-foundation-signatures {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8mm;
+    margin-top: 14mm;
+  }
+
+  .print-foundation-signatures div {
+    min-height: 13mm;
+    padding-top: 2mm;
+    border-top: 0.5pt solid #111;
+    text-align: center;
+    font-size: 8pt;
+    font-weight: 700;
+  }
+
+  .print-foundation-disclaimer {
+    margin: 4mm 0 0;
+    border-top: 0.5pt solid #aaa;
+    padding-top: 2mm;
+    text-align: center;
+    font-size: 7pt;
+  }
+
+  .print-foundation-watermark {
+    display: none;
+  }
+
+}
+
+.print-foundation-sheet {
+  position: relative;
+  box-sizing: border-box;
+  width: min(100%, 190mm);
+  min-height: 255mm;
+  margin: 0 auto;
+  padding: 12mm;
+  overflow: hidden;
+  border: 1px solid #d1d5db;
+  box-shadow: 0 8px 28px rgb(15 23 42 / 12%);
+  color: #111 !important;
+  background: #fff !important;
+  font-family: system-ui, "Noto Nastaliq Urdu", "Noto Naskh Arabic", serif;
+  font-size: 10pt;
+  line-height: 1.45;
+}
+
+.print-foundation-sheet-a5-portrait {
+  width: min(100%, 148mm);
+  min-height: 210mm;
+}
+
+.print-foundation-sheet-a4-landscape {
+  width: min(100%, 277mm);
+  min-height: 190mm;
+}
+
+.print-foundation-sheet-a5-landscape {
+  width: min(100%, 210mm);
+  min-height: 148mm;
+}
+
+.print-foundation-sheet-a4-portrait {
+  width: min(100%, 190mm);
+  min-height: 255mm;
+}
+
+.print-foundation-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4mm;
+  padding-bottom: 4mm;
+  border-bottom: 1.5pt solid #111;
+}
+
+.print-foundation-logo {
+  width: 22mm;
+  height: 22mm;
+  object-fit: contain;
+}
+
+.print-foundation-brand h1 {
+  margin: 0;
+  font-size: 18pt;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.print-foundation-brand p {
+  margin: 1mm 0 0;
+  font-size: 8.5pt;
+}
+
+.print-foundation-serial {
+  max-width: 36mm;
+  text-align: end;
+  overflow-wrap: anywhere;
+  font-size: 8pt;
+}
+
+.print-foundation-serial span {
+  display: block;
+  font-weight: 800;
+}
+
+.print-foundation-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4mm;
+  margin-top: 5mm;
+  padding-bottom: 2mm;
+  border-bottom: 0.5pt solid #555;
+}
+
+.print-foundation-title-row h2 {
+  margin: 0;
+  font-size: 15pt;
+}
+
+.print-foundation-title-row span {
+  font-size: 8pt;
+  font-weight: 700;
+}
+
+.print-foundation-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2.5mm;
+  margin-top: 4mm;
+}
+
+.print-foundation-field {
+  min-height: 13mm;
+  padding: 2.5mm;
+  border: 0.5pt solid #555;
+  break-inside: avoid;
+}
+
+.print-foundation-field-wide {
+  grid-column: 1 / -1;
+}
+
+.print-foundation-field span {
+  display: block;
+  margin-bottom: 1mm;
+  font-size: 8pt;
+  font-weight: 700;
+}
+
+.print-foundation-field strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 10pt;
+}
+
+.print-foundation-notice {
+  margin: 4mm 0 0;
+  padding: 2mm;
+  border: 1pt dashed #333;
+  text-align: center;
+  font-size: 9pt;
+  font-weight: 800;
+}
+
+.print-foundation-footer {
+  margin-top: 9mm;
+}
+
+.print-foundation-custom-footer {
+  border-top: 0.5pt solid #777;
+  padding-top: 2mm;
+  overflow-wrap: anywhere;
+}
+
+.print-foundation-signatures {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8mm;
+  margin-top: 14mm;
+}
+
+.print-foundation-signatures div {
+  min-height: 13mm;
+  padding-top: 2mm;
+  border-top: 0.5pt solid #111;
+  text-align: center;
+  font-size: 8pt;
+  font-weight: 700;
+}
+
+.print-foundation-disclaimer {
+  margin: 4mm 0 0;
+  border-top: 0.5pt solid #aaa;
+  padding-top: 2mm;
+  text-align: center;
+  font-size: 7pt;
+}
+
+.print-foundation-watermark {
+  display: none;
+}
+
+.print-foundation-logo-fallback {
+  display: inline-block;
+  margin-top: 2mm;
+  font-size: 8pt;
+  font-weight: 700;
+}
+
+@media print {
+  .print-foundation-sheet {
+    width: 100% !important;
+    min-height: 0 !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 5mm !important;
+    overflow: visible !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+}
+
+/* Individual Bilty stationery layouts. The same semantic HTML renders preview and print. */
+.bilty-template-page {
+  box-sizing: border-box;
+  width: min(100%, 190mm);
+  min-height: 277mm;
+  margin: 0 auto;
+  padding: 6mm;
+  color: #111 !important;
+  background: #fff !important;
+  border: 1px solid #777;
+  font-family: Arial, "Noto Naskh Arabic", "Noto Nastaliq Urdu", serif;
+  font-size: 9pt;
+  line-height: 1.38;
+  overflow-wrap: anywhere;
+}
+.bilty-template-page[lang="ur"] { font-family: "Noto Nastaliq Urdu", "Noto Naskh Arabic", Arial, serif; line-height: 1.65; }
+.bilty-template-sample-mark { margin-bottom: 2mm; padding: 1.5mm; border: 1px dashed #333; text-align: center; font: 800 7pt/1.2 Arial, sans-serif; letter-spacing: .04em; }
+.bilty-template-a5-portrait { width: min(100%, 148mm); min-height: 210mm; }
+.bilty-template-a5-landscape { width: min(100%, 210mm); min-height: 148mm; }
+.bilty-template-a4-landscape { width: min(100%, 277mm); min-height: 190mm; }
+.bilty-template-a4-portrait { width: min(100%, 190mm); min-height: 277mm; }
+.bilty-template-page h1, .bilty-template-page h2, .bilty-template-page h3, .bilty-template-page p { margin-top: 0; }
+.bilty-adda-brand { display: flex; align-items: center; gap: 3mm; min-width: 0; }
+.bilty-template-logo { flex: 0 0 auto; width: 19mm; height: 19mm; object-fit: contain; }
+.bilty-adda-brand-copy { min-width: 0; }
+.bilty-adda-brand h1 { margin: 0 0 1mm; font-size: 15pt; font-weight: 900; line-height: 1.2; overflow-wrap: anywhere; }
+.bilty-adda-brand p { margin: .7mm 0 0; font-size: 7.8pt; line-height: 1.25; }
+.bilty-adda-brand small { font-size: 7pt; }
+.bilty-truck-illustration { display: block; width: 27mm; height: auto; object-fit: contain; }
+.bilty-number-box { display: grid; align-content: center; gap: 1mm; min-width: 36mm; padding: 2mm; border: 2px solid #17212b; text-align: center; }
+.bilty-number-box small { font-size: 7pt; font-weight: 800; }
+.bilty-number-box > strong { font: 900 16pt/1.1 Arial, sans-serif; overflow-wrap: anywhere; }
+.bilty-number-box > span { display: block; font-size: 7pt; line-height: 1.25; }
+.bilty-document-heading { display: grid; justify-items: center; gap: .5mm; min-width: 0; text-align: center; }
+.bilty-document-heading h2 { margin: 0; color: #111; font-size: 18pt; font-weight: 900; line-height: 1.3; }
+.bilty-document-heading > span { font: 800 8pt/1.2 Arial, sans-serif; letter-spacing: .08em; }
+.bilty-copy-badge { display: inline-block; padding: .8mm 2mm; border: 1px solid currentColor; font-size: 7pt; line-height: 1.2; }
+.bilty-contact-lines { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 4mm; margin-top: 2mm; }
+.bilty-contact-lines p { display: flex; flex-wrap: wrap; gap: 1mm 2mm; margin: 0; padding: 1.5mm 1mm; border-bottom: 1px dotted #555; font-size: 8pt; }
+.bilty-contact-lines small { font-size: 7.5pt; }
+.bilty-info-field { display: grid; align-content: start; gap: 1mm; min-width: 0; }
+.bilty-info-field > b { font-size: 7pt; font-weight: 800; line-height: 1.2; }
+.bilty-info-field > span { min-width: 0; overflow-wrap: anywhere; }
+.bilty-template-container { display: flex; flex-wrap: wrap; gap: 1.5mm 4mm; margin-top: 2.5mm; padding: 2mm; border: 1px solid #666; }
+.bilty-template-container h3 { width: 100%; margin: 0; font-size: 8pt; }
+.bilty-template-container span { font-size: 7.7pt; }
+.bilty-goods-section { margin-top: 3mm; }
+.bilty-goods-section > h3 { margin: 0; padding: 1.5mm 2mm; border: 1px solid #222; border-bottom: 0; font-size: 9pt; font-weight: 900; }
+.bilty-template-items { width: 100%; margin: 0; border-collapse: collapse; table-layout: fixed; }
+.bilty-template-items th, .bilty-template-items td { padding: 1.5mm; border: 1px solid #333; text-align: start; vertical-align: top; overflow-wrap: anywhere; hyphens: auto; }
+.bilty-template-items th { background: #f1f3f5; font-size: 7.8pt; font-weight: 900; }
+.bilty-template-items td { font-size: 8.6pt; }
+.bilty-template-items th:nth-child(1) { width: 6%; }
+.bilty-template-items th:nth-child(2) { width: 35%; }
+.bilty-template-items th:nth-child(3) { width: 11%; }
+.bilty-template-items th:nth-child(4) { width: 12%; }
+.bilty-template-items th:nth-child(5) { width: 12%; }
+.bilty-template-items th:nth-child(6) { width: 24%; }
+.bilty-template-items thead { display: table-header-group; }
+.bilty-template-items tr { break-inside: auto; page-break-inside: auto; }
+.bilty-template-financial { margin-top: 3mm; }
+.bilty-template-financial > h3 { margin: 0 0 1.5mm; padding-bottom: 1mm; border-bottom: 1px solid #333; font-size: 9pt; font-weight: 900; }
+.bilty-template-financial dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.5mm; margin: 0; }
+.bilty-template-financial dl > div { display: grid; align-content: start; gap: 1mm; min-width: 0; padding: 1.6mm; border: 1px solid #777; break-inside: avoid; }
+.bilty-template-financial dt { font-size: 7.4pt; line-height: 1.25; }
+.bilty-template-financial dd { margin: 0; font: 800 9pt/1.2 Arial, sans-serif; unicode-bidi: isolate; overflow-wrap: anywhere; }
+.bilty-template-note { margin: 2.5mm 0 0; padding-top: 1.5mm; border-top: 1px solid #aaa; font-size: 7pt; }
+.bilty-template-signatures { display: grid; grid-template-columns: repeat(auto-fit, minmax(30mm, 1fr)); gap: 4mm; margin-top: 8mm; break-inside: avoid; page-break-inside: avoid; }
+.bilty-template-signatures > div { display: grid; align-content: end; gap: 1mm; min-height: 14mm; text-align: center; font-size: 7.5pt; }
+.bilty-template-signatures > div > span { display: block; min-height: 7mm; border-bottom: 1px solid #333; }
+.bilty-template-signatures .bilty-stamp-space > span { min-height: 14mm; border: 1px solid #777; }
+.bilty-template-footer { margin: 2.5mm 0 0; padding-top: 1.5mm; border-top: 1px solid #777; text-align: center; font-size: 7.5pt; overflow-wrap: anywhere; }
+
+/* Traditional Pakistani transport pad: boxed Urdu masthead, truck mark and ruled form. */
+.bilty-template-traditional_pad { padding: 4mm; border: 2px solid #202020; }
+.bilty-traditional-head { padding: 2.5mm; border: 1px solid #222; }
+.bilty-traditional-title-row { display: grid; grid-template-columns: 29mm minmax(0, 1fr) 38mm; align-items: center; gap: 2mm; }
+.bilty-traditional-title .bilty-document-heading h2 { font-size: 21pt; }
+.bilty-traditional-title .bilty-document-heading > span { font-size: 8.5pt; }
+.bilty-traditional-title .bilty-copy-badge { margin-top: 1mm; }
+.bilty-traditional-brand-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3mm; margin-top: 2.5mm; padding-top: 2mm; border-top: 1px solid #555; }
+.bilty-traditional-brand-row .bilty-template-logo { width: 14mm; height: 14mm; }
+.bilty-traditional-brand-row .bilty-adda-brand h1 { font-size: 13pt; }
+.bilty-traditional-copy { padding: 1mm 2mm; border: 1px solid #333; font-size: 8pt; font-weight: 900; }
+.bilty-traditional-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 2.5mm; border-top: 1px solid #222; border-inline-start: 1px solid #222; }
+.bilty-traditional-fields .bilty-info-field { min-height: 12mm; padding: 1.5mm; border-inline-end: 1px solid #222; border-bottom: 1px solid #222; }
+.bilty-traditional-fields .bilty-info-field > span { font-size: 8.8pt; }
+.bilty-traditional-goods { margin-top: 3mm; }
+.bilty-traditional-goods .bilty-template-items th, .bilty-traditional-goods .bilty-template-items td { border-width: 1px; padding: 1.8mm; }
+.bilty-template-traditional_pad .bilty-template-financial dl { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* Modern corporate stationery: landscape identity header and paired panels. */
+.bilty-template-modern_professional { border: 1px solid #53677a; padding: 5mm; }
+.bilty-modern-head { padding-bottom: 3mm; border-bottom: 2px solid #244c70; }
+.bilty-modern-branding, .bilty-detailed-branding { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4mm; }
+.bilty-modern-branding .bilty-adda-brand h1, .bilty-detailed-branding .bilty-adda-brand h1 { color: #173d5d; font-size: 18pt; }
+.bilty-modern-branding .bilty-number-box, .bilty-detailed-branding .bilty-number-box { min-width: 40mm; border-color: #244c70; }
+.bilty-modern-title-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 7mm; margin-top: 3mm; }
+.bilty-modern-title-row .bilty-document-heading { justify-items: start; text-align: start; }
+.bilty-modern-title-row .bilty-document-heading h2 { font-size: 16pt; }
+.bilty-modern-route { display: grid; gap: 1mm; padding: 2.5mm 4mm; border-inline-start: 3px solid #244c70; background: #f1f5f8; }
+.bilty-modern-route small { font-size: 7pt; font-weight: 900; letter-spacing: .06em; }
+.bilty-modern-route strong { font-size: 13pt; }
+.bilty-modern-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-top: 4mm; }
+.bilty-modern-panel { padding: 2.5mm; border: 1px solid #71879a; }
+.bilty-modern-panel > h3 { margin: 0 0 2mm; padding-bottom: 1mm; border-bottom: 1px solid #71879a; color: #173d5d; font-size: 8.5pt; }
+.bilty-modern-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2mm 3mm; }
+.bilty-modern-field-grid .bilty-info-field { padding: 1mm; border-bottom: 1px solid #d2d9df; }
+.bilty-modern-field-grid .bilty-info-field > span { font-size: 8.5pt; }
+.bilty-modern-goods { margin-top: 4mm; }
+.bilty-template-modern_professional .bilty-goods-section > h3 { border-color: #244c70; background: #edf2f6; }
+.bilty-template-modern_professional .bilty-template-financial dl { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.bilty-template-modern_professional .bilty-template-financial dl > div { border-color: #71879a; }
+.bilty-template-modern_professional .bilty-copy-badge { border-color: #244c70; color: #173d5d; }
+
+/* Compact pad: A5 receipt-book proportions, thin ruled rows and restrained spacing. */
+.bilty-template-compact_pad { padding: 3.5mm; border: 1.5px solid #222; font-size: 8.5pt; }
+.bilty-compact-head { padding-bottom: 2mm; border-bottom: 2px solid #222; }
+.bilty-compact-top { display: grid; grid-template-columns: 23mm minmax(0, 1fr) 32mm; align-items: center; gap: 2mm; }
+.bilty-compact-top .bilty-truck-illustration { width: 22mm; }
+.bilty-compact-top .bilty-template-logo { width: 12mm; height: 12mm; }
+.bilty-compact-top .bilty-adda-brand { gap: 1.5mm; }
+.bilty-compact-top .bilty-adda-brand h1 { margin-bottom: .5mm; font-size: 11pt; }
+.bilty-compact-top .bilty-adda-brand p { font-size: 6.8pt; }
+.bilty-compact-top .bilty-number-box { min-width: 31mm; padding: 1.5mm; border-width: 1.5px; }
+.bilty-compact-top .bilty-number-box > strong { font-size: 12pt; }
+.bilty-compact-heading { margin-top: 1.5mm; }
+.bilty-compact-heading .bilty-document-heading { display: flex; flex-wrap: wrap; justify-content: center; gap: 1mm 3mm; }
+.bilty-compact-heading .bilty-document-heading h2 { font-size: 13pt; }
+.bilty-compact-heading .bilty-document-heading > span { font-size: 7pt; }
+.bilty-compact-heading .bilty-copy-badge { font-size: 6.5pt; }
+.bilty-compact-route { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 2mm; margin-top: 2mm; padding: 2mm; border: 1px solid #333; }
+.bilty-compact-route > b { font-size: 7pt; }
+.bilty-compact-route > strong { font-size: 10pt; }
+.bilty-compact-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 1.5mm; border-top: 1px solid #444; border-inline-start: 1px solid #444; }
+.bilty-compact-fields .bilty-info-field { min-height: 8mm; padding: 1mm 1.5mm; border-inline-end: 1px solid #444; border-bottom: 1px solid #444; }
+.bilty-compact-fields .bilty-info-field > b { font-size: 6.7pt; }
+.bilty-compact-fields .bilty-info-field > span { font-size: 8pt; }
+.bilty-compact-goods { margin-top: 2mm; }
+.bilty-compact-goods > h3 { padding: 1mm; font-size: 8pt; }
+.bilty-template-compact_pad .bilty-template-items th, .bilty-template-compact_pad .bilty-template-items td { padding: 1mm; }
+.bilty-template-compact_pad .bilty-template-items th { font-size: 7pt; }
+.bilty-template-compact_pad .bilty-template-items td { font-size: 7.8pt; }
+.bilty-template-compact_pad .bilty-template-financial { margin-top: 2mm; }
+.bilty-template-compact_pad .bilty-template-financial dl { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1mm; }
+.bilty-template-compact_pad .bilty-template-financial dl > div { padding: 1mm; }
+.bilty-template-compact_pad .bilty-template-financial dt { font-size: 6.8pt; }
+.bilty-template-compact_pad .bilty-template-financial dd { font-size: 8pt; }
+.bilty-template-compact_pad .bilty-template-signatures { gap: 2mm; margin-top: 5mm; }
+.bilty-template-compact_pad .bilty-template-signatures > div { min-height: 11mm; font-size: 7pt; }
+
+/* Detailed A4: complete office-record hierarchy with roomy, paired data panels. */
+.bilty-template-detailed_a4 { padding: 7mm; border: 1px solid #50677b; }
+.bilty-detailed-head { padding-bottom: 3mm; border-bottom: 2px solid #244c70; }
+.bilty-detailed-branding .bilty-adda-brand h1 { font-size: 20pt; }
+.bilty-detailed-title { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8mm; margin-top: 3mm; }
+.bilty-detailed-title .bilty-document-heading { justify-items: start; text-align: start; }
+.bilty-detailed-title .bilty-document-heading h2 { font-size: 17pt; }
+.bilty-detailed-route { display: grid; gap: 1mm; padding: 2.5mm 4mm; border: 1px solid #71879a; }
+.bilty-detailed-route > b { font-size: 7pt; }
+.bilty-detailed-route > strong { font-size: 13pt; }
+.bilty-detailed-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin-top: 4mm; }
+.bilty-detailed-panel { padding: 3mm; border: 1px solid #50677b; }
+.bilty-detailed-panel > h3 { margin: 0 0 2mm; padding-bottom: 1.5mm; border-bottom: 1px solid #50677b; color: #173d5d; font-size: 9pt; }
+.bilty-detailed-field-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0 4mm; }
+.bilty-detailed-field-list .bilty-info-field { min-height: 11mm; padding: 1.3mm .5mm; border-bottom: 1px solid #d4dce2; }
+.bilty-detailed-field-list .bilty-info-field > b { font-size: 7.2pt; }
+.bilty-detailed-field-list .bilty-info-field > span { font-size: 9pt; }
+.bilty-detailed-goods { margin-top: 5mm; }
+.bilty-template-detailed_a4 .bilty-goods-section > h3 { border-color: #244c70; background: #edf2f6; }
+.bilty-template-detailed_a4 .bilty-template-items th, .bilty-template-detailed_a4 .bilty-template-items td { padding: 2mm; }
+.bilty-template-detailed_a4 .bilty-template-financial dl { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2mm; }
+.bilty-template-detailed_a4 .bilty-template-financial dl > div { padding: 2mm; border-color: #71879a; }
+.bilty-print-controls { color: #0f172a; }
+
+@media print {
+  body * { visibility: hidden; }
+  #bilty-template-print, #bilty-template-print * { visibility: visible !important; }
+  #bilty-template-print { position: absolute !important; inset: 0 auto auto 0 !important; width: 100% !important; max-width: none !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; border: 0 !important; box-shadow: none !important; overflow: visible !important; }
+  .bilty-template-page { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .bilty-template-items thead { display: table-header-group; }
+  .bilty-template-items tfoot { display: table-footer-group; }
+  .bilty-template-items tr { break-inside: auto; page-break-inside: auto; }
+  .bilty-template-financial dl > div { break-inside: avoid; page-break-inside: avoid; }
+  .bilty-template-signatures { break-inside: avoid; page-break-inside: avoid; }
+  .bilty-print-controls { display: none !important; }
 }
