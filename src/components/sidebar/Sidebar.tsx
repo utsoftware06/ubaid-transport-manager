@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   ChevronLeft,
   ChevronRight,
@@ -17,7 +17,6 @@ import {
   type UserRole,
 } from "@/config/navigation";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { supabase } from "@/lib/supabase/client";
 
 type SidebarProps = {
   role: UserRole;
@@ -27,6 +26,9 @@ type SidebarProps = {
   onCollapsedChange: (collapsed: boolean) => void;
   mobileOpen: boolean;
   onMobileOpenChange: (open: boolean) => void;
+  onSignOut: () => void;
+  isSigningOut: boolean;
+  logoutError: string | null;
 };
 
 type SidebarContentProps = {
@@ -97,14 +99,14 @@ export default function Sidebar({
   onCollapsedChange,
   mobileOpen,
   onMobileOpenChange,
+  onSignOut,
+  isSigningOut,
+  logoutError,
 }: SidebarProps) {
   const pathname = usePathname();
-  const router = useRouter();
   const { t, dir } = useLanguage();
   const isRTL = dir === "rtl";
-  const [isSigningOut, setIsSigningOut] = useState(false);
   const [logoAvailable, setLogoAvailable] = useState(true);
-  const signOutInFlightRef = useRef(false);
   const displayName =
     profileName || userEmail.split("@")[0] || t("dashboard.shell.account");
 
@@ -139,30 +141,6 @@ export default function Sidebar({
 
   function closeMobileSidebar() {
     onMobileOpenChange(false);
-  }
-
-  async function handleSignOut() {
-    if (signOutInFlightRef.current) return;
-    signOutInFlightRef.current = true;
-    setIsSigningOut(true);
-
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error("Unable to sign out:", error);
-        alert(t("auth.messages.logoutFailed"));
-        return;
-      }
-
-      onMobileOpenChange(false);
-      router.replace("/login");
-    } catch (error) {
-      console.error("Unable to sign out:", error);
-      alert(t("auth.messages.logoutFailed"));
-    } finally {
-      signOutInFlightRef.current = false;
-      setIsSigningOut(false);
-    }
   }
 
   function renderSidebarContent({
@@ -357,11 +335,23 @@ export default function Sidebar({
             )}
           </div>
 
+          {logoutError && (
+            <p
+              role="alert"
+              aria-live="polite"
+              className="rounded-lg border border-red-300/40 bg-red-950/30 px-2.5 py-2 text-xs font-semibold text-red-100"
+            >
+              {logoutError}
+            </p>
+          )}
+
           <button
             type="button"
-            onClick={() => void handleSignOut()}
+            onClick={() => void onSignOut()}
             disabled={isSigningOut}
             title={collapsed && !isMobile ? t("auth.logout") : undefined}
+            aria-label={isSigningOut ? t("auth.loggingOut") : t("auth.logout")}
+            aria-busy={isSigningOut}
             className={[
               "flex min-h-10 w-full items-center rounded-xl text-sm font-bold text-blue-50 transition duration-150 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300",
               collapsed && !isMobile ? "justify-center px-2" : "gap-3 px-3",

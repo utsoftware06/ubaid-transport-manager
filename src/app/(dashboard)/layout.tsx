@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import Sidebar from "@/components/sidebar/Sidebar";
@@ -38,6 +38,46 @@ function AuthenticatedDashboard({
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [authAccessError, setAuthAccessError] =
     useState<AuthAccessError>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+  const signOutInFlightRef = useRef(false);
+
+  const clearUserClientState = useCallback(() => {
+    setRole(null);
+    setProfileName("");
+    setUserEmail("");
+    setAuthAccessError(null);
+    setMobileSidebarOpen(false);
+    setSidebarCollapsed(false);
+    setLogoutError(null);
+  }, []);
+
+  async function handleSignOut() {
+    if (signOutInFlightRef.current) return;
+
+    signOutInFlightRef.current = true;
+    setIsSigningOut(true);
+    setLogoutError(null);
+
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error("Unable to sign out:", error);
+        setLogoutError(t("auth.messages.logoutFailed"));
+        return;
+      }
+
+      clearUserClientState();
+      router.replace("/login");
+      router.refresh();
+    } catch (error) {
+      console.error("Unable to sign out:", error);
+      setLogoutError(t("auth.messages.logoutFailed"));
+    } finally {
+      signOutInFlightRef.current = false;
+      setIsSigningOut(false);
+    }
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -101,8 +141,11 @@ function AuthenticatedDashboard({
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_OUT") {
-        setRole(null);
-        router.replace("/login");
+        clearUserClientState();
+        if (!signOutInFlightRef.current) {
+          router.replace("/login");
+          router.refresh();
+        }
       }
     });
 
@@ -110,7 +153,7 @@ function AuthenticatedDashboard({
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [router]);
+  }, [clearUserClientState, router]);
 
   const routeAllowed =
     role !== null && isNavigationRouteAllowed(pathname, role);
@@ -164,6 +207,9 @@ function AuthenticatedDashboard({
           onCollapsedChange={setSidebarCollapsed}
           mobileOpen={mobileSidebarOpen}
           onMobileOpenChange={setMobileSidebarOpen}
+          onSignOut={handleSignOut}
+          isSigningOut={isSigningOut}
+          logoutError={logoutError}
         />
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">
           <DashboardTopbar
@@ -178,6 +224,9 @@ function AuthenticatedDashboard({
                 setMobileSidebarOpen(true);
               }
             }}
+            onSignOut={handleSignOut}
+            isSigningOut={isSigningOut}
+            logoutError={logoutError}
           />
           <main className="min-w-0 flex-1 overflow-x-hidden px-4 pb-6 pt-5 sm:px-6 lg:px-8 lg:pb-8">
             {children}

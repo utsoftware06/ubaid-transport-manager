@@ -41,8 +41,6 @@ type ExpenseItemRecord = {
   amount: number | string;
   payment_method: string;
   remarks: string | null;
-  receipt_url: string | null;
-  receipt_name: string | null;
 };
 
 type DieselEntryRecord = {
@@ -180,7 +178,6 @@ type Props = {
   onCreateAdjustment: (expense: ExpenseVoucher) => void;
   onDelete: (expense: ExpenseVoucher) => void;
   onPrint: (expense: ExpenseVoucher) => void;
-  onPreviewReceipt: (receiptUrl: string) => void;
   isDeleting: boolean;
   finalizingVoucherId: number | null;
 };
@@ -259,7 +256,6 @@ export default function ExpenseTable({
   onCreateAdjustment,
   onDelete,
   onPrint,
-  onPreviewReceipt,
   isDeleting,
   finalizingVoucherId,
 }: Props) {
@@ -739,7 +735,6 @@ export default function ExpenseTable({
                     <th className="p-3 text-end font-bold">{t("common.amount")}</th>
                     <th className="p-3 text-start font-bold">{t("expenses.items.paymentMethod")}</th>
                     <th className="p-3 text-start font-bold">{t("common.remarks")}</th>
-                    <th className="p-3 text-start font-bold">{t("common.receipt")}</th>
                   </tr>
                 </thead>
 
@@ -810,21 +805,6 @@ export default function ExpenseTable({
                                 </div>
                               </div>
                             </div>
-                          )}
-                        </td>
-                        <td className="p-3 font-semibold">
-                          {item.receipt_url ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onPreviewReceipt(item.receipt_url ?? "")
-                              }
-                              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-gray-900 hover:bg-gray-50"
-                            >
-                              {t("expenses.actions.previewReceipt")}
-                            </button>
-                          ) : (
-                            "-"
                           )}
                         </td>
                       </tr>

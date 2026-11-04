@@ -11,7 +11,6 @@ export type VoucherPrintExpense = {
   amount: VoucherMoney;
   paymentMethod: string | null;
   remarks: string | null;
-  receiptName: string | null;
   sourceDetails: string[];
 };
 
@@ -159,8 +158,8 @@ export function createSyntheticVoucherPresentation(
       { id: "sample-freight-2", tripType: "local", amount: 0, description: "Sample local leg" },
     ] : [],
     expenseItems: [
-      { id: "sample-expense-1", expenseClass: "regular_trip", expenseType: "Fuel", amount: 0, paymentMethod: "Cash", remarks: "Synthetic sample", receiptName: null, sourceDetails: [] },
-      { id: "sample-expense-2", expenseClass: "regular_trip", expenseType: "Toll Tax", amount: 0, paymentMethod: "Cash", remarks: null, receiptName: null, sourceDetails: [] },
+      { id: "sample-expense-1", expenseClass: "regular_trip", expenseType: "Fuel", amount: 0, paymentMethod: "Cash", remarks: "Synthetic sample", sourceDetails: [] },
+      { id: "sample-expense-2", expenseClass: "regular_trip", expenseType: "Toll Tax", amount: 0, paymentMethod: "Cash", remarks: null, sourceDetails: [] },
     ],
     unassignedSourceReferences: [],
     summary: {

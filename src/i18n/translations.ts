@@ -631,11 +631,32 @@ export const translations = {
       logout: "Logout",
       loggingOut: "Logging out...",
       login: {
-        title: "UT Software Login",
+        title: "Sign In to Your Adda",
         submit: "Login",
         submitting: "Logging in...",
         forgotPassword: "Forgot your password?",
         createAccount: "Account access",
+        brandSubtitle: "Ubaid Transport Manager",
+        heroTitle: "Transport Adda Management",
+        heroSystem: "System",
+        heroDescription: "Bilty · Voucher · Parchi · Accounts · Ledgers · Reports",
+        features: {
+          loadingBilty: "Loading & Bilty",
+          accountsLedgers: "Accounts & Ledgers",
+          vouchersParchi: "Vouchers & Parchi",
+          reportsProfit: "Reports & Profit",
+          multiAdda: "Multi-Adda (SaaS)",
+        },
+        secureMultiAdda: "Secure multi-Adda access",
+        cardDescription: "Access your transport management system",
+        languageLabel: "Choose language",
+        english: "English",
+        urdu: "اردو",
+        emailPlaceholder: "name@example.com",
+        passwordPlaceholder: "Enter password",
+        showPassword: "Show password",
+        hidePassword: "Hide password",
+        footer: "© UT Software · Secure Transport Management",
       },
       register: {
         title: "Create UT Software Account",
@@ -651,6 +672,23 @@ export const translations = {
           "Enter your email address and we will send you a password reset link.",
         submit: "Send reset link",
         sending: "Sending reset link...",
+      },
+      resetPassword: {
+        title: "Choose a new password",
+        description: "Enter and confirm the new password for your account.",
+        password: "New password",
+        confirmPassword: "Confirm new password",
+        submit: "Update password",
+        submitting: "Updating password...",
+        requestNewLink: "Request a new reset link",
+        invalidLink:
+          "This recovery link is invalid, expired, or already used. Request a new reset link.",
+        passwordMismatch: "The passwords do not match.",
+        passwordTooShort: "Use a password with at least 8 characters.",
+        cleanupFailed:
+          "Your password was updated, but this session could not be cleared. Close this page and sign in again.",
+        updateFailed:
+          "We could not update the password. The recovery link may have expired. Request a new link and try again.",
       },
       messages: {
         accountCreated: "UT Software account created successfully!",
@@ -668,6 +706,7 @@ export const translations = {
           "We could not send the reset email. Please try again in a moment.",
         resetSent:
           "If an account exists for this email, a password reset link has been sent.",
+        passwordUpdated: "Your password has been updated. Sign in with your new password.",
       },
     },
     printLabels: {
@@ -3047,7 +3086,7 @@ export const translations = {
     },
     expenses: {
       title: "Vouchers",
-      description: "Create vouchers, upload receipts, record fuel details and synchronize Voucher totals with Cashbook.",
+      description: "Create vouchers, record fuel details and synchronize Voucher totals with Cashbook.",
       manual: {
         voucherType: "Voucher Type",
         biltyBased: "Bilty Based",
@@ -3200,7 +3239,7 @@ export const translations = {
       },
       items: {
         title: "Voucher Items",
-        description: "Add voucher rows, attach receipts, and enter diesel details for fuel.",
+        description: "Add voucher rows and enter diesel details for fuel.",
         add: "Add Voucher Item",
         addRegular: "Add Regular Expense",
         addPeriodic: "Add Vehicle Expense",
@@ -3250,7 +3289,7 @@ export const translations = {
       },
       table: {
         title: "Vouchers",
-        description: "Complete voucher list with receipts, diesel details and actions.",
+        description: "Complete voucher list with diesel details and actions.",
         searchPlaceholder: "Search voucher, loading, vehicle, driver, type, amount or description...",
         voucherNo: "Voucher No",
         totalAmount: "Total Amount",
@@ -3283,7 +3322,6 @@ export const translations = {
       },
       actions: {
         saveVoucher: "Save Voucher",
-        previewReceipt: "Preview Receipt",
         printVoucher: "Print Voucher",
         removeOrArchive: "Delete / Archive",
         finalizeVoucher: "Finalize Chakkar",
@@ -3311,8 +3349,6 @@ export const translations = {
         totalPositive: "Total amount must be greater than 0 for a Fuel voucher item.",
         paidNonNegative: "Paid amount cannot be negative for a Fuel voucher item.",
         paidExceedsTotal: "Paid amount cannot exceed total amount for a Fuel voucher item.",
-        receiptType: "Only JPG, PNG, WEBP and PDF files are allowed.",
-        receiptSize: "Receipt file must be 5 MB or less.",
       },
       messages: {
         savedSuccessfully: "Voucher saved successfully!",
@@ -3970,11 +4006,32 @@ export const translations = {
       logout: "لاگ آؤٹ",
       loggingOut: "لاگ آؤٹ ہو رہا ہے...",
       login: {
-        title: "UT Software لاگ اِن",
+        title: "اپنے اڈے میں لاگ اِن کریں",
         submit: "لاگ اِن",
         submitting: "لاگ اِن ہو رہا ہے...",
         forgotPassword: "پاس ورڈ بھول گئے؟",
         createAccount: "اکاؤنٹ تک رسائی",
+        brandSubtitle: "Ubaid Transport Manager",
+        heroTitle: "ٹرانسپورٹ اڈہ مینجمنٹ",
+        heroSystem: "سسٹم",
+        heroDescription: "بلٹی · واؤچر · پرچی · اکاؤنٹس · لیجرز · رپورٹس",
+        features: {
+          loadingBilty: "لوڈنگ اور بلٹی",
+          accountsLedgers: "اکاؤنٹس اور لیجرز",
+          vouchersParchi: "واؤچر اور پرچی",
+          reportsProfit: "رپورٹس اور منافع",
+          multiAdda: "ملٹی اڈہ (SaaS)",
+        },
+        secureMultiAdda: "محفوظ ملٹی اڈہ رسائی",
+        cardDescription: "اپنے ٹرانسپورٹ مینجمنٹ سسٹم تک رسائی حاصل کریں",
+        languageLabel: "زبان منتخب کریں",
+        english: "English",
+        urdu: "اردو",
+        emailPlaceholder: "name@example.com",
+        passwordPlaceholder: "پاس ورڈ درج کریں",
+        showPassword: "پاس ورڈ دکھائیں",
+        hidePassword: "پاس ورڈ چھپائیں",
+        footer: "© UT Software · محفوظ ٹرانسپورٹ مینجمنٹ",
       },
       register: {
         title: "UT Software اکاؤنٹ بنائیں",
@@ -3990,6 +4047,23 @@ export const translations = {
           "اپنا ای میل پتہ درج کریں، ہم آپ کو پاس ورڈ دوبارہ مقرر کرنے کا لنک بھیجیں گے۔",
         submit: "ری سیٹ لنک بھیجیں",
         sending: "ری سیٹ لنک بھیجا جا رہا ہے...",
+      },
+      resetPassword: {
+        title: "نیا پاس ورڈ منتخب کریں",
+        description: "اپنے اکاؤنٹ کے لیے نیا پاس ورڈ درج کریں اور تصدیق کریں۔",
+        password: "نیا پاس ورڈ",
+        confirmPassword: "نئے پاس ورڈ کی تصدیق کریں",
+        submit: "پاس ورڈ اپ ڈیٹ کریں",
+        submitting: "پاس ورڈ اپ ڈیٹ ہو رہا ہے...",
+        requestNewLink: "نیا ری سیٹ لنک حاصل کریں",
+        invalidLink:
+          "یہ پاس ورڈ ری سیٹ لنک غلط، مدت ختم، یا پہلے استعمال ہو چکا ہے۔ نیا ری سیٹ لنک حاصل کریں۔",
+        passwordMismatch: "دونوں پاس ورڈ ایک جیسے نہیں ہیں۔",
+        passwordTooShort: "کم از کم 8 حروف کا پاس ورڈ استعمال کریں۔",
+        cleanupFailed:
+          "پاس ورڈ اپ ڈیٹ ہو گیا ہے، لیکن سیشن ختم نہیں ہو سکا۔ یہ صفحہ بند کر کے دوبارہ لاگ اِن کریں۔",
+        updateFailed:
+          "پاس ورڈ اپ ڈیٹ نہیں ہو سکا۔ ممکن ہے ری سیٹ لنک کی مدت ختم ہو گئی ہو۔ نیا لنک لے کر دوبارہ کوشش کریں۔",
       },
       messages: {
         accountCreated: "UT Software اکاؤنٹ کامیابی سے بن گیا!",
@@ -4007,6 +4081,7 @@ export const translations = {
           "ری سیٹ ای میل نہیں بھیجی جا سکی۔ کچھ دیر بعد دوبارہ کوشش کریں۔",
         resetSent:
           "اگر اس ای میل کا اکاؤنٹ موجود ہے تو پاس ورڈ ری سیٹ لنک بھیج دیا گیا ہے۔",
+        passwordUpdated: "آپ کا پاس ورڈ اپ ڈیٹ ہو گیا ہے۔ نئے پاس ورڈ سے لاگ اِن کریں۔",
       },
     },
     printLabels: {
@@ -6865,7 +6940,7 @@ export const translations = {
     },
     expenses: {
       title: "واؤچرز",
-      description: "واؤچرز بنائیں، رسیدیں اپ لوڈ کریں، ایندھن کی تفصیلات درج کریں اور واؤچر کی کل رقم کیش بک سے ہم آہنگ کریں۔",
+      description: "واؤچرز بنائیں، ایندھن کی تفصیلات درج کریں اور واؤچر کی کل رقم کیش بک سے ہم آہنگ کریں۔",
       manual: {
         voucherType: "واؤچر کی قسم",
         biltyBased: "بلٹی کی بنیاد پر",
@@ -7018,7 +7093,7 @@ export const translations = {
       },
       items: {
         title: "واؤچر آئٹمز",
-        description: "واؤچر کی قطاریں، رسیدیں اور ایندھن کی تفصیلات درج کریں۔",
+        description: "واؤچر کی قطاریں اور ایندھن کی تفصیلات درج کریں۔",
         add: "واؤچر آئٹم شامل کریں",
         addRegular: "عام ٹرپ خرچ شامل کریں",
         addPeriodic: "گاڑی کا خرچ شامل کریں",
@@ -7068,7 +7143,7 @@ export const translations = {
       },
       table: {
         title: "واؤچرز",
-        description: "رسیدوں، ڈیزل کی تفصیلات اور کارروائیوں سمیت واؤچر فہرست۔",
+        description: "ڈیزل کی تفصیلات اور کارروائیوں سمیت واؤچر فہرست۔",
         searchPlaceholder: "واؤچر، لوڈنگ، گاڑی، ڈرائیور، قسم، رقم یا تفصیل تلاش کریں...",
         voucherNo: "واؤچر نمبر",
         totalAmount: "کل رقم",
@@ -7101,7 +7176,6 @@ export const translations = {
       },
       actions: {
         saveVoucher: "واؤچر محفوظ کریں",
-        previewReceipt: "رسید کا پیش منظر",
         printVoucher: "واؤچر پرنٹ کریں",
         removeOrArchive: "حذف / آرکائیو",
         finalizeVoucher: "چکر فائنل کریں",
@@ -7129,8 +7203,6 @@ export const translations = {
         totalPositive: "ایندھن واؤچر آئٹم کی کل رقم صفر سے زیادہ ہونی چاہیے۔",
         paidNonNegative: "ایندھن واؤچر آئٹم کی ادا شدہ رقم منفی نہیں ہو سکتی۔",
         paidExceedsTotal: "ایندھن واؤچر آئٹم کی ادا شدہ رقم کل رقم سے زیادہ نہیں ہو سکتی۔",
-        receiptType: "صرف JPG، PNG، WEBP اور PDF فائلوں کی اجازت ہے۔",
-        receiptSize: "رسید کی فائل 5 ایم بی یا اس سے کم ہونی چاہیے۔",
       },
       messages: {
         savedSuccessfully: "واؤچر کامیابی سے محفوظ ہو گیا!",

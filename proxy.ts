@@ -84,10 +84,14 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/vehicles") ||
     pathname.startsWith("/workshop");
 
+  const isRecoveryRoute =
+    pathname === "/auth/callback" || pathname === "/reset-password";
+
   const isAuthRoute =
     pathname === "/login" ||
     pathname === "/register" ||
-    pathname === "/forgot-password";
+    pathname === "/forgot-password" ||
+    isRecoveryRoute;
 
   // Login ke baghair dashboard open na ho.
   if (!user && isDashboardRoute) {
@@ -99,7 +103,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // Login user ko dobara login/register page par na bhejo.
-  if (user && isAuthRoute) {
+  if (user && isAuthRoute && !isRecoveryRoute) {
     const dashboardUrl = request.nextUrl.clone();
     dashboardUrl.pathname = "/dashboard";
     dashboardUrl.search = "";

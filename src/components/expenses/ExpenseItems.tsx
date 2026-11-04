@@ -38,12 +38,6 @@ import VoucherDriverEarningSelector, {
   type VoucherDriverEarningOption,
 } from "./VoucherDriverEarningSelector";
 
-type ReceiptStatus =
-  | "idle"
-  | "uploading"
-  | "replacing"
-  | "deleting";
-
 type ExpenseItemRow = {
   rowId: number;
   dbId?: number;
@@ -52,11 +46,6 @@ type ExpenseItemRow = {
   amount: string;
   paymentMethod: string;
   remarks: string;
-  receiptUrl: string | null;
-  receiptName: string | null;
-  receiptFile: File | null;
-  receiptStatus: ReceiptStatus;
-  receiptError: string;
   petrolPumpId: string;
   liters: string;
   rate: string;
@@ -165,19 +154,6 @@ type Props = {
     value: string
   ) => void;
 
-  onReceiptSelected: (
-    rowId: number,
-    file: File
-  ) => void;
-
-  onReceiptDelete: (
-    rowId: number
-  ) => void;
-
-  onPreviewReceipt: (
-    receiptUrl: string
-  ) => void;
-
   onSave: () => void;
 
   isSaving: boolean;
@@ -281,10 +257,6 @@ export default function ExpenseItems({
   onDeleteExpenseItem,
   onExpenseItemChange,
 
-  onReceiptSelected,
-  onReceiptDelete,
-  onPreviewReceipt,
-
   onSave,
   isSaving,
 }: Props) {
@@ -369,7 +341,7 @@ export default function ExpenseItems({
                   BASIC EXPENSE FIELDS
               ========================= */}
 
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-7">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
                 <div>
                   <label className="mb-2 block text-sm font-bold text-gray-900">
                     {t(
@@ -532,113 +504,6 @@ export default function ExpenseItems({
                       )
                     )}
                   </select>
-                </div>
-
-                {/* RECEIPT */}
-
-                <div>
-                  <label className="mb-2 block text-sm font-bold text-gray-900">
-                    {t("common.receipt")}
-                  </label>
-
-                  <input
-                    type="file"
-                    aria-label={t(
-                      "common.receipt"
-                    )}
-                    accept=".jpg,.jpeg,.png,.webp,.pdf"
-                    onChange={(event) => {
-                      const file =
-                        event.target.files?.[0];
-
-                      if (file) {
-                        onReceiptSelected(
-                          item.rowId,
-                          file
-                        );
-                      }
-                    }}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 file:me-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-3 file:py-2 file:text-sm file:font-bold file:text-white"
-                  />
-
-                  {(item.receiptName ||
-                    item.receiptFile) && (
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-bold text-green-700">
-                        {item.receiptFile
-                          ?.name ??
-                          item.receiptName}
-                      </span>
-
-                      {item.receiptUrl && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onPreviewReceipt(
-                              item.receiptUrl ??
-                                ""
-                            )
-                          }
-                          className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-bold text-gray-900"
-                        >
-                          {t(
-                            "common.actions.preview"
-                          )}
-                        </button>
-                      )}
-
-                      {(item.receiptUrl ||
-                        item.receiptFile) && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onReceiptDelete(
-                              item.rowId
-                            )
-                          }
-                          disabled={
-                            item.receiptStatus !==
-                            "idle"
-                          }
-                          className="rounded bg-red-600 px-2 py-1 text-xs font-bold text-white disabled:cursor-not-allowed"
-                        >
-                          {item.receiptStatus ===
-                          "deleting"
-                            ? t(
-                                "common.states.deleting"
-                              )
-                            : t(
-                                "common.actions.delete"
-                              )}
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  {item.receiptStatus !==
-                    "idle" && (
-                    <p className="mt-2 text-xs font-bold text-blue-700">
-                      {item.receiptStatus ===
-                      "uploading"
-                        ? t(
-                            "common.states.uploading"
-                          )
-                        : item.receiptStatus ===
-                            "replacing"
-                          ? t(
-                              "common.states.replacing"
-                            )
-                          : t(
-                              "common.states.deleting"
-                            )}
-                    </p>
-                  )}
-
-                  {item.receiptError && (
-                    <p className="mt-2 text-xs font-bold text-red-700">
-                      {item.receiptError}
-                    </p>
-                  )}
                 </div>
 
                 {/* REMARKS */}

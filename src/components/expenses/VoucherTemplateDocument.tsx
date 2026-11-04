@@ -15,7 +15,7 @@ const labelCopy = {
     voucherNo: "Voucher No.", voucherDate: "Voucher Date", departureDate: "Departure Date", arrivalDate: "Arrival Date", period: "Trip Period", days: "Days", status: "Status", draft: "Draft", finalized: "Finalized",
     tripDetails: "Trip Details", tripLegs: "Trip / Loading Details", groupRef: "Chakkar / Outbound Bilty", loadingNo: "Loading No.", biltyNo: "Bilty No.", tripType: "Trip Type", route: "Route",
     vehicle: "Vehicle", owner: "Owner", driver: "Driver", loadingDate: "Loading Date", departure: "Departure", arrival: "Arrival", freight: "Freight", routeDescription: "Route / Description",
-    expenseItems: "Recorded Expense Items", expenseClass: "Expense Class", category: "Category", amount: "Amount", method: "Payment Method", remarks: "Remarks / Source Reference", receipt: "Receipt", linkedSource: "Linked source",
+    expenseItems: "Recorded Expense Items", expenseClass: "Expense Class", category: "Category", amount: "Amount", method: "Payment Method", remarks: "Remarks / Source Reference", linkedSource: "Linked source",
     summary: "Voucher Summary", vehicleFreight: "Vehicle Freight", vehicleAdvance: "Vehicle Advance", vehicleLaterPaid: "Later Vehicle Payments", vehicleTotalPaid: "Actual Vehicle Cash Paid", vehicleParchiWithheld: "Noncash Parchi Withholding", vehicleEntitlementSettled: "Vehicle Entitlement Settled", vehicleBalance: "Vehicle Balance",
     regularTotal: "Regular Trip Expenses", periodicTotal: "Vehicle / Periodic Expenses", tripExpenseTotal: "Total Trip Expenses", vehicleProfitLoss: "Vehicle Profit / Loss",
     totalFreight: "Total Chakkar Freight", totalExpenses: "Total Voucher Expenses", netEarnings: "Net Vehicle Earnings", linkedReferences: "Linked Source References",
@@ -31,7 +31,7 @@ const labelCopy = {
     voucherNo: "واؤچر نمبر", voucherDate: "واؤچر کی تاریخ", departureDate: "روانگی کی تاریخ", arrivalDate: "آمد کی تاریخ", period: "ٹرپ کا عرصہ", days: "دن", status: "حیثیت", draft: "ڈرافٹ", finalized: "حتمی",
     tripDetails: "ٹرپ کی تفصیل", tripLegs: "ٹرپ / لوڈنگ کی تفصیل", groupRef: "چکر / روانگی بلٹی", loadingNo: "لوڈنگ نمبر", biltyNo: "بلٹی نمبر", tripType: "ٹرپ کی قسم", route: "روٹ",
     vehicle: "گاڑی", owner: "مالک", driver: "ڈرائیور", loadingDate: "لوڈنگ کی تاریخ", departure: "روانگی", arrival: "آمد", freight: "فریٹ", routeDescription: "روٹ / تفصیل",
-    expenseItems: "درج شدہ اخراجات", expenseClass: "اخراجات کی قسم", category: "مد", amount: "رقم", method: "ادائیگی کا طریقہ", remarks: "ریمارکس / سورس حوالہ", receipt: "رسید", linkedSource: "منسلک حوالہ",
+    expenseItems: "درج شدہ اخراجات", expenseClass: "اخراجات کی قسم", category: "مد", amount: "رقم", method: "ادائیگی کا طریقہ", remarks: "ریمارکس / سورس حوالہ", linkedSource: "منسلک حوالہ",
     summary: "واؤچر کا خلاصہ", vehicleFreight: "گاڑی کا فریٹ", vehicleAdvance: "گاڑی کی پیشگی", vehicleLaterPaid: "بعد کی گاڑی ادائیگیاں", vehicleTotalPaid: "اصل نقد گاڑی ادائیگی", vehicleParchiWithheld: "پارچی کی غیر نقد کٹوتی", vehicleEntitlementSettled: "گاڑی کے حق کی سیٹلمنٹ", vehicleBalance: "گاڑی کا بقایا",
     regularTotal: "عام ٹرپ اخراجات", periodicTotal: "گاڑی / دورانیہ وار اخراجات", tripExpenseTotal: "ٹرپ کے کل اخراجات", vehicleProfitLoss: "گاڑی کا منافع / نقصان",
     totalFreight: "چکر کا کل فریٹ", totalExpenses: "واؤچر کے کل اخراجات", netEarnings: "گاڑی کی خالص آمدنی", linkedReferences: "منسلک سورس حوالہ جات",
@@ -239,7 +239,7 @@ export function VoucherTemplateDocument({
       <td>{expenseCategoryLabel(item.expenseType, language)}</td>
       {overrides.templateId === "detailed_a4" ? <td>{expenseClass === "regular_trip" ? copy.regularClass : copy.periodicClass}</td> : null}
       <td className="money">{money(item.amount, language)}</td><td dir="auto">{paymentMethodLabel(item.paymentMethod, language)}</td>
-      <td className="detail" dir="auto">{item.remarks ? <span>{item.remarks}</span> : null}{item.receiptName ? <span>{copy.receipt}: {item.receiptName}</span> : null}{item.sourceDetails.map((detail, detailIndex) => <span key={`${item.id}-source-${detailIndex}`}><strong>{copy.linkedSource}: </strong>{detail}</span>)}</td>
+      <td className="detail" dir="auto">{item.remarks ? <span>{item.remarks}</span> : null}{item.sourceDetails.map((detail, detailIndex) => <span key={`${item.id}-source-${detailIndex}`}><strong>{copy.linkedSource}: </strong>{detail}</span>)}</td>
     </tr>);
   const renderExpenses = (expenseClass: "regular_trip" | "vehicle_periodic") => {
     const items = presentation.expenseItems.filter((item) => item.expenseClass === expenseClass);

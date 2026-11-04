@@ -58,8 +58,6 @@ import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/prin
 import ModulePageHeading from "@/components/shared/ModulePageHeading";
 import { getInclusiveManualChakkarDays, getManualVoucherDateState } from "@/lib/expenses/manualVoucherDates";
 import { getParchiVehicleSettlementTotalsForBookings } from "@/lib/parchi/vehicleSettlement";
-
-type ReceiptStatus = "idle" | "uploading" | "replacing" | "deleting";
 type ManualVoucherSourceEditTarget =
   | { kind: "workshop"; id: number }
   | { kind: "oil"; id: string };
@@ -79,11 +77,6 @@ type ExpenseItemRow = {
   amount: string;
   paymentMethod: string;
   remarks: string;
-  receiptUrl: string | null;
-  receiptName: string | null;
-  receiptFile: File | null;
-  receiptStatus: ReceiptStatus;
-  receiptError: string;
   petrolPumpId: string;
   liters: string;
   rate: string;
@@ -178,8 +171,6 @@ type ExpenseItemRecord = {
   amount: number | string;
   payment_method: string;
   remarks: string | null;
-  receipt_url: string | null;
-  receipt_name: string | null;
 };
 
 type DieselEntryRecord = {
@@ -426,11 +417,6 @@ function createEmptyExpenseItem(
     amount: "",
     paymentMethod: "Cash",
     remarks: "",
-    receiptUrl: null,
-    receiptName: null,
-    receiptFile: null,
-    receiptStatus: "idle",
-    receiptError: "",
     petrolPumpId: "",
     liters: "",
     rate: "",
@@ -574,33 +560,6 @@ function getDieselStatus(paidAmount: number, totalAmount: number) {
   if (paidAmount <= 0) return "Unpaid";
   if (paidAmount >= totalAmount) return "Paid";
   return "Partial";
-}
-
-function getReceiptPath(fileUrl: string) {
-  const marker = "/expense-receipts/";
-  const markerIndex = fileUrl.indexOf(marker);
-
-  if (markerIndex >= 0) {
-    return fileUrl.slice(markerIndex + marker.length);
-  }
-
-  return "";
-}
-
-function isAllowedReceipt(file: File) {
-  const allowedTypes = [
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "application/pdf",
-  ];
-  const allowedExtensions = [".jpg", ".jpeg", ".png", ".webp", ".pdf"];
-  const lowerName = file.name.toLowerCase();
-
-  return (
-    allowedTypes.includes(file.type) ||
-    allowedExtensions.some((extension) => lowerName.endsWith(extension))
-  );
 }
 
 export default function ExpensesPage() {
@@ -1144,7 +1103,6 @@ export default function ExpensesPage() {
           String(item.amount ?? ""),
           item.payment_method,
           item.remarks ?? "",
-          item.receipt_name ?? "",
         ]),
         ...(voucher.diesel_entries ?? []).flatMap((diesel) => [
           diesel.petrol_pumps?.pump_name ?? "",
@@ -2744,113 +2702,6 @@ export default function ExpensesPage() {
     setExpenseItems((items) => items.map((item) => item.expenseType === "Driver Salary" ? { ...item, amount: total > 0 ? String(total) : "" } : item));
   }
 
-  function handleReceiptSelected(rowId: number, file: File) {
-    setExpenseItems((previous) =>
-      previous.map((item) => {
-        if (item.rowId !== rowId) return item;
-
-        if (!isAllowedReceipt(file)) {
-          return {
-            ...item,
-            receiptFile: null,
-            receiptError: t("expenses.validation.receiptType"),
-          };
-        }
-
-        if (file.size > 5 * 1024 * 1024) {
-          return {
-            ...item,
-            receiptFile: null,
-            receiptError: t("expenses.validation.receiptSize"),
-          };
-        }
-
-        return {
-          ...item,
-          receiptFile: file,
-          receiptName: file.name,
-          receiptError: "",
-        };
-      })
-    );
-  }
-
-  async function handleReceiptDelete(rowId: number) {
-    const item = expenseItems.find((currentItem) => currentItem.rowId === rowId);
-
-    if (!item) return;
-
-    setExpenseItems((previous) =>
-      previous.map((currentItem) =>
-        currentItem.rowId === rowId
-          ? { ...currentItem, receiptStatus: "deleting", receiptError: "" }
-          : currentItem
-      )
-    );
-
-    try {
-      if (item.receiptUrl) {
-        const path = getReceiptPath(item.receiptUrl);
-
-        if (path) {
-          const { error } = await supabase.storage
-            .from("expense-receipts")
-            .remove([path]);
-
-          if (error) throw new Error(error.message);
-        }
-      }
-
-      if (item.dbId) {
-        const { error } = await supabase
-          .from("expense_items")
-          .update({
-            receipt_url: null,
-            receipt_name: null,
-          })
-          .eq("id", item.dbId);
-
-        if (error) throw new Error(error.message);
-      }
-
-      setExpenseItems((previous) =>
-        previous.map((currentItem) =>
-          currentItem.rowId === rowId
-            ? {
-                ...currentItem,
-                receiptUrl: null,
-                receiptName: null,
-                receiptFile: null,
-                receiptStatus: "idle",
-                receiptError: "",
-              }
-            : currentItem
-        )
-      );
-    } catch (error) {
-      console.error("Unable to delete expense receipt:", error);
-
-      setExpenseItems((previous) =>
-        previous.map((currentItem) =>
-          currentItem.rowId === rowId
-            ? {
-                ...currentItem,
-                receiptStatus: "idle",
-                receiptError: t("common.messages.deleteFailed"),
-              }
-            : currentItem
-        )
-      );
-    }
-  }
-
-  function handlePreviewReceipt(receiptUrl: string) {
-    const previewWindow = window.open(receiptUrl, "_blank");
-    if (!previewWindow) {
-      alert(t("expenses.messages.allowPopups"));
-    }
-  }
-
   function validateExpenseVoucher(fuelLoading: LoadingRecord | null = selectedLoading) {
     if (!expenseNo.trim()) {
       alert(t("expenses.validation.voucherNoRequired"));
@@ -3210,57 +3061,6 @@ export default function ExpensesPage() {
     return true;
   }
 
-  async function uploadReceipt(
-    expenseId: number,
-    expenseItemId: number,
-    item: ExpenseItemRow
-  ) {
-    if (!item.receiptFile) {
-      return {
-        receiptUrl: item.receiptUrl,
-        receiptName: item.receiptName,
-      };
-    }
-
-    const extension = item.receiptFile.name.split(".").pop() ?? "file";
-    const filePath = `${expenseId}/${expenseItemId}-${Date.now()}.${extension}`;
-
-    setExpenseItems((previous) =>
-      previous.map((currentItem) =>
-        currentItem.rowId === item.rowId
-          ? {
-              ...currentItem,
-              receiptStatus: item.receiptUrl ? "replacing" : "uploading",
-              receiptError: "",
-            }
-          : currentItem
-      )
-    );
-
-    if (item.receiptUrl) {
-      const oldPath = getReceiptPath(item.receiptUrl);
-
-      if (oldPath) {
-        await supabase.storage.from("expense-receipts").remove([oldPath]);
-      }
-    }
-
-    const { error: uploadError } = await supabase.storage
-      .from("expense-receipts")
-      .upload(filePath, item.receiptFile, { upsert: true });
-
-    if (uploadError) throw new Error(uploadError.message);
-
-    const { data } = supabase.storage
-      .from("expense-receipts")
-      .getPublicUrl(filePath);
-
-    return {
-      receiptUrl: data.publicUrl,
-      receiptName: item.receiptFile.name,
-    };
-  }
-
   async function createDieselEntries(
     expenseId: number,
     insertedItems: ExpenseItemRecord[],
@@ -3304,7 +3104,7 @@ export default function ExpensesPage() {
     }
   }
 
-  async function insertExpenseItemsWithReceipts(
+  async function insertExpenseItems(
     expenseId: number,
     fuelLoading: LoadingRecord | null
   ) {
@@ -3330,8 +3130,6 @@ export default function ExpensesPage() {
       amount: toNumber(item.amount),
       payment_method: item.paymentMethod,
       remarks: item.remarks.trim(),
-      receipt_url: item.receiptUrl,
-      receipt_name: item.receiptName,
     }));
 
     const { data, error } = await supabase
@@ -3341,35 +3139,13 @@ export default function ExpensesPage() {
 
     if (error) throw new Error(error.message);
 
-    const insertedItems = (data ?? []) as ExpenseItemRecord[];
-
-    for (let index = 0; index < insertedItems.length; index += 1) {
-      const insertedItem = insertedItems[index];
-      const sourceItem = sourceItems[index];
-
-      if (!sourceItem) continue;
-
-      const receipt = await uploadReceipt(expenseId, insertedItem.id, sourceItem);
-
-      if (receipt.receiptUrl || receipt.receiptName) {
-        const { error: receiptError } = await supabase
-          .from("expense_items")
-          .update({
-            receipt_url: receipt.receiptUrl,
-            receipt_name: receipt.receiptName,
-          })
-          .eq("id", insertedItem.id);
-
-        if (receiptError) throw new Error(receiptError.message);
-
-        insertedItem.receipt_url = receipt.receiptUrl;
-        insertedItem.receipt_name = receipt.receiptName;
-      }
-    }
-
-    await createDieselEntries(expenseId, insertedItems, sourceItems, fuelLoading);
+    await createDieselEntries(
+      expenseId,
+      (data ?? []) as ExpenseItemRecord[],
+      sourceItems,
+      fuelLoading
+    );
   }
-
   async function createWorkshopEntryFromVoucher(expenseId: number, manual = false) {
     if (workshopMode !== "create") return null;
 
@@ -3416,10 +3192,6 @@ export default function ExpensesPage() {
   async function createOilEntryFromVoucher(expenseId: number, manual = false) {
     if (!pendingOilCreatePayload) return null;
 
-    const sourceItem = expenseItems.find(
-      (item) => item.expenseType === "Oil / Lubricants"
-    );
-
     const { data: createdOilEntryId, error } = await supabase.rpc(
       manual ? "create_manual_voucher_oil_entry" : "create_voucher_oil_entry",
       {
@@ -3459,45 +3231,11 @@ export default function ExpensesPage() {
       throw new Error("Voucher-created Oil RPC returned no Oil Entry ID.");
     }
 
-    if (sourceItem && (sourceItem.receiptFile || sourceItem.receiptUrl)) {
-      const { data: oilItem, error: oilItemError } = await supabase
-        .from("expense_items")
-        .select("*")
-        .eq("expense_id", expenseId)
-        .eq("expense_type", "Oil / Lubricants")
-        .eq("expense_class", "vehicle_periodic")
-        .single();
-
-      if (oilItemError) {
-        throw new Error(oilItemError.message);
-      }
-
-      const insertedItem = oilItem as ExpenseItemRecord;
-      const receipt = await uploadReceipt(expenseId, insertedItem.id, sourceItem);
-
-      if (receipt.receiptUrl || receipt.receiptName) {
-        const { error: receiptError } = await supabase
-          .from("expense_items")
-          .update({
-            receipt_url: receipt.receiptUrl,
-            receipt_name: receipt.receiptName,
-          })
-          .eq("id", insertedItem.id);
-
-        if (receiptError) {
-          throw new Error(receiptError.message);
-        }
-      }
-    }
     return String(createdOilEntryId);
   }
 
   async function createTyreEntryFromVoucher(expenseId: number, manual = false) {
     if (!pendingTyreCreatePayload) return null;
-
-    const sourceItem = expenseItems.find(
-      (item) => item.expenseType === "Tyre"
-    );
 
     const { data: createdTyreEntryId, error } = await supabase.rpc(
       manual ? "create_manual_voucher_tyre_entry" : "create_voucher_tyre_entry",
@@ -3545,40 +3283,6 @@ export default function ExpensesPage() {
       throw new Error("Voucher-created Tyre RPC returned no Tyre Entry ID.");
     }
 
-    if (sourceItem && (sourceItem.receiptFile || sourceItem.receiptUrl)) {
-      const { data: tyreItem, error: tyreItemError } = await supabase
-        .from("expense_items")
-        .select("*")
-        .eq("expense_id", expenseId)
-        .eq("expense_type", "Tyre")
-        .eq("expense_class", "vehicle_periodic")
-        .single();
-
-      if (tyreItemError) {
-        throw new Error(tyreItemError.message);
-      }
-
-      const insertedItem = tyreItem as ExpenseItemRecord;
-      const receipt = await uploadReceipt(
-        expenseId,
-        insertedItem.id,
-        sourceItem
-      );
-
-      if (receipt.receiptUrl || receipt.receiptName) {
-        const { error: receiptError } = await supabase
-          .from("expense_items")
-          .update({
-            receipt_url: receipt.receiptUrl,
-            receipt_name: receipt.receiptName,
-          })
-          .eq("id", insertedItem.id);
-
-        if (receiptError) {
-          throw new Error(receiptError.message);
-        }
-      }
-    }
     return String(createdTyreEntryId);
   }
 
@@ -3897,7 +3601,7 @@ export default function ExpensesPage() {
 
         if (deleteItemsError) throw new Error(deleteItemsError.message);
 
-        await insertExpenseItemsWithReceipts(editingId, effectiveLoading);
+        await insertExpenseItems(editingId, effectiveLoading);
 
         if (workshopMode === "create") {
           await createWorkshopEntryFromVoucher(editingId);
@@ -4015,7 +3719,7 @@ export default function ExpensesPage() {
         return;
       }
 
-      await insertExpenseItemsWithReceipts(expenseId, effectiveLoading);
+      await insertExpenseItems(expenseId, effectiveLoading);
 
       if (workshopMode === "create") {
         await createWorkshopEntryFromVoucher(expenseId);
@@ -4117,13 +3821,6 @@ export default function ExpensesPage() {
       }
     } finally {
       setIsSaving(false);
-
-      setExpenseItems((previous) =>
-        previous.map((item) => ({
-          ...item,
-          receiptStatus: "idle",
-        }))
-      );
     }
   }
 
@@ -4265,11 +3962,6 @@ export default function ExpensesPage() {
           amount: String(item.amount ?? ""),
           paymentMethod: item.payment_method ?? "Cash",
           remarks: item.remarks ?? "",
-          receiptUrl: item.receipt_url,
-          receiptName: item.receipt_name,
-          receiptFile: null,
-          receiptStatus: "idle",
-          receiptError: "",
           petrolPumpId: diesel?.petrol_pump_id ?? "",
           liters: diesel ? String(diesel.liters ?? "") : "",
           rate: diesel ? String(diesel.rate ?? "") : "",
@@ -4524,9 +4216,6 @@ export default function ExpensesPage() {
       );
       if (!confirmed) return;
 
-      const receiptPaths = (voucher.expense_items ?? [])
-        .map((item) => item.receipt_url ? getReceiptPath(item.receipt_url) : null)
-        .filter((path): path is string => Boolean(path));
       const { error } = await supabase.rpc("delete_voucher_safely", {
         p_voucher_id: voucher.id,
       });
@@ -4549,13 +4238,6 @@ export default function ExpensesPage() {
           alert(t("expenses.messages.safeDeleteFailed"));
         }
         return;
-      }
-
-      if (receiptPaths.length > 0) {
-        const { error: receiptError } = await supabase.storage
-          .from("expense-receipts")
-          .remove(receiptPaths);
-        if (receiptError) console.error("Voucher deleted, but receipt cleanup failed:", receiptError);
       }
 
       if (editingId === voucher.id) resetForm();
@@ -4638,7 +4320,6 @@ export default function ExpensesPage() {
           amount: item.amount,
           paymentMethod: null,
           remarks: item.remarks,
-          receiptName: null,
           sourceDetails: [],
         }))
       : (voucher.expense_items ?? []).map((item) => ({
@@ -4648,7 +4329,6 @@ export default function ExpensesPage() {
           amount: item.amount,
           paymentMethod: item.payment_method,
           remarks: item.remarks,
-          receiptName: item.receipt_name,
           sourceDetails: [],
         }));
     const expenseIndexById = new Map(expenseRows.flatMap((item, index) =>
@@ -5025,7 +4705,6 @@ export default function ExpensesPage() {
                   <td class="technical">${value(Number(item.amount || 0).toLocaleString())}</td>
                   <td>${value(item.payment_method)}</td>
                   <td>${value(item.remarks)}${dieselDetails}</td>
-                  <td>${value(item.receipt_name)}</td>
                 </tr>
               `;
             })
@@ -5195,10 +4874,10 @@ export default function ExpensesPage() {
                 <table>
                   <thead><tr>
                     <th>#</th><th>${label("expenses.items.expenseType")}</th><th>${label("common.amount")}</th>
-                    <th>${label("expenses.print.payment")}</th><th>${label("expenses.print.remarksDiesel")}</th><th>${label("common.receipt")}</th>
+                    <th>${label("expenses.print.payment")}</th><th>${label("expenses.print.remarksDiesel")}</th>
                   </tr></thead>
                   <tbody>${regularItemRows}</tbody>
-                  <tfoot><tr><td colspan="2">${label("expenses.items.regularTotal")}</td><td colspan="4" class="technical">Rs. ${value(regularTripTotal.toLocaleString())}</td></tr></tfoot>
+                  <tfoot><tr><td colspan="2">${label("expenses.items.regularTotal")}</td><td colspan="3" class="technical">Rs. ${value(regularTripTotal.toLocaleString())}</td></tr></tfoot>
                 </table>
               </section>`}
 
@@ -5208,10 +4887,10 @@ export default function ExpensesPage() {
                 <table>
                   <thead><tr>
                     <th>#</th><th>${label("expenses.items.expenseType")}</th><th>${label("common.amount")}</th>
-                    <th>${label("expenses.print.payment")}</th><th>${label("expenses.print.remarksDiesel")}</th><th>${label("common.receipt")}</th>
+                    <th>${label("expenses.print.payment")}</th><th>${label("expenses.print.remarksDiesel")}</th>
                   </tr></thead>
                   <tbody>${periodicItemRows}</tbody>
-                  <tfoot><tr><td colspan="2">${label("expenses.items.periodicTotal")}</td><td colspan="4" class="technical">Rs. ${value(periodicExpenseTotal.toLocaleString())}</td></tr></tfoot>
+                  <tfoot><tr><td colspan="2">${label("expenses.items.periodicTotal")}</td><td colspan="3" class="technical">Rs. ${value(periodicExpenseTotal.toLocaleString())}</td></tr></tfoot>
                 </table>
               </section>`}
 
@@ -5483,9 +5162,6 @@ export default function ExpensesPage() {
           onAddExpenseItem={handleAddExpenseItem}
           onDeleteExpenseItem={handleDeleteExpenseItem}
           onExpenseItemChange={onExpenseItemChange}
-          onReceiptSelected={handleReceiptSelected}
-          onReceiptDelete={handleReceiptDelete}
-          onPreviewReceipt={handlePreviewReceipt}
           onSave={handleSaveExpenseVoucher}
           isSaving={isSaving || isPreparingMovementLoading}
         />
@@ -5842,7 +5518,6 @@ export default function ExpensesPage() {
         onCreateAdjustment={handleCreateAdjustment}
         onDelete={handleDeleteExpenseVoucher}
         onPrint={handlePrintExpenseVoucher}
-        onPreviewReceipt={handlePreviewReceipt}
         isDeleting={isDeleting}
         finalizingVoucherId={finalizingVoucherId}
       />

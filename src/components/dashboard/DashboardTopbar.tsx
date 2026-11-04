@@ -6,6 +6,7 @@ import {
   Bell,
   ChevronDown,
   Expand,
+  LogOut,
   Menu,
   MessageSquareText,
   Search,
@@ -27,6 +28,9 @@ type Props = {
   userEmail: string;
   mobileSidebarOpen: boolean;
   onMenuClick: () => void;
+  onSignOut: () => void;
+  isSigningOut: boolean;
+  logoutError: string | null;
 };
 
 function initials(name: string) {
@@ -45,6 +49,9 @@ export default function DashboardTopbar({
   userEmail,
   mobileSidebarOpen,
   onMenuClick,
+  onSignOut,
+  isSigningOut,
+  logoutError,
 }: Props) {
   const { t, dir } = useLanguage();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -235,6 +242,27 @@ export default function DashboardTopbar({
                 {t("dashboard.shell.settings")}
               </Link>
             )}
+            {logoutError && (
+              <p
+                role="alert"
+                aria-live="polite"
+                className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700"
+              >
+                {logoutError}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => void onSignOut()}
+              disabled={isSigningOut}
+              aria-busy={isSigningOut}
+              className="mt-3 flex min-h-11 w-full items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-start text-sm font-bold text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
+              <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>
+                {isSigningOut ? t("auth.loggingOut") : t("auth.logout")}
+              </span>
+            </button>
           </div>
         </details>
       </div>
