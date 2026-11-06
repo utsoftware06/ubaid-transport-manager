@@ -249,7 +249,12 @@ function errorMessage(error: unknown) {
   if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message;
   return "Parchi action failed.";
 }
-function groupStatement(rows: StatementEvent[], headers: Map<string, ParchiHeader>, references: Map<string, SavedReference[]>): ParchiSummary[] {
+function groupStatement(
+  rows: StatementEvent[],
+  headers: Map<string, ParchiHeader>,
+  references: Map<string, SavedReference[]>,
+  receivedVehicleNumbers: Map<string, string | null>,
+): ParchiSummary[] {
   const grouped = new Map<string, ParchiSummary>();
   for (const row of rows) {
     if (!row || typeof row.parchi_id !== "string") throw new Error("Invalid Parchi statement response.");
@@ -285,7 +290,9 @@ function groupStatement(rows: StatementEvent[], headers: Map<string, ParchiHeade
       primary_payer_type: row.primary_payer_type ?? null,
       primary_payer_id: row.primary_payer_id ?? null,
       primary_payer_name: row.primary_payer_name ?? null,
-      vehicle_no: row.vehicle_no ?? null,
+      vehicle_no: row.direction === "received"
+        ? receivedVehicleNumbers.get(row.parchi_id) ?? null
+        : row.vehicle_no ?? null,
       responsible_party_id: row.responsible_party_id ?? null,
       responsible_person_name: row.responsible_person_name ?? null,
       responsible_phone: row.responsible_phone ?? null,
@@ -619,22 +626,25 @@ export default function Parchi() {
         }));
         const allHeaderRows: ParchiHeader[] = [...headerRows, ...financeHeaders];
         const headers = new Map(allHeaderRows.map((header) => [header.id, header]));
-        const vehicleIds = [...new Set([...allHeaderRows.map((header) => header.vehicle_id), ...settlementRows.map((item) => item.vehicle_id)].filter((id): id is string => Boolean(id)))];
+        const bookingVehicleMap = new Map(((bookingResult.data ?? []) as BookingOption[]).map((booking) => [booking.id, booking.vehicle_id]));
         const bookingIds = [...new Set([...allHeaderRows.map((header) => header.booking_id), ...settlementRows.map((item) => item.booking_id)].filter((id): id is string => Boolean(id)))];
         const groupIds = [...new Set(headerRows.map((header) => header.movement_group_id).filter((id): id is string => Boolean(id)))];
         const voucherIds = [...new Set(headerRows.map((header) => header.voucher_id).filter((id): id is string | number => id !== null).map(String))];
         const loadingIds = [...new Set([...settlementRows.map((item) => item.loading_id), ...financeStatementRows.map((row) => row.loading_id ?? null)].filter((id): id is number | string => id !== null).map(String))];
-        const [vehicleRefs, biltyRefs, groupRefs, voucherRefs, loadingRefs] = await Promise.all([
-          vehicleIds.length ? supabase.from("vehicles").select("id,vehicle_no").in("id", vehicleIds) : Promise.resolve({ data: [] as VehicleReference[], error: null }),
+        const [biltyRefs, groupRefs, voucherRefs, loadingRefs] = await Promise.all([
           bookingIds.length ? supabase.from("bookings").select("id,booking_no").in("id", bookingIds) : Promise.resolve({ data: [] as BiltyReference[], error: null }),
           groupIds.length ? supabase.from("bilty_movement_groups").select("id,outbound:bookings!bilty_movement_groups_outbound_bilty_id_fkey(booking_no)").in("id", groupIds) : Promise.resolve({ data: [] as GroupReference[], error: null }),
           voucherIds.length ? supabase.from("expenses").select("id,expense_no").in("id", voucherIds) : Promise.resolve({ data: [] as VoucherReference[], error: null }),
           loadingIds.length ? supabase.from("loadings").select("id,loading_no").in("id", loadingIds) : Promise.resolve({ data: [] as LoadingReference[], error: null }),
         ]);
-        for (const optionalRead of [vehicleRefs, biltyRefs, groupRefs, voucherRefs, loadingRefs]) {
+        for (const optionalRead of [biltyRefs, groupRefs, voucherRefs, loadingRefs]) {
           if (optionalRead.error) console.warn("Parchi print reference lookup unavailable", optionalRead.error);
         }
-        const vehicleMap = new Map(((vehicleRefs.data ?? []) as unknown as VehicleReference[]).map((item) => [item.id, item.vehicle_no]));
+        const vehicleMap = new Map(((vehicleOptionResult.data ?? []) as VehicleReference[]).map((item) => [item.id, item.vehicle_no]));
+        const receivedVehicleNumbers = new Map(allHeaderRows.map((header) => {
+          const linkedVehicleId = header.vehicle_id ?? (header.booking_id ? bookingVehicleMap.get(header.booking_id) ?? null : null);
+          return [header.id, linkedVehicleId ? vehicleMap.get(linkedVehicleId) ?? null : null] as const;
+        }));
         const biltyMap = new Map(((biltyRefs.data ?? []) as unknown as BiltyReference[]).map((item) => [item.id, item.booking_no]));
         const loadingMap = new Map(((loadingRefs.data ?? []) as unknown as LoadingReference[]).map((item) => [String(item.id), item.loading_no]));
         const settlementDetails = new Map(settlementRows.map((settlement) => [settlement.funding_event_id, {
@@ -654,7 +664,7 @@ export default function Parchi() {
           ...(header.movement_group_id && groupMap.get(header.movement_group_id) ? [{ labelKey: "parchi.print.biltyGroup", value: groupMap.get(header.movement_group_id)! }] : []),
           ...(header.voucher_id !== null && voucherMap.get(String(header.voucher_id)) ? [{ labelKey: "parchi.print.voucher", value: voucherMap.get(String(header.voucher_id))! }] : []),
         ]]));
-        setRows(groupStatement(statementRows.map((row) => ({ ...row, ...(row.event_id ? settlementDetails.get(row.event_id) : {}) })), headers, references));
+        setRows(groupStatement(statementRows.map((row) => ({ ...row, ...(row.event_id ? settlementDetails.get(row.event_id) : {}) })), headers, references, receivedVehicleNumbers));
         setBrokers((brokerResult.data ?? []) as BrokerOption[]);
         setParties((partyResult.data ?? []) as PartyOption[]);
         setBookings((bookingResult.data ?? []) as BookingOption[]);
@@ -1064,15 +1074,16 @@ export default function Parchi() {
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         {dataBusy && <div className="border-b border-slate-100 px-4 py-2 text-sm text-slate-500">{t("parchi.loading")}</div>}
         <div className="overflow-x-auto">
-          <table className="min-w-[1120px] w-full text-left text-sm">
+          <table className="min-w-[1220px] w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
-              <tr>{[t("parchi.document"), t("parchi.direction"), t("parchi.counterparty"), t("parchi.documentAmount"), t("parchi.fundingStatus"), t("parchi.funded"), t("parchi.outstanding"), t("parchi.dueDates"), t("parchi.settlementStatus"), t("parchi.actions")].map((heading) => <th className="px-4 py-3" key={heading}>{heading}</th>)}</tr>
+              <tr>{[t("parchi.document"), t("parchi.direction"), t("parchi.counterparty"), t("parchi.vehicleNumber"), t("parchi.documentAmount"), t("parchi.fundingStatus"), t("parchi.funded"), t("parchi.outstanding"), t("parchi.dueDates"), t("parchi.settlementStatus"), t("parchi.actions")].map((heading) => <th className="px-4 py-3" key={heading}>{heading}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredRows.map((row) => <tr key={row.parchi_id} className="align-top hover:bg-slate-50/70">
                 <td className="px-4 py-3"><div className="font-extrabold text-slate-900">{row.parchi_no}</div><div className="mt-1 text-xs text-slate-500">{row.document_date}</div></td>
                 <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${row.direction === "received" ? "bg-blue-50 text-blue-800" : "bg-violet-50 text-violet-800"}`}>{row.direction === "received" ? t("parchi.received") : t("parchi.issued")}</span></td>
                 <td className="px-4 py-3 font-semibold text-slate-800">{row.counterparty_name || "—"}</td>
+                <td dir="ltr" className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">{row.direction === "received" && row.counterparty_type === "broker" ? row.vehicle_no || "—" : "—"}</td>
                 <td className="px-4 py-3 font-semibold tabular-nums">{money(row.document_amount)}</td>
                 <td className="px-4 py-3"><StatusBadge value={row.funding_status} t={t} /></td>
                 <td className="px-4 py-3 tabular-nums">{money(row.net_funded)}</td>
@@ -1084,7 +1095,7 @@ export default function Parchi() {
                 <td className="px-4 py-3"><StatusBadge value={row.settlement_status} t={t} /></td>
                 <td className="px-4 py-3"><div className="flex gap-2"><button className={buttonSecondary} type="button" onClick={() => setSelectedId(row.parchi_id)}><Eye className="h-4 w-4" />{t("parchi.history")}</button><button className={buttonSecondary} type="button" onClick={() => printParchi(row)} aria-label={`${t("common.actions.print")} ${row.parchi_no}`}><Printer className="h-4 w-4" />{t("common.actions.print")}</button></div></td>
               </tr>)}
-              {!dataBusy && filteredRows.length === 0 && <tr><td colSpan={10} className="px-4 py-12 text-center text-sm text-slate-500">{rows ? t("parchi.noRecords") : t("parchi.noAddaSelected")}</td></tr>}
+              {!dataBusy && filteredRows.length === 0 && <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-slate-500">{rows ? t("parchi.noRecords") : t("parchi.noAddaSelected")}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -1099,6 +1110,7 @@ export default function Parchi() {
           <div className="space-y-5 p-5">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <DetailMetric label={t("parchi.documentAmount")} value={money(selectedParchi.document_amount)} />
+              {selectedParchi.direction === "received" && selectedParchi.counterparty_type === "broker" && <DetailMetric label={t("parchi.vehicleNumber")} value={selectedParchi.vehicle_no || "—"} direction="ltr" />}
               {(selectedParchi.direction === "received" || selectedParchi.issued_mode === "freight_financing") && <DetailMetric label={t(selectedParchi.issued_mode === "freight_financing" ? "parchi.upfrontCommission" : "parchi.print.commissionWithheld")} value={selectedParchi.commission_withheld === null ? t("parchi.print.notRecorded") : money(selectedParchi.commission_withheld)} />}
               {(selectedParchi.direction === "received" || selectedParchi.issued_mode === "freight_financing") && <DetailMetric label={t(selectedParchi.issued_mode === "freight_financing" ? "parchi.actualCashDisbursed" : "parchi.print.actualCash")} value={selectedParchi.actual_cash_amount === null ? t("parchi.print.notRecorded") : money(selectedParchi.actual_cash_amount)} />}
               <DetailMetric label={t("parchi.funded")} value={money(selectedParchi.net_funded)} />
@@ -1386,8 +1398,8 @@ function DeadlineLine({ label, deadline, t }: {
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-2 text-xl font-extrabold tabular-nums text-slate-900">{value}</p></div>;
 }
-function DetailMetric({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-xs font-bold uppercase text-slate-500">{label}</div><div className="mt-1 text-base font-extrabold tabular-nums text-slate-900">{value}</div></div>;
+function DetailMetric({ label, value, direction }: { label: string; value: string; direction?: "ltr" | "rtl" }) {
+  return <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-xs font-bold uppercase text-slate-500">{label}</div><div dir={direction} className="mt-1 text-base font-extrabold tabular-nums text-slate-900">{value}</div></div>;
 }
 function DetailField({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return <div><div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div><div className="mt-1 font-semibold text-slate-900">{value}</div>{hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}</div>;
