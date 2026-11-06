@@ -62,6 +62,23 @@ type DieselEntryRecord = {
   remaining_amount: number | string;
   payment_status: string;
   remarks: string | null;
+  initial_payment_id?: number | null;
+  initial_payment_date?: string | null;
+  initial_payment_amount?: number | string | null;
+  initial_payment_status?: "active" | "voided" | "unverified" | null;
+  initial_payment_method?: string | null;
+  initial_payment_reference?: string | null;
+  initial_payment_remarks?: string | null;
+  initial_payment_corrections?: Array<{
+    id: number;
+    original_payment_id: number;
+    replacement_payment_id: number | null;
+    action: "void" | "replace";
+    reason: string;
+    created_at: string;
+    original_snapshot: Record<string, unknown>;
+    replacement_snapshot: Record<string, unknown> | null;
+  }>;
   petrol_pumps?: {
     pump_name: string | null;
   } | null;
@@ -717,6 +734,22 @@ export default function ExpenseTable({
                     <h3 className="font-black text-slate-950">{t("expenses.manual.expensesTitle")}</h3>
                     <div className="overflow-x-auto rounded-lg border border-slate-200"><table className="w-full min-w-[600px] border-collapse text-sm text-gray-900"><thead className="bg-emerald-700 text-white"><tr><th className="p-3 text-start">{t("expenses.items.expenseType")}</th><th className="p-3 text-end">{t("common.amount")}</th><th className="p-3 text-start">{t("common.remarks")}</th></tr></thead><tbody>{expenses.map((item, index) => <tr key={"id" in item ? item.id : `${item.expense_type}-${index}`} className="border-t border-slate-200"><td className="p-3 font-bold">{t(expenseTypeLabelKey(item.expense_type))}</td><td dir="ltr" className="p-3 text-end font-black">{formatAmount(item.amount)}</td><td className="p-3">{item.remarks || "—"}</td></tr>)}{expenses.length === 0 && <tr><td colSpan={3} className="p-3 text-center">{t("expenses.manual.noExpenses")}</td></tr>}</tbody></table></div>
                     {manualDieselEntries.length > 0 && <div className="overflow-x-auto rounded-lg border border-blue-200"><table className="w-full min-w-[950px] border-collapse text-sm text-gray-900"><thead className="bg-blue-700 text-white"><tr><th className="p-3 text-start">{t("expenses.diesel.petrolPump")}</th><th className="p-3 text-start">{t("common.date")}</th><th className="p-3 text-end">{t("expenses.diesel.litres")}</th><th className="p-3 text-end">{t("expenses.diesel.rate")}</th><th className="p-3 text-end">{t("common.total")}</th><th className="p-3 text-end">{t("common.paid")}</th><th className="p-3 text-end">{t("common.remaining")}</th><th className="p-3 text-start">{t("expenses.diesel.slipNo")}</th><th className="p-3 text-start">{t("common.status")}</th></tr></thead><tbody>{manualDieselEntries.map((diesel) => <tr key={diesel.id} className="border-t border-blue-100"><td className="p-3">{diesel.petrol_pumps?.pump_name ?? "—"}</td><td className="p-3">{diesel.entry_date}</td><td dir="ltr" className="p-3 text-end">{diesel.liters}</td><td dir="ltr" className="p-3 text-end">{formatAmount(diesel.rate)}</td><td dir="ltr" className="p-3 text-end font-bold">{formatAmount(diesel.total_amount)}</td><td dir="ltr" className="p-3 text-end">{formatAmount(diesel.paid_amount)}</td><td dir="ltr" className="p-3 text-end">{formatAmount(diesel.remaining_amount)}</td><td className="p-3">{diesel.slip_no || "—"}</td><td className="p-3">{t(`common.paymentStatus.${diesel.payment_status.toLowerCase()}`)}</td></tr>)}</tbody></table></div>}
+                    {manualDieselEntries.some((diesel) => diesel.initial_payment_status || (diesel.initial_payment_corrections?.length ?? 0) > 0) && <section className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-4" aria-label={t("petrolPumpPayments.correction.linkedPaymentDetails")}>
+                      <h4 className="font-black text-amber-950">{t("petrolPumpPayments.correction.linkedPaymentDetails")}</h4>
+                      {manualDieselEntries.filter((diesel) => diesel.initial_payment_status || (diesel.initial_payment_corrections?.length ?? 0) > 0).map((diesel) => <div key={`payment-history-${diesel.id}`} className="rounded-md border border-amber-200 bg-white p-3">
+                        <div className="font-bold">{t("expenses.diesel.petrolPump")}: {diesel.petrol_pumps?.pump_name ?? "—"} · {t("petrolPumpPayments.correction.columns.diesel")} #{diesel.id}</div>
+                        {diesel.initial_payment_status && <div className="mt-1">{t(`petrolPumpPayments.correction.linkedPaymentStatus.${diesel.initial_payment_status}`)}{diesel.initial_payment_id ? ` · #${diesel.initial_payment_id}` : ""}</div>}
+                        {diesel.initial_payment_status === "active" && <div className="mt-1">{t("common.date")}: {diesel.initial_payment_date || "—"} · {t("common.amount")}: {diesel.initial_payment_amount ?? "—"} · {t("expenses.manual.sourceExpenses.paymentMethod")}: {diesel.initial_payment_method || "—"}{diesel.initial_payment_reference ? ` · ${t("expenses.manual.sourceExpenses.paymentReference")}: ${diesel.initial_payment_reference}` : ""}{diesel.initial_payment_remarks ? ` · ${t("expenses.manual.sourceExpenses.paymentNotes")}: ${diesel.initial_payment_remarks}` : ""}</div>}
+                        {(diesel.initial_payment_corrections ?? []).map((correction) => <div key={correction.id} className="mt-2 border-t border-slate-200 pt-2 text-sm">
+                          <div className="font-semibold">{correction.created_at} · {t(`petrolPumpPayments.correction.actions.${correction.action}`)} · #{correction.original_payment_id}{correction.replacement_payment_id ? ` → #${correction.replacement_payment_id}` : ""}</div>
+                          <div className="mt-1">
+                            {t("petrolPumpPayments.correction.historyColumns.original")}: {String(correction.original_snapshot.date ?? "—")} · Rs. {String(correction.original_snapshot.payment_now ?? "—")} · {String(correction.original_snapshot.method ?? "—")}
+                            {correction.replacement_snapshot && <> → {t("petrolPumpPayments.correction.historyColumns.replacement")}: {String(correction.replacement_snapshot.payment_date ?? "—")} · Rs. {String(correction.replacement_snapshot.payment_now ?? "—")} · {String(correction.replacement_snapshot.payment_method ?? "—")}</>}
+                          </div>
+                          <p className="mt-1">{t("petrolPumpPayments.correction.historyColumns.reason")}: {correction.reason}</p>
+                        </div>)}
+                      </div>)}
+                    </section>}
                     <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-lg border border-blue-200 bg-blue-50 p-3"><span className="text-xs font-bold">Original Freight</span><strong className="mt-1 block">{formatAmount(freight)}</strong></div><div className="rounded-lg border border-amber-200 bg-amber-50 p-3"><span className="text-xs font-bold">Original Expenses</span><strong className="mt-1 block">{formatAmount(expenseTotal)}</strong></div><div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3"><span className="text-xs font-bold">Original Chakkar Net</span><strong className={`mt-1 block ${net < 0 ? "text-red-700" : "text-emerald-800"}`}>{formatAmount(net)}</strong></div></div>
                     <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-lg border border-purple-200 bg-purple-50 p-3"><span className="text-xs font-bold">Freight Adjustment</span><strong className="mt-1 block">{formatAmount(adjustmentFreight)}</strong></div><div className="rounded-lg border border-purple-200 bg-purple-50 p-3"><span className="text-xs font-bold">Expense Adjustment</span><strong className="mt-1 block">{formatAmount(adjustmentExpenses)}</strong></div><div className="rounded-lg border border-purple-300 bg-purple-100 p-3"><span className="text-xs font-bold">Adjusted Chakkar Net</span><strong className={`mt-1 block ${net + adjustmentNet < 0 ? "text-red-700" : "text-emerald-800"}`}>{formatAmount(net + adjustmentNet)}</strong><span className="mt-1 block text-xs">Adjustment total: {formatAmount(adjustmentNet)} · Finalized: {settlement?.finalized_at ?? "—"}</span></div></div>
                     {finalizedManualAdjustments.length > 0 && <div className="overflow-x-auto rounded-lg border border-purple-200"><table className="w-full min-w-[700px] border-collapse text-sm"><thead className="bg-purple-700 text-white"><tr><th className="p-3 text-start">Adjustment</th><th className="p-3 text-start">Date</th><th className="p-3 text-end">Freight</th><th className="p-3 text-end">Expense</th><th className="p-3 text-end">Net</th><th className="p-3 text-start">Reason</th></tr></thead><tbody>{finalizedManualAdjustments.map((adjustment) => <tr key={adjustment.id} className="border-t border-purple-100"><td className="p-3 font-bold">{adjustment.adjustment_no}</td><td className="p-3">{adjustment.adjustment_date}</td><td className="p-3 text-end">{formatAmount(adjustment.freight_adjustment)}</td><td className="p-3 text-end">{formatAmount(adjustment.expense_adjustment)}</td><td className="p-3 text-end font-black">{formatAmount(adjustment.net_adjustment)}</td><td className="p-3">{adjustment.reason}</td></tr>)}</tbody></table></div>}

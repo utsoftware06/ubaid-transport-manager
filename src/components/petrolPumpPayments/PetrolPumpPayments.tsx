@@ -6,6 +6,11 @@ import PetrolPumpPaymentTable from "@/components/petrolPumpPayments/PetrolPumpPa
 import { supabase } from "@/lib/supabase/client";
 import { useLanguage } from "@/contexts/LanguageContext";
 import ModulePageHeading from "@/components/shared/ModulePageHeading";
+import { getDeleteFailureKey, type DeleteRpcError } from "@/components/petrolPumpPayments/deleteError";
+import ManualDieselPaymentCorrectionModal from "@/components/petrolPumpPayments/ManualDieselPaymentCorrectionModal";
+import type { ManualDieselCorrectionHistoryView, ManualDieselLinkedPaymentView } from "@/components/petrolPumpPayments/manualDieselPaymentTypes";
+import { buildManualDieselCorrectionRpcPayload } from "@/lib/expenses/manualDieselPaymentCorrection";
+import { publishManualDieselPaymentCorrection } from "@/lib/expenses/manualDieselPaymentCorrectionEvents";
 
 export type PumpBalanceStatus = "Payable" | "Paid" | "Advance";
 
@@ -85,6 +90,53 @@ type PetrolPumpPaymentDatabaseRow = {
   created_at: string | null;
 };
 
+type ManualDieselInitialPaymentRow = {
+  request_id: string;
+  voucher_id: number;
+  manual_voucher_id: string;
+  adda_id: string;
+  vehicle_id: string;
+  diesel_entry_id: number;
+  payment_id: number | null;
+  payment_date: string;
+  paid_amount: number | string;
+  payment_method: string;
+  reference_no: string | null;
+  payment_remarks: string | null;
+  correction_status: "active" | "voided";
+};
+
+type CorrectionHistoryDatabaseRow = {
+  id: number;
+  original_payment_id: number;
+  replacement_payment_id: number | null;
+  adda_id: string;
+  voucher_id: number;
+  diesel_entry_id: number;
+  action: "void" | "replace";
+  reason: string;
+  created_at: string;
+  original_snapshot: Record<string, unknown>;
+  replacement_snapshot: Record<string, unknown> | null;
+};
+
+type AddaOption = { id: string; name: string };
+
+function isMissingCorrectionSchema(error: { code?: string | null } | null) {
+  return error?.code === "42P01" || error?.code === "42703" || error?.code === "PGRST205" || error?.code === "PGRST204";
+}
+
+function getCorrectionErrorKey(error: { message?: string | null; code?: string | null }) {
+  const message = error.message ?? "";
+  if (message.includes("REQUEST_REUSED")) return "request_reused";
+  if (error.code === "42501" || message.includes("ADMIN_REQUIRED") || message.includes("ADDA_MISMATCH")) return "authorization";
+  if (message.includes("VOUCHER_CONTEXT") || message.includes("VEHICLE_CONTEXT") || message.includes("PUMP_TENANT")) return "context";
+  if (message.includes("ALLOCATION")) return "allocation";
+  if (message.includes("CASHBOOK")) return "cashbook";
+  if (message.includes("SNAPSHOT_CHANGED") || message.includes("VOUCHER")) return "finalized";
+  return null;
+}
+
 export function formatAmount(value: number) {
   return `Rs. ${Number(value || 0).toLocaleString("en-PK", {
     maximumFractionDigits: 0,
@@ -121,6 +173,9 @@ function getBalanceStatus(
 export default function PetrolPumpPayments() {
   const { t, dir } = useLanguage();
   const [addaId, setAddaId] = useState<string | null>(null);
+  const [profileRole, setProfileRole] = useState<string | null>(null);
+  const [profileActive, setProfileActive] = useState(false);
+  const [addas, setAddas] = useState<AddaOption[]>([]);
   const [paymentDate, setPaymentDate] = useState("");
   const [petrolPumpId, setPetrolPumpId] = useState("");
   const [advanceUsed, setAdvanceUsed] = useState("0");
@@ -135,24 +190,44 @@ export default function PetrolPumpPayments() {
     DieselEntryDatabaseRow[]
   >([]);
   const [payments, setPayments] = useState<PetrolPumpPaymentDatabaseRow[]>([]);
+  const [manualDieselLinks, setManualDieselLinks] = useState<ManualDieselLinkedPaymentView[]>([]);
+  const [correctionHistory, setCorrectionHistory] = useState<ManualDieselCorrectionHistoryView[]>([]);
+  const [correctionSetupState, setCorrectionSetupState] = useState<"ready" | "not_deployed" | "error" | "needs_adda">("ready");
+  const [correctionLoadError, setCorrectionLoadError] = useState("");
+  const [selectedCorrection, setSelectedCorrection] = useState<ManualDieselLinkedPaymentView | null>(null);
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCorrecting, setIsCorrecting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const saveInProgressRef = useRef(false);
   const deleteInProgressRef = useRef(false);
+  const correctionInProgressRef = useRef(false);
 
   useEffect(() => {
     let active = true;
     void supabase.auth.getUser().then(async ({ data }) => {
       if (!data.user) return;
-      const { data: profile } = await supabase.from("profiles").select("adda_id,is_active").eq("id", data.user.id).maybeSingle();
-      if (active && profile?.is_active && profile.adda_id) setAddaId(String(profile.adda_id));
+      const { data: profile, error: profileError } = await supabase.from("profiles").select("role,adda_id,is_active").eq("id", data.user.id).maybeSingle();
+      if (!active || profileError || !profile?.is_active) return;
+      setProfileRole(profile.role);
+      setProfileActive(true);
+      if (profile.role === "super_admin") {
+        const { data: addaRows, error: addasError } = await supabase.from("addas").select("id,name").order("name");
+        if (!active) return;
+        if (addasError) {
+          setErrorMessage(t("petrolPumpPayments.messages.loadFailed"));
+          return;
+        }
+        setAddas((addaRows ?? []).map((row) => ({ id: String(row.id), name: row.name ?? String(row.id) })));
+        return;
+      }
+      if (profile.adda_id) setAddaId(String(profile.adda_id));
     });
     return () => { active = false; };
-  }, []);
+  }, [t]);
 
   const loadPumps = useCallback(async () => {
     const { data, error } = await supabase
@@ -204,6 +279,128 @@ export default function PetrolPumpPayments() {
     setPayments((data ?? []) as PetrolPumpPaymentDatabaseRow[]);
   }, [t]);
 
+  const loadManualDieselCorrectionData = useCallback(async () => {
+    setManualDieselLinks([]);
+    setCorrectionHistory([]);
+    setCorrectionLoadError("");
+    if (!addaId) {
+      setCorrectionSetupState(profileRole === "super_admin" ? "needs_adda" : "ready");
+      return;
+    }
+
+    const [linkResult, historyResult] = await Promise.all([
+      supabase
+        .from("manual_voucher_diesel_initial_payments")
+        .select("request_id,voucher_id,manual_voucher_id,adda_id,vehicle_id,diesel_entry_id,payment_id,payment_date,paid_amount,payment_method,reference_no,payment_remarks,correction_status")
+        .eq("adda_id", addaId)
+        .eq("correction_status", "active")
+        .not("payment_id", "is", null),
+      supabase
+        .from("manual_voucher_diesel_payment_corrections")
+        .select("id,original_payment_id,replacement_payment_id,adda_id,voucher_id,diesel_entry_id,action,reason,created_at,original_snapshot,replacement_snapshot")
+        .eq("adda_id", addaId)
+        .order("created_at", { ascending: false })
+        .limit(100),
+    ]);
+    const schemaError = isMissingCorrectionSchema(linkResult.error) || isMissingCorrectionSchema(historyResult.error);
+    if (schemaError) {
+      setCorrectionSetupState("not_deployed");
+      return;
+    }
+    if (linkResult.error || historyResult.error) {
+      console.error("Unable to load linked Manual Voucher payment correction data:", {
+        linkError: linkResult.error?.code,
+        historyError: historyResult.error?.code,
+      });
+      setCorrectionSetupState("error");
+      setCorrectionLoadError(t("petrolPumpPayments.correction.loadFailed"));
+      return;
+    }
+
+    const rawLinks = (linkResult.data ?? []) as unknown as ManualDieselInitialPaymentRow[];
+    const historyRows = (historyResult.data ?? []) as unknown as CorrectionHistoryDatabaseRow[];
+    const voucherIds = Array.from(new Set(rawLinks.map((row) => Number(row.voucher_id))));
+    const manualVoucherIds = Array.from(new Set(rawLinks.map((row) => row.manual_voucher_id)));
+    const dieselIds = Array.from(new Set(rawLinks.map((row) => Number(row.diesel_entry_id))));
+    const vehicleIds = Array.from(new Set(rawLinks.map((row) => row.vehicle_id)));
+    const [voucherResult, detailResult, dieselResult, vehicleResult] = await Promise.all([
+      voucherIds.length ? supabase.from("expenses").select("id,expense_no,voucher_source,loading_id,movement_group_id,archived_at").in("id", voucherIds) : Promise.resolve({ data: [], error: null }),
+      manualVoucherIds.length ? supabase.from("manual_voucher_details").select("id,voucher_id,adda_id,vehicle_id,status").in("id", manualVoucherIds) : Promise.resolve({ data: [], error: null }),
+      dieselIds.length ? supabase.from("diesel_entries").select("id,expense_id,manual_voucher_id,vehicle_id,total_amount,paid_amount,remaining_amount,payment_status").in("id", dieselIds) : Promise.resolve({ data: [], error: null }),
+      vehicleIds.length ? supabase.from("vehicles").select("id,adda_id,vehicle_no").in("id", vehicleIds) : Promise.resolve({ data: [], error: null }),
+    ]);
+    const relationshipError = voucherResult.error || detailResult.error || dieselResult.error || vehicleResult.error;
+    if (relationshipError) {
+      console.error("Unable to resolve linked Manual Voucher payment references:", { code: relationshipError.code });
+      setCorrectionSetupState("error");
+      setCorrectionLoadError(t("petrolPumpPayments.correction.loadFailed"));
+      return;
+    }
+    const vouchers = new Map((voucherResult.data ?? []).map((row) => [Number(row.id), row]));
+    const details = new Map((detailResult.data ?? []).map((row) => [String(row.id), row]));
+    const diesels = new Map((dieselResult.data ?? []).map((row) => [Number(row.id), row]));
+    const vehicles = new Map((vehicleResult.data ?? []).map((row) => [String(row.id), row]));
+    const mappedLinks: ManualDieselLinkedPaymentView[] = [];
+    for (const link of rawLinks) {
+      const voucher = vouchers.get(Number(link.voucher_id));
+      const detail = details.get(link.manual_voucher_id);
+      const diesel = diesels.get(Number(link.diesel_entry_id));
+      const vehicle = vehicles.get(link.vehicle_id);
+      if (
+        !link.payment_id || !voucher || !detail || !diesel || !vehicle ||
+        Number(voucher.id) !== Number(link.voucher_id) || voucher.voucher_source !== "manual" ||
+        voucher.loading_id !== null || voucher.movement_group_id !== null || voucher.archived_at !== null ||
+        Number(detail.voucher_id) !== Number(link.voucher_id) || detail.adda_id !== addaId ||
+        detail.vehicle_id !== link.vehicle_id || Number(diesel.expense_id) !== Number(link.voucher_id) ||
+        diesel.manual_voucher_id !== link.manual_voucher_id || diesel.vehicle_id !== link.vehicle_id ||
+        vehicle.adda_id !== addaId || !["draft", "finalized"].includes(detail.status)
+      ) {
+        setCorrectionSetupState("error");
+        setCorrectionLoadError(t("petrolPumpPayments.correction.loadFailed"));
+        return;
+      }
+      mappedLinks.push({
+        requestId: link.request_id,
+        paymentId: Number(link.payment_id),
+        addaId: link.adda_id,
+        voucherId: Number(link.voucher_id),
+        voucherNumber: voucher.expense_no || String(voucher.id),
+        manualVoucherId: link.manual_voucher_id,
+        voucherStatus: detail.status as "draft" | "finalized",
+        dieselEntryId: Number(link.diesel_entry_id),
+        vehicleNo: vehicle.vehicle_no || "—",
+        correctionStatus: link.correction_status,
+        paymentDate: link.payment_date,
+        paidAmount: toNumber(link.paid_amount),
+        paymentMethod: link.payment_method,
+        referenceNo: link.reference_no,
+        paymentRemarks: link.payment_remarks,
+        dieselTotal: toNumber(diesel.total_amount),
+        dieselPaid: toNumber(diesel.paid_amount),
+        dieselRemaining: toNumber(diesel.remaining_amount),
+        dieselStatus: diesel.payment_status || "Unpaid",
+      });
+    }
+    setManualDieselLinks(mappedLinks);
+    setCorrectionHistory(historyRows.map((row) => {
+      const voucher = vouchers.get(Number(row.voucher_id));
+      return {
+        id: Number(row.id),
+        originalPaymentId: Number(row.original_payment_id),
+        replacementPaymentId: row.replacement_payment_id === null ? null : Number(row.replacement_payment_id),
+        addaId: row.adda_id,
+        voucherNumber: voucher?.expense_no || String(row.voucher_id),
+        dieselEntryId: Number(row.diesel_entry_id),
+        action: row.action,
+        reason: row.reason,
+        createdAt: row.created_at,
+        originalSnapshot: row.original_snapshot ?? {},
+        replacementSnapshot: row.replacement_snapshot,
+      };
+    }));
+    setCorrectionSetupState("ready");
+  }, [addaId, profileRole, t]);
+
   const loadInitialData = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage("");
@@ -215,6 +412,11 @@ export default function PetrolPumpPayments() {
     const timer = window.setTimeout(() => void loadInitialData(), 0);
     return () => window.clearTimeout(timer);
   }, [loadInitialData]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadManualDieselCorrectionData(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadManualDieselCorrectionData]);
 
   const pumps = useMemo<PetrolPumpOption[]>(() => {
     return pumpRows.map((pump) => {
@@ -451,7 +653,15 @@ export default function PetrolPumpPayments() {
         p_payment_id: row.id,
       });
 
-      if (error) throw new Error(error.message);
+      if (error) {
+        const deleteError = error as DeleteRpcError;
+        console.error("Failed to delete petrol pump payment:", {
+          code: deleteError.code,
+          message: deleteError.message,
+        });
+        alert(t(getDeleteFailureKey(deleteError)));
+        return;
+      }
 
       if (editingId === row.id) resetForm();
 
@@ -466,10 +676,83 @@ export default function PetrolPumpPayments() {
     }
   }
 
+  const canCorrectManualDieselPayments = profileActive &&
+    (profileRole === "adda_admin" || profileRole === "super_admin") &&
+    Boolean(addaId) && correctionSetupState === "ready";
+
+  async function handleManualDieselCorrection(input: {
+    action: "void" | "replace";
+    reason: string;
+    replacementDate?: string;
+    replacementAmount?: string;
+    replacementMethod?: string;
+    replacementReference?: string;
+    replacementRemarks?: string;
+  }) {
+    if (correctionInProgressRef.current || !selectedCorrection || !addaId || !canCorrectManualDieselPayments) return;
+    let payload;
+    try {
+      payload = buildManualDieselCorrectionRpcPayload({
+        paymentId: selectedCorrection.paymentId,
+        addaId,
+        requestId: window.crypto.randomUUID(),
+        ...input,
+      });
+    } catch (error) {
+      const key = error instanceof Error ? error.message : "replacement_details_required";
+      const knownKey = ["payment_id_invalid", "context_required", "reason_required", "replacement_details_required", "replacement_amount_invalid"].includes(key)
+        ? key
+        : "failed";
+      alert(t(`petrolPumpPayments.correction.errors.${knownKey}`));
+      return;
+    }
+
+    correctionInProgressRef.current = true;
+    setIsCorrecting(true);
+    try {
+      const { error } = await supabase.rpc("correct_manual_voucher_diesel_payment", payload);
+      if (error) {
+        console.error("Manual Voucher Diesel payment correction failed:", { code: error.code, message: error.message });
+        const specificKey = getCorrectionErrorKey(error);
+        alert(specificKey
+          ? t(`petrolPumpPayments.correction.errors.${specificKey}`)
+          : t("petrolPumpPayments.correction.failed"));
+        return;
+      }
+      setSelectedCorrection(null);
+      publishManualDieselPaymentCorrection();
+      await Promise.all([loadPayments(), loadDieselEntries(), loadManualDieselCorrectionData()]);
+      alert(t("petrolPumpPayments.correction.success"));
+    } catch (error) {
+      console.error("Manual Voucher Diesel payment correction request failed:", error);
+      alert(t("petrolPumpPayments.correction.failed"));
+    } finally {
+      correctionInProgressRef.current = false;
+      setIsCorrecting(false);
+    }
+  }
+
+  function selectCorrectionAdda(nextAddaId: string) {
+    setSelectedCorrection(null);
+    setManualDieselLinks([]);
+    setCorrectionHistory([]);
+    setCorrectionLoadError("");
+    setAddaId(nextAddaId || null);
+  }
+
   return (
     <div dir={dir} className="ut-module-page space-y-6">
       <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <ModulePageHeading icon="payment" accent="green" title={t("petrolPumpPayments.title")} description={t("petrolPumpPayments.description")} />
+        {profileRole === "super_admin" && (
+          <label className="mt-4 block max-w-xl text-sm font-bold text-slate-800">
+            {t("petrolPumpPayments.correction.selectAdda")}
+            <select value={addaId ?? ""} onChange={(event) => selectCorrectionAdda(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-3">
+              <option value="">{t("petrolPumpPayments.correction.selectAddaPlaceholder")}</option>
+              {addas.map((adda) => <option key={adda.id} value={adda.id}>{adda.name}</option>)}
+            </select>
+          </label>
+        )}
       </header>
 
       <PetrolPumpPaymentForm
@@ -511,7 +794,21 @@ export default function PetrolPumpPayments() {
         isLoading={isLoading}
         errorMessage={errorMessage}
         pumps={pumps}
+        manualDieselLinks={manualDieselLinks}
+        correctionHistory={correctionHistory}
+        correctionSetupState={correctionSetupState}
+        correctionLoadError={correctionLoadError}
+        canCorrectManualDieselPayments={canCorrectManualDieselPayments}
+        onCorrectManualDieselPayment={setSelectedCorrection}
       />
+      {selectedCorrection && (
+        <ManualDieselPaymentCorrectionModal
+          payment={selectedCorrection}
+          isSaving={isCorrecting}
+          onCancel={() => setSelectedCorrection(null)}
+          onSubmit={(input) => void handleManualDieselCorrection(input)}
+        />
+      )}
     </div>
   );
 }

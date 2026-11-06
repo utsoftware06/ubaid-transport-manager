@@ -10,6 +10,8 @@ import { escapeHtml } from "@/lib/print/escapeHtml";
 import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
 import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
 import VoiceTypingField from "@/components/shared/VoiceTypingField";
+import ManualDieselPaymentCorrectionPanel from "./ManualDieselPaymentCorrectionPanel";
+import type { ManualDieselCorrectionHistoryView, ManualDieselLinkedPaymentView } from "./manualDieselPaymentTypes";
 
 type Props = {
   rows: PetrolPumpPaymentRow[];
@@ -22,6 +24,12 @@ type Props = {
   isLoading: boolean;
   errorMessage: string;
   pumps: PetrolPumpOption[];
+  manualDieselLinks: ManualDieselLinkedPaymentView[];
+  correctionHistory: ManualDieselCorrectionHistoryView[];
+  correctionSetupState: "ready" | "not_deployed" | "error" | "needs_adda";
+  correctionLoadError?: string;
+  canCorrectManualDieselPayments: boolean;
+  onCorrectManualDieselPayment: (payment: ManualDieselLinkedPaymentView) => void;
 };
 
 function getStatusTextClass(status: string) {
@@ -56,6 +64,12 @@ export default function PetrolPumpPaymentTable({
   isLoading,
   errorMessage,
   pumps,
+  manualDieselLinks,
+  correctionHistory,
+  correctionSetupState,
+  correctionLoadError,
+  canCorrectManualDieselPayments,
+  onCorrectManualDieselPayment,
 }: Props) {
   const { t, dir, language } = useLanguage();
   const modulePrint = useModuleTransportPrint("petrol_pump", addaId, language);
@@ -65,18 +79,26 @@ export default function PetrolPumpPaymentTable({
     t(`petrolPumpPayments.paymentMethods.${method === "Online Transfer" ? "onlineTransfer" : method.toLowerCase()}`);
   const totalPayments = rows.reduce((total, row) => total + row.amount, 0);
 
+  const linkedByPayment = new Map(manualDieselLinks.map((link) => [link.paymentId, link]));
+
   function getPump(row: PetrolPumpPaymentRow) {
     return pumps.find((item) => item.id === row.petrolPumpId) ?? null;
   }
 
   function handlePrintReceipt(row: PetrolPumpPaymentRow) {
-    const body = `<div class="details">${[
+    const receiptRows: Array<[string, string]> = [
       [t("common.date"), row.paymentDate], [t("petrolPumpPayments.fields.reference"), row.referenceNo],
       [t("petrolPumpPayments.fields.pump"), row.pumpName], [t("petrolPumps.fields.ownerName"), row.ownerName],
       [t("petrolPumpPayments.fields.paymentMethod"), methodLabel(row.paymentMethod)], [t("petrolPumpPayments.fields.remarks"), row.remarks],
       [t("petrolPumpPayments.fields.advanceUsed"), formatAmount(row.advanceUsed)], [t("petrolPumpPayments.fields.paymentNow"), formatAmount(row.paymentNow)],
       [t("common.total"), formatAmount(row.amount)], [t("common.remaining"), formatAmount(row.remainingPayable)], [t("common.status"), statusLabel(row.settlementStatus)],
-    ].map(([label,value])=>`<div><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</div>`).join("")}</div>`;
+    ];
+    const linkedPayment = linkedByPayment.get(row.id);
+    if (linkedPayment) receiptRows.push([
+      t("petrolPumpPayments.correction.columns.voucher"),
+      `${linkedPayment.voucherNumber} · ${linkedPayment.vehicleNo} · Diesel #${linkedPayment.dieselEntryId}`,
+    ]);
+    const body = `<div class="details">${receiptRows.map(([label,value])=>`<div><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</div>`).join("")}</div>`;
     modulePrint.open(t("petrolPumpPayments.print.receiptTitle"), body, () => legacyPrintReceipt(row));
   }
 
@@ -457,7 +479,7 @@ export default function PetrolPumpPaymentTable({
 
       {!isLoading && !errorMessage && rows.length > 0 && (
         <div className="overflow-x-auto rounded-xl border border-gray-200">
-          <table className="w-full min-w-[1500px] border-collapse bg-white text-sm text-gray-900">
+          <table className="w-full min-w-[1700px] border-collapse bg-white text-sm text-gray-900">
             <thead className="bg-blue-600 text-white">
               <tr>
                 <th className="p-3 text-start font-bold">{t("common.date")}</th>
@@ -472,6 +494,7 @@ export default function PetrolPumpPaymentTable({
                 <th className="p-3 text-start font-bold">{t("common.status")}</th>
                 <th className="p-3 text-start font-bold">{t("petrolPumpPayments.fields.paymentMethod")}</th>
                 <th className="p-3 text-start font-bold">{t("petrolPumpPayments.fields.reference")}</th>
+                <th className="p-3 text-start font-bold">{t("petrolPumpPayments.correction.columns.voucher")}</th>
                 <th className="p-3 text-start font-bold">{t("petrolPumpPayments.fields.remarks")}</th>
                 <th className="p-3 text-start font-bold">{t("common.actions.title")}</th>
               </tr>
@@ -529,21 +552,29 @@ export default function PetrolPumpPaymentTable({
                     </td>
                     <td className="p-3 font-semibold">{methodLabel(row.paymentMethod)}</td>
                     <td dir="ltr" className="p-3 font-semibold">{row.referenceNo}</td>
+                    <td className="p-3 font-semibold">
+                      {linkedByPayment.has(row.id) ? (
+                        <div>
+                          <div>{linkedByPayment.get(row.id)?.voucherNumber} · {linkedByPayment.get(row.id)?.vehicleNo}</div>
+                          <div className="text-xs text-slate-600">{t("petrolPumpPayments.correction.columns.diesel")} #{linkedByPayment.get(row.id)?.dieselEntryId}</div>
+                        </div>
+                      ) : "—"}
+                    </td>
                     <td className="max-w-[260px] p-3 font-semibold">
                       {row.remarks}
                     </td>
                     <td className="min-w-[240px] p-3">
                       <div className="flex flex-wrap gap-2">
-                        <button
+                        {!linkedByPayment.has(row.id) && <button
                           type="button"
                           onClick={() => onEdit(row)}
                           aria-label={`${t("common.edit")} ${row.pumpName}`}
                           className="rounded-lg bg-blue-600 px-3 py-2 font-semibold text-white transition hover:bg-blue-700"
                         >
                           {t("common.edit")}
-                        </button>
+                        </button>}
 
-                        <button
+                        {!linkedByPayment.has(row.id) && <button
                           type="button"
                           onClick={() => onDelete(row)}
                           aria-label={`${t("common.delete")} ${row.pumpName}`}
@@ -551,7 +582,18 @@ export default function PetrolPumpPaymentTable({
                           className="rounded-lg bg-red-600 px-3 py-2 font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed"
                         >
                           {t("common.delete")}
-                        </button>
+                        </button>}
+
+                        {linkedByPayment.has(row.id) && canCorrectManualDieselPayments && (
+                          <button
+                            type="button"
+                            onClick={() => onCorrectManualDieselPayment(linkedByPayment.get(row.id)!)}
+                            aria-label={`${t("petrolPumpPayments.correction.correct")} ${linkedByPayment.get(row.id)?.voucherNumber}`}
+                            className="rounded-lg bg-amber-700 px-3 py-2 font-semibold text-white transition hover:bg-amber-800"
+                          >
+                            {t("petrolPumpPayments.correction.correct")}
+                          </button>
+                        )}
 
                         <button
                           type="button"
@@ -576,12 +618,20 @@ export default function PetrolPumpPaymentTable({
                 <td className="p-3 text-right font-extrabold text-green-700">
                   {formatAmount(totalPayments)}
                 </td>
-                <td colSpan={8} />
+                <td colSpan={11} />
               </tr>
             </tfoot>
           </table>
         </div>
       )}
+      <ManualDieselPaymentCorrectionPanel
+        links={manualDieselLinks}
+        history={correctionHistory}
+        canCorrect={canCorrectManualDieselPayments}
+        setupState={correctionSetupState}
+        loadError={correctionLoadError}
+        onCorrect={onCorrectManualDieselPayment}
+      />
       {modulePrint.dialog}
     </div>
   );

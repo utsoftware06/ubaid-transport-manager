@@ -7,6 +7,7 @@ import DieselTable from "@/components/diesel/DieselTable";
 import { useLanguage } from "@/contexts/LanguageContext";
 import ModulePageHeading from "@/components/shared/ModulePageHeading";
 import { supabase } from "@/lib/supabase/client";
+import { subscribeToManualDieselPaymentCorrections } from "@/lib/expenses/manualDieselPaymentCorrectionEvents";
 
 export type DieselPaymentStatus = "Paid" | "Partial" | "Unpaid";
 
@@ -255,6 +256,10 @@ export default function Diesel() {
 
     return () => window.clearTimeout(timer);
   }, [loadDieselEntries]);
+
+  useEffect(() => subscribeToManualDieselPaymentCorrections(() => {
+    void loadDieselEntries();
+  }), [loadDieselEntries]);
 
   const petrolPumps = useMemo<PetrolPumpOption[]>(() => {
     const options = new Map<string, PetrolPumpOption>();

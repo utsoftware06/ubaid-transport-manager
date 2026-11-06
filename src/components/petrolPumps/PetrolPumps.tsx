@@ -7,6 +7,7 @@ import PetrolPumpTable from "@/components/petrolPumps/PetrolPumpTable";
 import { supabase } from "@/lib/supabase/client";
 import { useLanguage } from "@/contexts/LanguageContext";
 import ModulePageHeading from "@/components/shared/ModulePageHeading";
+import { subscribeToManualDieselPaymentCorrections } from "@/lib/expenses/manualDieselPaymentCorrectionEvents";
 
 export type PetrolPumpDieselEntry = {
   id: number;
@@ -240,6 +241,10 @@ export default function PetrolPumps() {
     const timer = window.setTimeout(() => void loadInitialData(), 0);
     return () => window.clearTimeout(timer);
   }, [loadInitialData]);
+
+  useEffect(() => subscribeToManualDieselPaymentCorrections(() => {
+    void loadInitialData();
+  }), [loadInitialData]);
 
   function resetForm() {
     setPumpName("");

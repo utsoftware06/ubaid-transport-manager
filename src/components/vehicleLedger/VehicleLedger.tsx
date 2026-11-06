@@ -14,6 +14,7 @@ import VehicleLedgerFilters from "@/components/vehicleLedger/VehicleLedgerFilter
 import VehicleLedgerTable from "@/components/vehicleLedger/VehicleLedgerTable";
 import VehicleTripsModal from "@/components/vehicleLedger/VehicleTripsModal";
 import { supabase } from "@/lib/supabase/client";
+import { subscribeToManualDieselPaymentCorrections } from "@/lib/expenses/manualDieselPaymentCorrectionEvents";
 import { getParchiVehicleSettlementTotalsForBookings } from "@/lib/parchi/vehicleSettlement";
 import { useLanguage } from "@/contexts/LanguageContext";
 import ModulePageHeading from "@/components/shared/ModulePageHeading";
@@ -1061,6 +1062,10 @@ export default function VehicleLedger({ view = "vehicle" }: { view?: "vehicle" |
     const timer = window.setTimeout(() => void loadVehicleLedgerData(), 0);
     return () => window.clearTimeout(timer);
   }, [loadVehicleLedgerData]);
+
+  useEffect(() => subscribeToManualDieselPaymentCorrections(() => {
+    void loadVehicleLedgerData();
+  }), [loadVehicleLedgerData]);
 
   const vehicleOptions = useMemo<VehicleOption[]>(() => {
     const vehicles = new Map<string, VehicleOption>();

@@ -58,6 +58,7 @@ import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/prin
 import ModulePageHeading from "@/components/shared/ModulePageHeading";
 import { getInclusiveManualChakkarDays, getManualVoucherDateState } from "@/lib/expenses/manualVoucherDates";
 import { getParchiVehicleSettlementTotalsForBookings } from "@/lib/parchi/vehicleSettlement";
+import { subscribeToManualDieselPaymentCorrections } from "@/lib/expenses/manualDieselPaymentCorrectionEvents";
 type ManualVoucherSourceEditTarget =
   | { kind: "workshop"; id: number }
   | { kind: "oil"; id: string };
@@ -193,12 +194,50 @@ type DieselEntryRecord = {
   payment_status: string;
   remarks: string | null;
   initial_payment_date?: string | null;
+  initial_payment_id?: number | null;
+  initial_payment_amount?: number | string | null;
+  initial_payment_status?: "active" | "voided" | "unverified" | null;
   initial_payment_method?: string | null;
   initial_payment_reference?: string | null;
   initial_payment_remarks?: string | null;
+  initial_payment_corrections?: Array<{
+    id: number;
+    original_payment_id: number;
+    replacement_payment_id: number | null;
+    action: "void" | "replace";
+    reason: string;
+    created_at: string;
+    original_snapshot: Record<string, unknown>;
+    replacement_snapshot: Record<string, unknown> | null;
+  }>;
   petrol_pumps?: {
     pump_name: string | null;
   } | null;
+};
+
+type ManualDieselInitialPaymentRecord = {
+  voucher_id: number | string;
+  diesel_entry_id: number | string;
+  payment_id?: number | string | null;
+  payment_date: string | null;
+  paid_amount?: number | string | null;
+  correction_status?: "active" | "voided" | "unverified" | null;
+  payment_method: string | null;
+  reference_no: string | null;
+  payment_remarks: string | null;
+};
+
+type ManualDieselPaymentCorrectionRecord = {
+  id: number;
+  voucher_id: number | string;
+  diesel_entry_id: number | string;
+  original_payment_id: number;
+  replacement_payment_id: number | null;
+  action: "void" | "replace";
+  reason: string;
+  created_at: string;
+  original_snapshot: Record<string, unknown>;
+  replacement_snapshot: Record<string, unknown> | null;
 };
 
 type VoucherWorkshopDatabaseRow = {
@@ -274,6 +313,9 @@ type ManualDieselInput = {
   paymentReference: string;
   paymentRemarks: string;
   paymentRecorded: boolean;
+  paymentCorrectionStatus: "active" | "voided" | "unverified" | null;
+  linkedPaymentId: number | null;
+  linkedPaymentAmount: string | null;
   slipNo: string;
   remarks: string;
 };
@@ -354,6 +396,9 @@ function createManualDieselInput(entryDate = ""): ManualDieselInput {
     paymentReference: "",
     paymentRemarks: "",
     paymentRecorded: false,
+    paymentCorrectionStatus: null,
+    linkedPaymentId: null,
+    linkedPaymentAmount: null,
     slipNo: "",
     remarks: "",
   };
@@ -1257,6 +1302,10 @@ export default function ExpensesPage() {
     }
   });
 
+  const refreshManualDieselPaymentCorrections = useEffectEvent(async () => {
+    await loadExpenseVouchers();
+  });
+
   useEffect(() => {
     const loadTimer = window.setTimeout(() => {
       void loadInitialData();
@@ -1264,6 +1313,10 @@ export default function ExpensesPage() {
 
     return () => window.clearTimeout(loadTimer);
   }, []);
+
+  useEffect(() => subscribeToManualDieselPaymentCorrections(() => {
+    void refreshManualDieselPaymentCorrections();
+  }), []);
 
   async function loadLoadings(movementBookingIds: string[] = []) {
     const loadingSelect = `
@@ -1923,7 +1976,7 @@ export default function ExpensesPage() {
 
       supabase
         .from("manual_voucher_diesel_initial_payments")
-        .select("voucher_id,diesel_entry_id,payment_date,payment_method,reference_no,payment_remarks")
+        .select("voucher_id,diesel_entry_id,payment_id,payment_date,paid_amount,payment_method,reference_no,payment_remarks,correction_status")
         .in("voucher_id", voucherIds),
     ]);
 
@@ -1949,25 +2002,38 @@ export default function ExpensesPage() {
       return;
     }
 
-    const dieselPaymentError = dieselPaymentResult.error;
+    let dieselPaymentRows = (dieselPaymentResult.data ?? []) as unknown as ManualDieselInitialPaymentRecord[];
+    let dieselPaymentError = dieselPaymentResult.error;
     const manualDieselPaymentTableNotInstalled =
-      dieselPaymentError?.code === "42P01" ||
-      dieselPaymentError?.code === "PGRST205";
+      dieselPaymentError?.code === "42P01" || dieselPaymentError?.code === "PGRST205";
+    if (dieselPaymentError?.code === "42703" || dieselPaymentError?.code === "PGRST204") {
+      const legacyLinkResult = await supabase
+        .from("manual_voucher_diesel_initial_payments")
+        .select("voucher_id,diesel_entry_id,payment_id,payment_date,paid_amount,payment_method,reference_no,payment_remarks")
+        .in("voucher_id", voucherIds);
+      dieselPaymentError = legacyLinkResult.error;
+      if (!dieselPaymentError) {
+        dieselPaymentRows = ((legacyLinkResult.data ?? []) as unknown as ManualDieselInitialPaymentRecord[]).map((row) => ({
+          ...row,
+          correction_status: row.payment_id ? "active" : "unverified",
+        }));
+      }
+    }
     if (manualDieselPaymentTableNotInstalled) {
       // This metadata table is introduced by the separately deployed Manual
       // Diesel payment migration. Until then, Diesel payment metadata is
       // optional and must not prevent the existing Voucher page from loading.
       console.warn("[/expenses] Optional Supabase query is not available yet:", {
-        query: "select voucher_id,diesel_entry_id,payment_date,payment_method,reference_no,payment_remarks from public.manual_voucher_diesel_initial_payments filtered by voucher_id",
+        query: "select linked Manual Voucher Diesel payment details filtered by voucher_id",
         table: "public.manual_voucher_diesel_initial_payments",
-        code: dieselPaymentError.code,
-        message: dieselPaymentError.message,
-        details: dieselPaymentError.details,
-        hint: dieselPaymentError.hint,
+        code: dieselPaymentError?.code ?? null,
+        message: dieselPaymentError?.message ?? null,
+        details: dieselPaymentError?.details ?? null,
+        hint: dieselPaymentError?.hint ?? null,
       });
     } else if (dieselPaymentError) {
       console.error("[/expenses] Supabase query failed:", {
-        query: "select voucher_id,diesel_entry_id,payment_date,payment_method,reference_no,payment_remarks from public.manual_voucher_diesel_initial_payments filtered by voucher_id",
+        query: "select linked Manual Voucher Diesel payment details filtered by voucher_id",
         table: "public.manual_voucher_diesel_initial_payments",
         code: dieselPaymentError.code,
         message: dieselPaymentError.message,
@@ -1977,6 +2043,25 @@ export default function ExpensesPage() {
       });
       alert(t("common.messages.loadFailed"));
       return;
+    }
+
+    let dieselPaymentCorrectionRows: ManualDieselPaymentCorrectionRecord[] = [];
+    if (!manualDieselPaymentTableNotInstalled && voucherIds.length > 0) {
+      const correctionResult = await supabase
+        .from("manual_voucher_diesel_payment_corrections")
+        .select("id,voucher_id,diesel_entry_id,original_payment_id,replacement_payment_id,action,reason,created_at,original_snapshot,replacement_snapshot")
+        .in("voucher_id", voucherIds)
+        .order("created_at", { ascending: false });
+      if (correctionResult.error && correctionResult.error.code !== "42P01" && correctionResult.error.code !== "PGRST205") {
+        logExpenseLoadQueryError(
+          "select payment correction audit by visible Manual Voucher ids",
+          "public.manual_voucher_diesel_payment_corrections",
+          correctionResult.error
+        );
+        alert(t("common.messages.loadFailed"));
+        return;
+      }
+      dieselPaymentCorrectionRows = (correctionResult.data ?? []) as unknown as ManualDieselPaymentCorrectionRecord[];
     }
 
     if (adjustmentResult.error) {
@@ -2215,27 +2300,44 @@ export default function ExpensesPage() {
     });
 
     const dieselPaymentDetails = new Map<number, {
+      paymentId: number | null;
       paymentDate: string;
+      paidAmount: number | string | null;
+      status: "active" | "voided" | "unverified";
       paymentMethod: string;
       paymentReference: string | null;
       paymentRemarks: string | null;
     }>();
-    (manualDieselPaymentTableNotInstalled ? [] : dieselPaymentResult.data ?? []).forEach((row) => {
+    (manualDieselPaymentTableNotInstalled ? [] : dieselPaymentRows).forEach((row) => {
       dieselPaymentDetails.set(Number(row.diesel_entry_id), {
-        paymentDate: row.payment_date,
-        paymentMethod: row.payment_method,
+        paymentId: row.payment_id === null || row.payment_id === undefined ? null : Number(row.payment_id),
+        paymentDate: row.payment_date ?? "",
+        paidAmount: row.paid_amount ?? null,
+        status: row.correction_status ?? (row.payment_id ? "active" : "unverified"),
+        paymentMethod: row.payment_method ?? "",
         paymentReference: row.reference_no,
         paymentRemarks: row.payment_remarks,
       });
     });
+    const correctionHistoryByDiesel = new Map<number, ManualDieselPaymentCorrectionRecord[]>();
+    for (const correction of dieselPaymentCorrectionRows) {
+      const key = Number(correction.diesel_entry_id);
+      const current = correctionHistoryByDiesel.get(key) ?? [];
+      current.push(correction);
+      correctionHistoryByDiesel.set(key, current);
+    }
     const dieselEntries = ((dieselResult.data ?? []) as DieselEntryRecord[]).map((diesel) => {
       const payment = dieselPaymentDetails.get(diesel.id);
       return {
         ...diesel,
         initial_payment_date: payment?.paymentDate ?? null,
+        initial_payment_id: payment?.paymentId ?? null,
+        initial_payment_amount: payment?.paidAmount ?? null,
+        initial_payment_status: payment?.status ?? null,
         initial_payment_method: payment?.paymentMethod ?? null,
         initial_payment_reference: payment?.paymentReference ?? null,
         initial_payment_remarks: payment?.paymentRemarks ?? null,
+        initial_payment_corrections: correctionHistoryByDiesel.get(diesel.id) ?? [],
       };
     });
 
@@ -2335,7 +2437,7 @@ export default function ExpensesPage() {
 
   function updateManualDieselRow(
     clientId: string,
-    field: keyof Omit<ManualDieselInput, "clientId" | "dieselEntryId" | "requestId" | "paymentRecorded">,
+    field: keyof Omit<ManualDieselInput, "clientId" | "dieselEntryId" | "requestId" | "paymentRecorded" | "paymentCorrectionStatus" | "linkedPaymentId" | "linkedPaymentAmount">,
     value: string
   ) {
     setManualDieselRows((rows) => rows.map((row) =>
@@ -3895,11 +3997,22 @@ export default function ExpensesPage() {
           liters: String(diesel.liters ?? ""),
           rate: String(diesel.rate ?? ""),
           paidAmount: String(diesel.paid_amount ?? "0"),
-          paymentDate: diesel.initial_payment_date ?? diesel.entry_date,
+          paymentDate: diesel.initial_payment_date ?? (diesel.initial_payment_status === "voided" ? "" : diesel.entry_date),
           paymentMethod: diesel.initial_payment_method ?? "Cash",
           paymentReference: diesel.initial_payment_reference ?? "",
           paymentRemarks: diesel.initial_payment_remarks ?? "",
-          paymentRecorded: diesel.initial_payment_date !== null && diesel.initial_payment_date !== undefined,
+          paymentRecorded: diesel.initial_payment_status === "active"
+            || diesel.initial_payment_status === "voided"
+            || (diesel.initial_payment_date !== null && diesel.initial_payment_date !== undefined),
+          paymentCorrectionStatus: diesel.initial_payment_status ?? null,
+          linkedPaymentId: diesel.initial_payment_id
+            ?? diesel.initial_payment_corrections?.[0]?.original_payment_id
+            ?? null,
+          linkedPaymentAmount: diesel.initial_payment_amount === null || diesel.initial_payment_amount === undefined
+            ? (diesel.initial_payment_corrections?.[0]?.original_snapshot.payment_now === undefined
+              ? null
+              : String(diesel.initial_payment_corrections[0].original_snapshot.payment_now))
+            : String(diesel.initial_payment_amount),
           slipNo: diesel.slip_no ?? "",
           remarks: diesel.remarks ?? "",
         }));
@@ -4338,7 +4451,44 @@ export default function ExpensesPage() {
     (voucher.diesel_entries ?? []).filter((diesel) => manual
       ? diesel.manual_voucher_id === detail?.id
       : voucherLoadings.some((loading) => String(loading.id) === String(diesel.loading_id))).forEach((diesel) => {
-      const source = [diesel.petrol_pumps?.pump_name, diesel.slip_no].filter(Boolean).join(" · ");
+      const paymentStatus = diesel.initial_payment_status
+        ? t(`petrolPumpPayments.correction.linkedPaymentStatus.${diesel.initial_payment_status}`)
+        : "";
+      const currentPayment = diesel.initial_payment_status === "active"
+        ? [
+            diesel.initial_payment_date,
+            diesel.initial_payment_amount === null || diesel.initial_payment_amount === undefined
+              ? ""
+              : `${t("common.amount")}: ${diesel.initial_payment_amount}`,
+            diesel.initial_payment_method,
+            diesel.initial_payment_reference ? `${t("petrolPumpPayments.fields.reference")}: ${diesel.initial_payment_reference}` : "",
+            diesel.initial_payment_remarks ? `${t("petrolPumpPayments.fields.remarks")}: ${diesel.initial_payment_remarks}` : "",
+          ].filter(Boolean).join(" · ")
+        : "";
+      const paymentHistory = (diesel.initial_payment_corrections ?? []).map((correction) => {
+        const replacement = correction.replacement_snapshot;
+        return [
+          t(`petrolPumpPayments.correction.actions.${correction.action}`),
+          `#${correction.original_payment_id}`,
+          correction.original_snapshot.date ? String(correction.original_snapshot.date) : "",
+          correction.original_snapshot.payment_now === undefined ? "" : `${t("common.amount")}: ${String(correction.original_snapshot.payment_now)}`,
+          correction.original_snapshot.method ? String(correction.original_snapshot.method) : "",
+          correction.original_snapshot.reference ? `${t("petrolPumpPayments.fields.reference")}: ${String(correction.original_snapshot.reference)}` : "",
+          correction.replacement_payment_id ? `→ #${correction.replacement_payment_id}` : "",
+          correction.reason,
+          replacement && typeof replacement.payment_date === "string" ? replacement.payment_date : "",
+          replacement?.payment_now === undefined ? "" : `${t("common.amount")}: ${String(replacement.payment_now)}`,
+          replacement?.payment_method ? String(replacement.payment_method) : "",
+          replacement?.reference_no ? `${t("petrolPumpPayments.fields.reference")}: ${String(replacement.reference_no)}` : "",
+        ].filter(Boolean).join(" ");
+      }).join(" · ");
+      const source = [
+        diesel.petrol_pumps?.pump_name,
+        diesel.slip_no,
+        paymentStatus,
+        currentPayment,
+        paymentHistory,
+      ].filter(Boolean).join(" · ");
       if (!source) return;
       const index = expenseIndexById.get(diesel.expense_item_id)
         ?? (manual ? expenseRows.findIndex((item) => item.expenseType === "Fuel") : -1);
@@ -4523,8 +4673,16 @@ export default function ExpensesPage() {
       let manualDieselIndex = 0;
       const expenseHtml = expenseRows.map((row) => {
         const diesel = row.expense_type === "Fuel" ? manualDieselEntries[manualDieselIndex++] : null;
+        const linkedPaymentDetails = diesel?.initial_payment_status
+          ? `<div><strong>${esc(t("petrolPumpPayments.correction.linkedPaymentDetails"))}:</strong> ${esc(t(`petrolPumpPayments.correction.linkedPaymentStatus.${diesel.initial_payment_status}`))}${diesel.initial_payment_id ? ` · #${esc(diesel.initial_payment_id)}` : ""}${diesel.initial_payment_status === "active" ? ` · ${esc(diesel.initial_payment_date || "—")} · ${esc(diesel.initial_payment_amount ?? "—")} · ${esc(diesel.initial_payment_method || "—")}${diesel.initial_payment_reference ? ` · ${esc(t("petrolPumpPayments.fields.reference"))}: ${esc(diesel.initial_payment_reference)}` : ""}${diesel.initial_payment_remarks ? ` · ${esc(t("petrolPumpPayments.fields.remarks"))}: ${esc(diesel.initial_payment_remarks)}` : ""}` : ""}</div>`
+          : "";
+        const correctionHistoryHtml = (diesel?.initial_payment_corrections ?? []).map((correction) => {
+          const original = correction.original_snapshot;
+          const replacement = correction.replacement_snapshot;
+          return `<div><strong>${esc(correction.created_at)} · ${esc(t(`petrolPumpPayments.correction.actions.${correction.action}`))}</strong> · #${esc(correction.original_payment_id)} · ${esc(original.date ?? "—")} · ${esc(original.payment_now ?? "—")} · ${esc(original.method ?? "—")}${original.reference ? ` · ${esc(t("petrolPumpPayments.fields.reference"))}: ${esc(original.reference)}` : ""}${correction.replacement_payment_id ? ` → #${esc(correction.replacement_payment_id)}` : ""}${replacement ? ` · ${esc(replacement.payment_date ?? "—")} · ${esc(replacement.payment_now ?? "—")} · ${esc(replacement.payment_method ?? "—")}${replacement.reference_no ? ` · ${esc(t("petrolPumpPayments.fields.reference"))}: ${esc(replacement.reference_no)}` : ""}` : ""} · ${esc(t("petrolPumpPayments.correction.historyColumns.reason"))}: ${esc(correction.reason)}</div>`;
+        }).join("");
         const dieselDetails = diesel
-          ? `<div>${esc(t("expenses.diesel.petrolPump"))}: ${esc(diesel.petrol_pumps?.pump_name)} · ${esc(t("common.date"))}: ${esc(diesel.entry_date)} · ${esc(t("expenses.diesel.litres"))}: ${esc(diesel.liters)} · ${esc(t("expenses.diesel.rate"))}: ${esc(diesel.rate)} · ${esc(t("common.paid"))}: ${esc(diesel.paid_amount)} · ${esc(t("common.remaining"))}: ${esc(diesel.remaining_amount)} · ${esc(t("expenses.diesel.slipNo"))}: ${esc(diesel.slip_no)} · ${esc(t("common.status"))}: ${esc(t(`common.paymentStatus.${diesel.payment_status.toLowerCase()}`))}</div>`
+          ? `<div>${esc(t("expenses.diesel.petrolPump"))}: ${esc(diesel.petrol_pumps?.pump_name)} · ${esc(t("common.date"))}: ${esc(diesel.entry_date)} · ${esc(t("expenses.diesel.litres"))}: ${esc(diesel.liters)} · ${esc(t("expenses.diesel.rate"))}: ${esc(diesel.rate)} · ${esc(t("common.paid"))}: ${esc(diesel.paid_amount)} · ${esc(t("common.remaining"))}: ${esc(diesel.remaining_amount)} · ${esc(t("expenses.diesel.slipNo"))}: ${esc(diesel.slip_no)} · ${esc(t("common.status"))}: ${esc(t(`common.paymentStatus.${diesel.payment_status.toLowerCase()}`))}</div>${linkedPaymentDetails}${correctionHistoryHtml}`
           : "";
         return `<tr><td>${esc(row.expense_type)}</td><td class="money">Rs. ${esc(money(toNumber(row.amount)))}</td><td>${esc(row.remarks || "—")}${dieselDetails}</td></tr>`;
       }).join("");
@@ -4681,6 +4839,17 @@ export default function ExpensesPage() {
       return items
             .map((item, index) => {
               const diesel = dieselByItemId.get(item.id);
+              const correctionStatus = diesel?.initial_payment_status
+                ? label(`petrolPumpPayments.correction.linkedPaymentStatus.${diesel.initial_payment_status}`)
+                : "";
+              const linkedPaymentDetails = diesel?.initial_payment_status
+                ? `<div class="diesel-payment"><strong>${label("petrolPumpPayments.correction.linkedPaymentDetails")}:</strong> ${correctionStatus}${diesel.initial_payment_id ? ` · #${value(diesel.initial_payment_id)}` : ""}${diesel.initial_payment_status === "active" ? ` · ${value(diesel.initial_payment_date || "—")} · ${label("common.amount")}: ${value(diesel.initial_payment_amount ?? "—")} · ${value(diesel.initial_payment_method || "—")}${diesel.initial_payment_reference ? ` · ${label("petrolPumpPayments.fields.reference")}: ${value(diesel.initial_payment_reference)}` : ""}${diesel.initial_payment_remarks ? ` · ${label("petrolPumpPayments.fields.remarks")}: ${value(diesel.initial_payment_remarks)}` : ""}` : ""}</div>`
+                : "";
+              const correctionHistory = (diesel?.initial_payment_corrections ?? []).map((correction) => {
+                const original = correction.original_snapshot;
+                const replacement = correction.replacement_snapshot;
+                return `<div class="diesel-payment">${value(correction.created_at)} · ${label(`petrolPumpPayments.correction.actions.${correction.action}`)} · #${value(correction.original_payment_id)} · ${value(original.date ?? "—")} · ${value(original.payment_now ?? "—")} · ${value(original.method ?? "—")}${original.reference ? ` · ${label("petrolPumpPayments.fields.reference")}: ${value(original.reference)}` : ""}${correction.replacement_payment_id ? ` → #${value(correction.replacement_payment_id)}` : ""}${replacement ? ` · ${value(replacement.payment_date ?? "—")} · ${value(replacement.payment_now ?? "—")} · ${value(replacement.payment_method ?? "—")}${replacement.reference_no ? ` · ${label("petrolPumpPayments.fields.reference")}: ${value(replacement.reference_no)}` : ""}` : ""} · ${label("petrolPumpPayments.correction.historyColumns.reason")}: ${value(correction.reason)}</div>`;
+              }).join("");
               const dieselDetails = diesel
                 ? `
                   <div class="diesel">
@@ -4694,6 +4863,7 @@ export default function ExpensesPage() {
                     <strong>${label("common.remaining")}:</strong> ${value(diesel.remaining_amount)} |
                     <strong>${label("common.status")}:</strong> ${label(`common.paymentStatus.${diesel.payment_status.toLowerCase()}`)} |
                     <strong>${label("expenses.diesel.slipNo")}:</strong> ${value(diesel.slip_no)}
+                    ${linkedPaymentDetails}${correctionHistory}
                   </div>
                 `
                 : "";
@@ -5433,7 +5603,18 @@ export default function ExpensesPage() {
 
                           <VoiceTypingField fieldLabel={t("expenses.manual.sourceExpenses.paymentDate")} mode="date"><label className="font-bold text-slate-900">{t("expenses.manual.sourceExpenses.paymentDate")}<input type="date" value={row.paymentDate} disabled={paymentLocked || paid <= 0} onChange={(event) => updateManualDieselRow(row.clientId, "paymentDate", event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-3 font-medium disabled:bg-slate-100" /></label></VoiceTypingField>
 
-                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm"><div className="font-bold text-slate-900">{t("common.remaining")}: Rs. {money(remaining)}</div><div className="mt-1 text-slate-700">{t("expenses.manual.sourceExpenses.paymentStatus")}: {t(`expenses.manual.sourceExpenses.paymentStatuses.${paymentStatusKey}`)}</div></div>
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                            <div className="font-bold text-slate-900">{t("common.remaining")}: Rs. {money(remaining)}</div>
+                            <div className="mt-1 text-slate-700">{t("expenses.manual.sourceExpenses.paymentStatus")}: {t(`expenses.manual.sourceExpenses.paymentStatuses.${paymentStatusKey}`)}</div>
+                            {row.paymentCorrectionStatus && <div className="mt-1 font-semibold text-amber-800">
+                              {t(`petrolPumpPayments.correction.linkedPaymentStatus.${row.paymentCorrectionStatus}`)}
+                              {row.linkedPaymentId ? ` · #${row.linkedPaymentId}` : ""}
+                              {row.linkedPaymentAmount ? ` · ${t("common.amount")}: Rs. ${money(toNumber(row.linkedPaymentAmount))}` : ""}
+                              {row.paymentDate ? ` · ${row.paymentDate}` : ""}
+                              {row.paymentCorrectionStatus === "active" && row.paymentMethod ? ` · ${row.paymentMethod}` : ""}
+                            </div>}
+                            {row.dieselEntryId !== null && row.paymentRecorded && <p className="mt-2 text-xs font-semibold text-slate-600">{t("petrolPumpPayments.correction.paymentOnlyNotice")}</p>}
+                          </div>
 
                           <VoiceTypingField fieldLabel={t("expenses.manual.sourceExpenses.paymentReference")} mode="identifier"><label className="font-bold text-slate-900">{t("expenses.manual.sourceExpenses.paymentReference")}<input value={row.paymentReference} disabled={paymentLocked || paid <= 0} onChange={(event) => updateManualDieselRow(row.clientId, "paymentReference", event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-3 font-medium disabled:bg-slate-100" /></label></VoiceTypingField>
 
