@@ -1,5 +1,30 @@
 export type ManualDieselCorrectionAction = "void" | "replace";
 
+const paymentMethodAliases: Record<string, "Cash" | "Bank" | "Cheque" | "Online Transfer"> = {
+  cash: "Cash",
+  cashpayment: "Cash",
+  "کیش": "Cash",
+  "نقد": "Cash",
+  bank: "Bank",
+  "بینک": "Bank",
+  cheque: "Cheque",
+  check: "Cheque",
+  "چیک": "Cheque",
+  onlinetransfer: "Online Transfer",
+  onlinebanktransfer: "Online Transfer",
+  "آنلائنٹرانسفر": "Online Transfer",
+  "آنلائنمنتقلی": "Online Transfer",
+};
+
+/** Maps only an exact supported payment-method phrase; unclear speech never changes the selection. */
+export function resolveCorrectionPaymentMethodCandidate(candidate: string) {
+  const normalized = candidate
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[\s\p{P}\p{S}\p{M}\u200c\u200d]/gu, "");
+  return paymentMethodAliases[normalized] ?? null;
+}
+
 export type ManualDieselCorrectionInput = {
   paymentId: number;
   addaId: string;

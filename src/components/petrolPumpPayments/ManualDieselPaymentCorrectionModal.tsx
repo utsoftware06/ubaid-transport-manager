@@ -2,7 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
-import type { ManualDieselCorrectionAction } from "@/lib/expenses/manualDieselPaymentCorrection";
+import VoiceTypingField from "@/components/shared/VoiceTypingField";
+import { resolveCorrectionPaymentMethodCandidate, type ManualDieselCorrectionAction } from "@/lib/expenses/manualDieselPaymentCorrection";
 import type { ManualDieselLinkedPaymentView } from "./manualDieselPaymentTypes";
 
 type Props = {
@@ -34,6 +35,19 @@ export default function ManualDieselPaymentCorrectionModal({
   const [replacementMethod, setReplacementMethod] = useState(payment.paymentMethod);
   const [replacementReference, setReplacementReference] = useState(payment.referenceNo ?? "");
   const [replacementRemarks, setReplacementRemarks] = useState(payment.paymentRemarks ?? "");
+  const [replacementMethodCandidate, setReplacementMethodCandidate] = useState("");
+  const [replacementMethodVoiceError, setReplacementMethodVoiceError] = useState("");
+
+  function applyPaymentMethodVoiceCandidate(candidate: string) {
+    setReplacementMethodCandidate(candidate);
+    const method = resolveCorrectionPaymentMethodCandidate(candidate);
+    if (!method) {
+      setReplacementMethodVoiceError(t("petrolPumpPayments.correction.methodVoiceUnmatched"));
+      return;
+    }
+    setReplacementMethod(method);
+    setReplacementMethodVoiceError("");
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -86,11 +100,15 @@ export default function ManualDieselPaymentCorrectionModal({
 
         {action === "replace" && (
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-sm font-bold text-slate-800">{t("petrolPumpPayments.fields.paymentDate")}
-              <input type="date" required value={replacementDate} onChange={(event) => setReplacementDate(event.target.value)} className="mt-1 w-full rounded-lg border p-3" />
+            <label className="min-w-0 text-sm font-bold text-slate-800">{t("petrolPumpPayments.fields.paymentDate")}
+              <VoiceTypingField fieldLabel={t("petrolPumpPayments.fields.paymentDate")} value={replacementDate} onValueChange={setReplacementDate} mode="date" contextKey={String(payment.paymentId)}>
+                <input type="date" required value={replacementDate} onChange={(event) => setReplacementDate(event.target.value)} className="mt-1 w-full rounded-lg border p-3" />
+              </VoiceTypingField>
             </label>
-            <label className="text-sm font-bold text-slate-800">{t("petrolPumpPayments.correction.replacementAmount")}
-              <input type="number" required min="0.01" step="0.01" value={replacementAmount} onChange={(event) => setReplacementAmount(event.target.value)} className="mt-1 w-full rounded-lg border p-3" />
+            <label className="min-w-0 text-sm font-bold text-slate-800">{t("petrolPumpPayments.correction.replacementAmount")}
+              <VoiceTypingField fieldLabel={t("petrolPumpPayments.correction.replacementAmount")} value={replacementAmount} onValueChange={setReplacementAmount} mode="amount" contextKey={String(payment.paymentId)}>
+                <input type="number" required min="0.01" step="0.01" value={replacementAmount} onChange={(event) => setReplacementAmount(event.target.value)} className="mt-1 w-full rounded-lg border p-3" />
+              </VoiceTypingField>
             </label>
             <label className="text-sm font-bold text-slate-800">{t("petrolPumpPayments.fields.paymentMethod")}
               <select required value={replacementMethod} onChange={(event) => setReplacementMethod(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-3">
@@ -100,21 +118,33 @@ export default function ManualDieselPaymentCorrectionModal({
                 <option value="Online Transfer">{t("petrolPumpPayments.paymentMethods.onlineTransfer")}</option>
               </select>
             </label>
-            <label className="text-sm font-bold text-slate-800">{t("petrolPumpPayments.fields.reference")}
-              <input value={replacementReference} onChange={(event) => setReplacementReference(event.target.value)} className="mt-1 w-full rounded-lg border p-3" />
+            <label className="min-w-0 text-sm font-bold text-slate-800">{t("petrolPumpPayments.correction.methodVoiceCandidate")}
+              <VoiceTypingField fieldLabel={t("petrolPumpPayments.fields.paymentMethod")} value={replacementMethodCandidate} onValueChange={applyPaymentMethodVoiceCandidate} mode="identifier" contextKey={`${payment.paymentId}:${action}`}>
+                <input type="text" value={replacementMethodCandidate} onChange={(event) => { setReplacementMethodCandidate(event.target.value); setReplacementMethodVoiceError(""); }} placeholder={t("petrolPumpPayments.fields.paymentMethod")} className="mt-1 w-full rounded-lg border p-3" />
+              </VoiceTypingField>
+              {replacementMethodVoiceError && <span role="status" className="mt-1 block text-xs font-semibold text-rose-700">{replacementMethodVoiceError}</span>}
             </label>
-            <label className="text-sm font-bold text-slate-800 sm:col-span-2">{t("petrolPumpPayments.fields.remarks")}
-              <textarea value={replacementRemarks} onChange={(event) => setReplacementRemarks(event.target.value)} rows={2} className="mt-1 w-full rounded-lg border p-3" />
+            <label className="min-w-0 text-sm font-bold text-slate-800">{t("petrolPumpPayments.fields.reference")}
+              <VoiceTypingField fieldLabel={t("petrolPumpPayments.fields.reference")} value={replacementReference} onValueChange={setReplacementReference} mode="identifier" contextKey={String(payment.paymentId)}>
+                <input value={replacementReference} onChange={(event) => setReplacementReference(event.target.value)} className="mt-1 w-full rounded-lg border p-3" />
+              </VoiceTypingField>
+            </label>
+            <label className="min-w-0 text-sm font-bold text-slate-800 sm:col-span-2">{t("petrolPumpPayments.fields.remarks")}
+              <VoiceTypingField fieldLabel={t("petrolPumpPayments.fields.remarks")} value={replacementRemarks} onValueChange={setReplacementRemarks} contextKey={String(payment.paymentId)}>
+                <textarea value={replacementRemarks} onChange={(event) => setReplacementRemarks(event.target.value)} rows={2} className="mt-1 w-full rounded-lg border p-3" />
+              </VoiceTypingField>
             </label>
           </div>
         )}
 
-        <label className="block text-sm font-bold text-slate-800">
+        <label className="block min-w-0 text-sm font-bold text-slate-800">
           {t("petrolPumpPayments.correction.reasonRequired")}
-          <textarea required maxLength={2000} value={reason} onChange={(event) => setReason(event.target.value)} rows={3} className="mt-1 w-full rounded-lg border p-3" />
+          <VoiceTypingField fieldLabel={t("petrolPumpPayments.correction.reasonRequired")} value={reason} onValueChange={setReason} contextKey={String(payment.paymentId)}>
+            <textarea required maxLength={2000} value={reason} onChange={(event) => setReason(event.target.value)} rows={3} className="mt-1 w-full rounded-lg border p-3" />
+          </VoiceTypingField>
         </label>
         <div className="flex flex-wrap justify-end gap-3">
-          <button type="button" onClick={onCancel} disabled={isSaving} className="rounded-lg border px-4 py-2 font-bold disabled:opacity-60">{t("common.cancel")}</button>
+          <button type="button" onClick={onCancel} disabled={isSaving} className="rounded-lg border px-4 py-2 font-bold disabled:opacity-60">{t("common.actions.cancel")}</button>
           <button type="submit" disabled={isSaving || !reason.trim()} className="rounded-lg bg-red-700 px-4 py-2 font-bold text-white disabled:opacity-60">
             {isSaving ? t("petrolPumpPayments.correction.saving") : t("petrolPumpPayments.correction.confirm")}
           </button>

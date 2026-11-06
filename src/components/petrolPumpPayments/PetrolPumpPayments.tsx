@@ -319,7 +319,10 @@ export default function PetrolPumpPayments() {
 
     const rawLinks = (linkResult.data ?? []) as unknown as ManualDieselInitialPaymentRow[];
     const historyRows = (historyResult.data ?? []) as unknown as CorrectionHistoryDatabaseRow[];
-    const voucherIds = Array.from(new Set(rawLinks.map((row) => Number(row.voucher_id))));
+    const voucherIds = Array.from(new Set([
+      ...rawLinks.map((row) => Number(row.voucher_id)),
+      ...historyRows.map((row) => Number(row.voucher_id)),
+    ]));
     const manualVoucherIds = Array.from(new Set(rawLinks.map((row) => row.manual_voucher_id)));
     const dieselIds = Array.from(new Set(rawLinks.map((row) => Number(row.diesel_entry_id))));
     const vehicleIds = Array.from(new Set(rawLinks.map((row) => row.vehicle_id)));
@@ -364,7 +367,7 @@ export default function PetrolPumpPayments() {
         paymentId: Number(link.payment_id),
         addaId: link.adda_id,
         voucherId: Number(link.voucher_id),
-        voucherNumber: voucher.expense_no || String(voucher.id),
+        voucherNumber: voucher.expense_no?.trim() || "—",
         manualVoucherId: link.manual_voucher_id,
         voucherStatus: detail.status as "draft" | "finalized",
         dieselEntryId: Number(link.diesel_entry_id),
@@ -389,7 +392,7 @@ export default function PetrolPumpPayments() {
         originalPaymentId: Number(row.original_payment_id),
         replacementPaymentId: row.replacement_payment_id === null ? null : Number(row.replacement_payment_id),
         addaId: row.adda_id,
-        voucherNumber: voucher?.expense_no || String(row.voucher_id),
+        voucherNumber: voucher?.expense_no?.trim() || "—",
         dieselEntryId: Number(row.diesel_entry_id),
         action: row.action,
         reason: row.reason,

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- This is a Node CommonJS test harness. */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -16,7 +17,7 @@ vm.runInNewContext(
   { console, Number, String, RegExp, Error, Object, Math },
   { filename: helperPath }
 )(require, moduleBox, moduleBox.exports);
-const { buildManualDieselCorrectionRpcPayload, readAuthoritativeDieselPaymentState } = moduleBox.exports;
+const { buildManualDieselCorrectionRpcPayload, readAuthoritativeDieselPaymentState, resolveCorrectionPaymentMethodCandidate } = moduleBox.exports;
 
 function fixtureInput(action, extra = {}) {
   return {
@@ -37,6 +38,15 @@ assert.equal(voidPayload.p_reason, "Entered against wrong cash amount");
 assert.equal(voidPayload.p_replacement_amount, null);
 assert.equal(voidPayload.p_replacement_date, null);
 assert.equal(voidPayload.p_replacement_method, null);
+assert.equal(voidPayload.p_action, "void", "user-facing delete wording keeps the existing backend void action");
+
+assert.equal(resolveCorrectionPaymentMethodCandidate("Cash"), "Cash");
+assert.equal(resolveCorrectionPaymentMethodCandidate("بینک"), "Bank");
+assert.equal(resolveCorrectionPaymentMethodCandidate("چیک"), "Cheque");
+assert.equal(resolveCorrectionPaymentMethodCandidate("Online Transfer"), "Online Transfer");
+assert.equal(resolveCorrectionPaymentMethodCandidate("آن لائن ٹرانسفر"), "Online Transfer");
+assert.equal(resolveCorrectionPaymentMethodCandidate("آن‌لائن ٹرانسفر"), "Online Transfer");
+assert.equal(resolveCorrectionPaymentMethodCandidate("maybe bank or cash"), null, "ambiguous method speech leaves the current select unchanged");
 
 const replacePayload = buildManualDieselCorrectionRpcPayload(fixtureInput("replace", {
   requestId: "request-correction-2",
@@ -165,7 +175,42 @@ for (const [relativePath, marker] of integrationMarkers) {
   assert.ok(source.includes(marker), `correction data/display integration: ${relativePath}`);
 }
 
+const correctionModal = fs.readFileSync(path.join(repo, "src/components/petrolPumpPayments/ManualDieselPaymentCorrectionModal.tsx"), "utf8");
+for (const marker of [
+  'fieldLabel={t("petrolPumpPayments.fields.paymentDate")} value={replacementDate} onValueChange={setReplacementDate} mode="date"',
+  'fieldLabel={t("petrolPumpPayments.correction.replacementAmount")} value={replacementAmount} onValueChange={setReplacementAmount} mode="amount"',
+  'fieldLabel={t("petrolPumpPayments.fields.paymentMethod")} value={replacementMethodCandidate} onValueChange={applyPaymentMethodVoiceCandidate} mode="identifier"',
+  'fieldLabel={t("petrolPumpPayments.fields.reference")} value={replacementReference} onValueChange={setReplacementReference} mode="identifier"',
+  'fieldLabel={t("petrolPumpPayments.fields.remarks")} value={replacementRemarks} onValueChange={setReplacementRemarks}',
+  'fieldLabel={t("petrolPumpPayments.correction.reasonRequired")} value={reason} onValueChange={setReason}',
+  'type="button" onClick={onCancel}',
+  't("common.actions.cancel")',
+]) assert.ok(correctionModal.includes(marker), `voice/label/no-auto-submit modal contract: ${marker}`);
+assert.ok(!correctionModal.includes('t("common.cancel")'), "modal uses the existing translated cancel action key");
+const voiceFieldSource = fs.readFileSync(path.join(repo, "src/components/shared/VoiceTypingField.tsx"), "utf8");
+assert.ok(voiceFieldSource.includes('<button type="button"'), "microphone and candidate Apply controls cannot submit the correction form");
+
+const paymentPage = fs.readFileSync(path.join(repo, "src/components/petrolPumpPayments/PetrolPumpPayments.tsx"), "utf8");
+assert.ok(paymentPage.includes("...historyRows.map((row) => Number(row.voucher_id))"), "Voucher metadata lookup includes audit history after the active payment link is removed");
+assert.ok(paymentPage.includes('voucher.expense_no?.trim() || "—"'), "active payment rows display the saved Voucher number or em dash");
+assert.ok(paymentPage.includes('voucher?.expense_no?.trim() || "—"'), "history rows resolve saved expenses.expense_no or em dash");
+assert.ok(!paymentPage.includes("String(voucher.id)") && !paymentPage.includes("String(row.voucher_id)"), "internal IDs are never shown as Voucher numbers");
+
+const translations = fs.readFileSync(path.join(repo, "src/i18n/translations.ts"), "utf8");
+for (const label of [
+  'correct: "Delete / Replace"',
+  'void: "Delete payment"',
+  'actions: { void: "Deleted", replace: "Replaced" }',
+  'correct: "حذف / تبدیل کریں"',
+  'void: "ادائیگی حذف کریں"',
+  'actions: { void: "حذف شدہ", replace: "تبدیل" }',
+]) assert.ok(translations.includes(label), `bilingual correction label: ${label}`);
+
 console.log("PASS correction payload validation (void/replace, exact IDs, decimals, required reason)");
+console.log("PASS payment-method voice candidates map only exact English/Urdu supported choices; backend void action remains unchanged");
+console.log("PASS all modal fields reuse typed voice modes; Voice/Apply controls remain non-submit and Cancel is localized");
+console.log("PASS correction labels are Delete/Deleted in English/Urdu while audit action values stay void/replace");
+console.log("PASS post-delete history resolves expenses.expense_no independently of active payment links; missing numbers show em dash");
 console.log("PASS synthetic void/replacement totals (0 and 80,000) and unchanged Voucher financial snapshots");
 console.log("PASS draft and finalized Manual Voucher payment-only fixture snapshots");
 console.log("PASS multi-payment case trusts the supplied authoritative rebuild result");
