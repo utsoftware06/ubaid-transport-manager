@@ -250,13 +250,13 @@ export default function Sidebar({
           aria-label={t("sidebar.mainNavigation")}
         >
           {visibleGroups.map((group) => (
-            <section key={group.titleKey}>
-              {!isCollapsed && (
+            <section key={group.titleKey ?? "standalone-links"}>
+              {!isCollapsed && group.titleKey && (
                 <h2 className="px-3 text-[10px] font-black uppercase tracking-[0.18em] text-blue-100/75 drop-shadow-sm">
                   {t(group.titleKey)}
                 </h2>
               )}
-              <div className={isCollapsed ? "space-y-2" : "mt-2.5 space-y-1.5"}>
+              <div className={isCollapsed || !group.titleKey ? "space-y-2" : "mt-2.5 space-y-1.5"}>
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   const active = isActiveRoute(pathname, item.href, item.exact);

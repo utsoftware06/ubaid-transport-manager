@@ -77,7 +77,7 @@ export type NavigationItem = {
 };
 
 export type NavigationGroup = {
-  titleKey: string;
+  titleKey: string | null;
   items: NavigationItem[];
 };
 
@@ -103,7 +103,7 @@ const additionalRoutePermissions = [
 
 export const navigationGroups: NavigationGroup[] = [
   {
-    titleKey: "sidebar.groups.overview",
+    titleKey: null,
     items: [
       {
         titleKey: "sidebar.items.dashboard",
@@ -113,53 +113,16 @@ export const navigationGroups: NavigationGroup[] = [
         exact: true,
       },
       {
-        titleKey: "sidebar.items.auditLogs",
-        href: "/audit-logs",
-        icon: ShieldCheck,
-        roles: superAdminOnly,
-      },
-      {
-        titleKey: "sidebar.items.users",
-        href: "/users",
-        icon: UsersRound,
-        roles: superAdminOnly,
+        titleKey: "sidebar.items.cashbook",
+        href: "/cashbook",
+        icon: Coins,
+        roles: allRoles,
       },
     ],
   },
   {
     titleKey: "sidebar.groups.transportOperations",
     items: [
-      {
-        titleKey: "sidebar.items.addas",
-        href: "/addas",
-        icon: Building2,
-        roles: superAdminOnly,
-      },
-      {
-        titleKey: "sidebar.items.parties",
-        href: "/parties",
-        icon: Users,
-        roles: allRoles,
-      },
-      {
-        // The translator preserves this label until translations are added.
-        titleKey: "Other Adda",
-        href: "/other-addas",
-        icon: Handshake,
-        roles: allRoles,
-      },
-      {
-        titleKey: "sidebar.items.drivers",
-        href: "/drivers",
-        icon: UserRound,
-        roles: allRoles,
-      },
-      {
-        titleKey: "sidebar.items.vehicles",
-        href: "/vehicles",
-        icon: Truck,
-        roles: allRoles,
-      },
       {
         titleKey: "sidebar.items.tripManagement",
         href: "/trip-management",
@@ -172,21 +135,68 @@ export const navigationGroups: NavigationGroup[] = [
         icon: PackageOpen,
         roles: allRoles,
       },
+      {
+        titleKey: "sidebar.items.expenses",
+        href: "/expenses",
+        icon: HandCoins,
+        roles: allRoles,
+      },
+      {
+        titleKey: "sidebar.items.parchi",
+        href: "/parchi",
+        icon: ReceiptText,
+        roles: allRoles,
+      },
     ],
   },
   {
-    titleKey: "sidebar.groups.ledgersAccounts",
+    titleKey: "sidebar.groups.partiesRecords",
     items: [
       {
-        titleKey: "sidebar.items.driverLedger",
-        href: "/drivers-ledger",
-        icon: NotebookTabs,
+        titleKey: "sidebar.items.parties",
+        href: "/parties",
+        icon: Users,
+        roles: allRoles,
+      },
+      {
+        titleKey: "sidebar.items.brokers",
+        href: "/brokers",
+        icon: BriefcaseBusiness,
         roles: adminRoles,
       },
       {
-        titleKey: "sidebar.items.customerLedger",
-        href: "/customer-ledger",
-        icon: NotebookText,
+        titleKey: "sidebar.items.otherAdda",
+        href: "/other-addas",
+        icon: Handshake,
+        roles: allRoles,
+      },
+      {
+        titleKey: "sidebar.items.vehicles",
+        href: "/vehicles",
+        icon: Truck,
+        roles: allRoles,
+      },
+      {
+        titleKey: "sidebar.items.drivers",
+        href: "/drivers",
+        icon: UserRound,
+        roles: allRoles,
+      },
+    ],
+  },
+  {
+    titleKey: "sidebar.groups.accountsLedgers",
+    items: [
+      {
+        titleKey: "sidebar.items.addaAccount",
+        href: "/adda-account",
+        icon: WalletCards,
+        roles: allRoles,
+      },
+      {
+        titleKey: "sidebar.items.paymentReceipts",
+        href: "/payment-receipts",
+        icon: ReceiptText,
         roles: allRoles,
       },
       {
@@ -196,15 +206,15 @@ export const navigationGroups: NavigationGroup[] = [
         roles: adminRoles,
       },
       {
+        titleKey: "sidebar.items.customerLedger",
+        href: "/customer-ledger",
+        icon: NotebookText,
+        roles: allRoles,
+      },
+      {
         titleKey: "sidebar.items.ownerLedger",
         href: "/owner-ledger",
         icon: ClipboardList,
-        roles: adminRoles,
-      },
-      {
-        titleKey: "sidebar.items.ownerGariAccount",
-        href: "/owner-gari-account",
-        icon: WalletCards,
         roles: adminRoles,
       },
       {
@@ -214,45 +224,15 @@ export const navigationGroups: NavigationGroup[] = [
         roles: adminRoles,
       },
       {
-        titleKey: "sidebar.items.vehicleMonthlyHisab",
-        href: "/vehicle-monthly-hisab",
-        icon: Calculator,
+        titleKey: "sidebar.items.driverLedger",
+        href: "/drivers-ledger",
+        icon: NotebookTabs,
         roles: adminRoles,
-      },
-      {
-        titleKey: "sidebar.items.paymentReceipts",
-        href: "/payment-receipts",
-        icon: ReceiptText,
-        roles: allRoles,
-      },
-      {
-        titleKey: "sidebar.items.cashbook",
-        href: "/cashbook",
-        icon: Coins,
-        roles: allRoles,
-      },
-      {
-        titleKey: "sidebar.items.addaAccount",
-        href: "/adda-account",
-        icon: WalletCards,
-        roles: allRoles,
-      },
-      {
-        titleKey: "sidebar.items.parchi",
-        href: "/parchi",
-        icon: ReceiptText,
-        roles: allRoles,
-      },
-      {
-        titleKey: "sidebar.items.expenses",
-        href: "/expenses",
-        icon: HandCoins,
-        roles: allRoles,
       },
     ],
   },
   {
-    titleKey: "sidebar.groups.fuelManagement",
+    titleKey: "sidebar.groups.fuelMaintenance",
     items: [
       {
         titleKey: "sidebar.items.diesel",
@@ -284,11 +264,6 @@ export const navigationGroups: NavigationGroup[] = [
         icon: Disc3,
         roles: adminRoles,
       },
-    ],
-  },
-  {
-    titleKey: "sidebar.groups.workshopCompliance",
-    items: [
       {
         titleKey: "sidebar.items.workshop",
         href: "/workshop",
@@ -319,39 +294,63 @@ export const navigationGroups: NavigationGroup[] = [
         roles: adminRoles,
       },
       {
-        titleKey: "sidebar.items.employeeLedger",
-        href: "/employee-ledger",
-        icon: FileClock,
-        roles: adminRoles,
-      },
-      {
         titleKey: "sidebar.items.employeeLoans",
         href: "/employee-loans",
         icon: ClipboardMinus,
         roles: adminRoles,
       },
+      {
+        titleKey: "sidebar.items.employeeLedger",
+        href: "/employee-ledger",
+        icon: FileClock,
+        roles: adminRoles,
+      },
     ],
   },
   {
-    titleKey: "sidebar.groups.other",
+    titleKey: "sidebar.groups.reports",
     items: [
-      {
-        titleKey: "sidebar.items.brokers",
-        href: "/brokers",
-        icon: BriefcaseBusiness,
-        roles: adminRoles,
-      },
       {
         titleKey: "sidebar.items.reports",
         href: "/reports",
         icon: BarChart3,
         roles: allRoles,
       },
+      {
+        titleKey: "sidebar.items.vehicleMonthlyHisab",
+        href: "/vehicle-monthly-hisab",
+        icon: Calculator,
+        roles: adminRoles,
+      },
+      {
+        titleKey: "sidebar.items.ownerGariAccount",
+        href: "/owner-gari-account",
+        icon: WalletCards,
+        roles: adminRoles,
+      },
     ],
   },
   {
-    titleKey: "sidebar.groups.system",
+    titleKey: "sidebar.groups.administrationSettings",
     items: [
+      {
+        titleKey: "sidebar.items.addas",
+        href: "/addas",
+        icon: Building2,
+        roles: superAdminOnly,
+      },
+      {
+        titleKey: "sidebar.items.users",
+        href: "/users",
+        icon: UsersRound,
+        roles: superAdminOnly,
+      },
+      {
+        titleKey: "sidebar.items.auditLogs",
+        href: "/audit-logs",
+        icon: ShieldCheck,
+        roles: superAdminOnly,
+      },
       {
         titleKey: "sidebar.items.settings",
         href: "/settings",
