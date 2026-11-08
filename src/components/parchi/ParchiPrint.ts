@@ -1,4 +1,6 @@
 import { escapeHtml } from "@/lib/print/escapeHtml";
+import { getSafeLogoUrl } from "@/lib/print/foundation";
+import { withPrintImageReadiness } from "@/lib/print/printAssets";
 
 export type ParchiPrintEvent = {
   event_id: string | null;
@@ -63,16 +65,6 @@ function amount(value: number | string | null) {
   return `₨ ${Number.isFinite(numeric) ? numeric.toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00"}`;
 }
 
-function safeLogoUrl(value: string | null): string | null {
-  if (!value || typeof window === "undefined") return null;
-  try {
-    const url = new URL(value, window.location.origin);
-    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
-  } catch {
-    return null;
-  }
-}
-
 export function openParchiPrint({ parchi, brand, t, direction, language }: PrintOptions): boolean {
   const popup = window.open("", "_blank", "width=820,height=1050");
   if (!popup) {
@@ -82,7 +74,7 @@ export function openParchiPrint({ parchi, brand, t, direction, language }: Print
 
   const value = (input: unknown) => escapeHtml(input);
   const label = (key: string) => value(t(key));
-  const logo = brand.showLogo ? safeLogoUrl(brand.logoUrl) : null;
+  const logo = brand.showLogo ? getSafeLogoUrl(brand.logoUrl) : null;
   const isFinance = parchi.issued_mode === "freight_financing";
   const title = isFinance ? t("parchi.issuedFinance") : parchi.direction === "received" ? t("parchi.received") : t("parchi.issued");
   const outstandingLabel = parchi.direction === "received"
@@ -150,7 +142,7 @@ export function openParchiPrint({ parchi, brand, t, direction, language }: Print
   const counterpartyLabel = isFinance ? t("parchi.primaryPayer") : parchi.direction === "received" ? t("parchi.broker") : t("parchi.otherAdda");
 
   popup.document.open();
-  popup.document.write(`<!doctype html>
+  popup.document.write(withPrintImageReadiness(`<!doctype html>
     <html lang="${value(language)}" dir="${value(direction)}">
       <head>
         <meta charset="utf-8">
@@ -162,9 +154,9 @@ export function openParchiPrint({ parchi, brand, t, direction, language }: Print
           html, body { margin: 0; padding: 0; background: #fff; color: #111; }
           body { font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Nirmala UI", "Noto Naskh Arabic", Arial, "Segoe UI", Tahoma, sans-serif; font-size: 10pt; line-height: 1.35; direction: ${value(direction)}; }
           .sheet { width: 100%; max-width: 140mm; margin: 0 auto; padding: 4mm; border: 1px solid #222; }
-          .brand { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 3mm; border-bottom: 1px solid #222; padding-bottom: 2.5mm; text-align: center; }
-          .brand.no-logo { display: block; }
-          .logo { display: block; max-width: 20mm; max-height: 16mm; object-fit: contain; filter: grayscale(1); }
+          .brand { display: grid; grid-template-columns: 20mm minmax(0, 1fr); align-items: center; gap: 3mm; border-bottom: 1px solid #222; padding-bottom: 2.5mm; text-align: center; }
+          .logo-slot { display: inline-flex; width: 20mm; height: 16mm; align-items: center; justify-content: center; }
+          .logo { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; filter: grayscale(1); }
           .brand h1 { margin: 0; font-size: 15pt; line-height: 1.2; }
           .adda-name { margin-top: 1mm; font-size: 9pt; font-weight: 700; }
           .contact { margin-top: 1mm; font-size: 8pt; }
@@ -201,8 +193,8 @@ export function openParchiPrint({ parchi, brand, t, direction, language }: Print
       </head>
       <body>
         <main class="sheet">
-          <header class="brand${logo ? "" : " no-logo"}">
-            ${logo ? `<img class="logo" src="${value(logo)}" alt="">` : ""}
+          <header class="brand">
+            <span class="logo-slot">${logo ? `<img class="logo" src="${value(logo)}" alt="" onerror="this.remove()">` : ""}</span>
             <div><h1>${value(organization)}</h1>${contact ? `<div class="contact">${contact}</div>` : ""}</div>
           </header>
           <div class="title">${value(title)}</div>
@@ -241,7 +233,7 @@ export function openParchiPrint({ parchi, brand, t, direction, language }: Print
         </main>
         <script>window.onload=function(){window.focus();window.print();};</script>
       </body>
-    </html>`);
+    </html>`));
   popup.document.close();
   return true;
 }

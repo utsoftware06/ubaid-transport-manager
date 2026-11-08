@@ -8,10 +8,12 @@ import type {
 } from "@/types/auditLogs";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { userRoleLabel } from "@/config/navigation";
-import { usePrintAddaName } from "@/lib/print/usePrintAddaName";
+import PrintAddaLogo from "@/components/print/PrintAddaLogo";
+import { usePrintBranding } from "@/lib/print/usePrintAddaName";
 import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
 import { singleResolvedAddaId } from "@/components/print/LedgerStatementPrint";
 import { bilingual, modulePrintLabel, printLabel, printValue, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
+import { waitForPrintImages } from "@/lib/print/printAssets";
 
 type AuditLogPrintProps = {
   logs: AuditLog[];
@@ -144,7 +146,8 @@ export default function AuditLogPrint({
 }: AuditLogPrintProps) {
   const { t, dir, language } = useLanguage();
   const ownerAddaId = singleResolvedAddaId(logs.map((log) => log.adda_id));
-  const addaName = usePrintAddaName(ownerAddaId, language === "ur" ? "ur" : "en");
+  const branding = usePrintBranding(ownerAddaId);
+  const addaName = branding?.addaName.trim() || (language === "ur" ? "اڈے کا نام دستیاب نہیں" : "Adda name unavailable");
   const modulePrint = useModuleTransportPrint("audit_log", ownerAddaId, language === "ur" ? "ur" : "en");
   const generatedAt = useMemo(() => new Date().toISOString(), []);
   const activeFilters = useMemo(() => getActiveFilters(filters, t), [filters, t]);
@@ -190,7 +193,7 @@ export default function AuditLogPrint({
   function handlePrintLegacy() {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        window.print();
+        void waitForPrintImages(document).then(() => window.print());
       });
     });
   }
@@ -278,9 +281,10 @@ export default function AuditLogPrint({
             className="mx-auto max-w-7xl rounded-xl bg-white p-6 shadow-md print:m-0 print:max-w-none print:rounded-none print:p-0 print:shadow-none"
           >
             <header className="border-b-2 border-gray-900 pb-5 text-center">
-              <h1 className="text-3xl font-extrabold text-gray-900">
-                {addaName}
-              </h1>
+              <div className="flex items-center justify-center gap-2">
+                <PrintAddaLogo branding={branding} />
+                <h1 className="text-3xl font-extrabold text-gray-900">{addaName}</h1>
+              </div>
               <h2 className="mt-2 text-xl font-extrabold text-gray-900">
                 {t("auditLogs.print.reportTitle")}
               </h2>

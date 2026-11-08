@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import ModulePageHeading from "@/components/shared/ModulePageHeading";
 import { escapeHtml } from "@/lib/print/escapeHtml";
+import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
 import { supabase } from "@/lib/supabase/client";
 import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
 import { bilingual, printLabel, printValue, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
@@ -295,16 +296,15 @@ export default function VehicleMonthlyHisab() {
         ? escapeHtml(amount(value))
         : escapeHtml(t("vehicleMonthlyHisab.breakdown.unavailable"));
 
-    popup.document.write(`<!doctype html><html lang="${escapeHtml(language)}" dir="${escapeHtml(dir)}"><head>
+    void writeAddaBrandedPrintDocument(popup, `<!doctype html><html lang="${escapeHtml(language)}" dir="${escapeHtml(dir)}"><head>
       <title>${escapeHtml(t("vehicleMonthlyHisab.print.title"))}</title>
       <style>@page{size:A4 landscape;margin:10mm}body{font-family:Arial,sans-serif;color:#0f172a;padding:18px}h1,h2{text-align:center;margin:4px}.meta{text-align:center;margin:12px 0 18px}.cards,.breakdown{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0}.box{border:1px solid #cbd5e1;border-radius:8px;padding:10px}.box p{font-size:11px;font-weight:700;margin:0}.box strong{display:block;margin-top:5px}.profit{color:#047857}.loss{color:#b91c1c}.money{direction:ltr;unicode-bidi:isolate;text-align:end}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px;text-align:start}th{background:#1d4ed8;color:#fff}</style>
-      </head><body><h1>${escapeHtml(report.vehicle.adda_name?.trim() || (language === "ur" ? "اڈے کا نام دستیاب نہیں" : "Adda name unavailable"))}</h1><h2>${escapeHtml(t("vehicleMonthlyHisab.print.title"))}</h2>
+      </head><body><h1>${PRINT_ADDA_NAME_TOKEN}</h1><h2>${escapeHtml(t("vehicleMonthlyHisab.print.title"))}</h2>
       <div class="meta">${escapeHtml(t("common.vehicle"))}: <strong>${escapeHtml(display(report.vehicle.vehicle_no))}</strong> · ${escapeHtml(t("vehicleMonthlyHisab.fields.owner"))}: <strong>${escapeHtml(display(report.vehicle.owner_name))}</strong> · ${escapeHtml(customRangeActive ? t("vehicleMonthlyHisab.print.period") : t("vehicleMonthlyHisab.fields.month"))}: <strong>${escapeHtml(reportPeriod)}</strong></div>
       <div class="cards"><div class="box"><p>${escapeHtml(t("vehicleMonthlyHisab.cards.totalChakkar"))}</p><strong>${summary.total_chakkar}</strong></div><div class="box"><p>${escapeHtml(t("vehicleMonthlyHisab.cards.totalFreight"))}</p><strong class="money">${escapeHtml(amount(summary.total_vehicle_freight))}</strong></div><div class="box"><p>${escapeHtml(t("vehicleMonthlyHisab.cards.totalExpenses"))}</p><strong class="money">${escapeHtml(amount(summary.total_expenses))}</strong></div><div class="box"><p>${escapeHtml(t("vehicleMonthlyHisab.cards.vehicleProfit"))}</p><strong class="money ${summary.vehicle_monthly_profit < 0 ? "loss" : "profit"}">${escapeHtml(amount(summary.vehicle_monthly_profit))}</strong></div></div>
       <div class="breakdown"><div class="box"><p>${escapeHtml(t("vehicleMonthlyHisab.breakdown.regular"))}</p><strong class="money">${escapeHtml(amount(breakdown.regular_trip_expenses))}</strong></div><div class="box"><p>${escapeHtml(t("vehicleMonthlyHisab.breakdown.periodic"))}</p><strong class="money">${escapeHtml(amount(breakdown.vehicle_periodic_expenses))}</strong></div><div class="box"><p>${escapeHtml(t("vehicleMonthlyHisab.breakdown.diesel"))}</p><strong class="money">${categoryValue(breakdown.diesel)}</strong></div><div class="box"><p>${escapeHtml(t("vehicleMonthlyHisab.breakdown.workshop"))}</p><strong class="money">${categoryValue(breakdown.workshop)}</strong></div><div class="box"><p>${escapeHtml(t("vehicleMonthlyHisab.breakdown.tyre"))}</p><strong class="money">${categoryValue(breakdown.tyre)}</strong></div><div class="box"><p>${escapeHtml(t("vehicleMonthlyHisab.breakdown.oil"))}</p><strong class="money">${categoryValue(breakdown.oil)}</strong></div><div class="box"><p>${escapeHtml(t("vehicleMonthlyHisab.breakdown.driver"))}</p><strong class="money">${categoryValue(breakdown.driver)}</strong></div><div class="box"><p>${escapeHtml(t("vehicleMonthlyHisab.breakdown.other"))}</p><strong class="money">${categoryValue(breakdown.other)}</strong></div></div>
       <table><thead><tr><th>${escapeHtml(t("vehicleMonthlyHisab.table.date"))}</th><th>${escapeHtml(t("vehicleMonthlyHisab.table.chakkar"))}</th><th>${escapeHtml(t("vehicleMonthlyHisab.table.returnBilty"))}</th><th>${escapeHtml(t("vehicleMonthlyHisab.table.voucher"))}</th><th>${escapeHtml(t("vehicleMonthlyHisab.table.freight"))}</th><th>${escapeHtml(t("vehicleMonthlyHisab.table.regular"))}</th><th>${escapeHtml(t("vehicleMonthlyHisab.table.periodic"))}</th><th>${escapeHtml(t("vehicleMonthlyHisab.table.totalExpenses"))}</th><th>${escapeHtml(t("vehicleMonthlyHisab.table.adjustment"))}</th><th>${escapeHtml(t("vehicleMonthlyHisab.table.net"))}</th></tr></thead><tbody>${rowHtml}</tbody></table>
-      <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}</script></body></html>`);
-    popup.document.close();
+      <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}</script></body></html>`, report.vehicle.adda_id, language === "ur" ? "ur" : "en");
   };
 
   const printChakkarLegacy = (row: ChakkarRow) => {
@@ -316,11 +316,11 @@ export default function VehicleMonthlyHisab() {
     }
 
     const netTone = rowNet(row) < 0 ? "loss" : "profit";
-    popup.document.write(`<!doctype html><html lang="${escapeHtml(language)}" dir="${escapeHtml(dir)}"><head>
+    void writeAddaBrandedPrintDocument(popup, `<!doctype html><html lang="${escapeHtml(language)}" dir="${escapeHtml(dir)}"><head>
       <title>${escapeHtml(t("vehicleMonthlyHisab.print.chakkarTitle"))}</title>
       <style>@page{size:A4 portrait;margin:14mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#0f172a;padding:18px}h1,h2{text-align:center;margin:4px}.meta{margin:18px 0;display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.field,.amount{border:1px solid #cbd5e1;border-radius:8px;padding:11px}.field span,.amount span{display:block;font-size:11px;font-weight:700;color:#475569}.field strong,.amount strong{display:block;margin-top:5px;overflow-wrap:anywhere}.amounts{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:16px}.amount strong{direction:ltr;unicode-bidi:isolate;text-align:end;font-size:16px}.profit{color:#047857}.loss{color:#b91c1c}.footer{margin-top:24px;border-top:1px solid #cbd5e1;padding-top:10px;font-size:11px;color:#475569}@media print{body{padding:0}}</style>
       </head><body>
-      <h1>${escapeHtml(report.vehicle.adda_name?.trim() || (language === "ur" ? "اڈے کا نام دستیاب نہیں" : "Adda name unavailable"))}</h1>
+      <h1>${PRINT_ADDA_NAME_TOKEN}</h1>
       <h2>${escapeHtml(t("vehicleMonthlyHisab.print.chakkarTitle"))}</h2>
       <div class="meta">
         <div class="field"><span>${escapeHtml(t("common.vehicle"))}</span><strong>${escapeHtml(display(row.vehicle_no))}</strong></div>
@@ -341,8 +341,7 @@ export default function VehicleMonthlyHisab() {
       </div>
       <div class="footer">${escapeHtml(t("vehicleMonthlyHisab.print.snapshotNotice"))} · ${escapeHtml(t("vehicleMonthlyHisab.print.accountingVersion"))}: ${escapeHtml(String(row.accounting_version))}</div>
       <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}</script>
-      </body></html>`);
-    popup.document.close();
+      </body></html>`, report.vehicle.adda_id, language === "ur" ? "ur" : "en");
   };
 
   const printReport = () => {

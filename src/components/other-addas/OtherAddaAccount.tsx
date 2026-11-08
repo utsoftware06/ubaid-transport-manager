@@ -355,7 +355,7 @@ export default function OtherAddaAccount({ otherAddaId }: { otherAddaId: string 
       ],
       remarks: printValue(payment.remarks),
     };
-    modulePrint.openPresentation(presentation, () => printOtherAddaPaymentReceipt({ payment, otherAddaName: context.master.adda_name, currentAddaName: context.currentAddaName, dir }), context.master.adda_id);
+    modulePrint.openPresentation(presentation, () => printOtherAddaPaymentReceipt({ payment, addaId: context.master.adda_id, otherAddaName: context.master.adda_name, currentAddaName: context.currentAddaName, dir }), context.master.adda_id);
   }
 
   async function printAccountStatement() {

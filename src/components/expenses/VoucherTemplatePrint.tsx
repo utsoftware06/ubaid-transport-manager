@@ -42,7 +42,7 @@ export default function VoucherTemplatePrint({ presentation, language, onClose, 
   const [resource, setResource] = useState<ResourceState | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [fallbackConfirmed, setFallbackConfirmed] = useState(false);
-  const [logoFailed, setLogoFailed] = useState(false);
+  const [failedLogoKey, setFailedLogoKey] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement | null>(null);
   const addaId = presentation.addaId;
   const contextKey = `${addaId}:voucher:${presentation.voucherNo}`;
@@ -66,6 +66,8 @@ export default function VoucherTemplatePrint({ presentation, language, onClose, 
 
   const currentResource = resource?.addaId === addaId ? resource : null;
   const branding = currentResource?.branding ?? null;
+  const logoKey = branding ? `${branding.addaId}:${branding.logoUrl ?? ""}` : "";
+  const logoFailed = Boolean(logoKey && failedLogoKey === logoKey);
   const savedSettings = currentResource?.settings.find((row) => row.documentType === "voucher") ?? null;
   const base = useMemo(() => branding
     ? savedSettings ?? createVoucherTemplateDefaults(createDefaultPrintSettings(branding))
@@ -159,7 +161,7 @@ export default function VoucherTemplatePrint({ presentation, language, onClose, 
         {validationErrors.length > 0 ? <p role="alert" className="w-full text-sm font-bold text-red-800">{validationErrors.join(", ")}</p> : null}
       </div>
       {presentation.isSyntheticSample ? <p className="mb-3 text-center text-xs font-black uppercase tracking-wide text-slate-600 voucher-print-ui">{labels.sample}</p> : null}
-      {branding && overrides ? <div className="overflow-x-auto rounded-xl bg-slate-200 p-3 sm:p-6"><VoucherTemplateDocument presentation={presentation} branding={branding} overrides={overrides} logoFailed={logoFailed} onLogoError={() => setLogoFailed(true)} printRef={printRef} /></div> : null}
+      {branding && overrides ? <div className="overflow-x-auto rounded-xl bg-slate-200 p-3 sm:p-6"><VoucherTemplateDocument presentation={presentation} branding={branding} overrides={overrides} logoFailed={logoFailed} onLogoError={() => setFailedLogoKey(logoKey)} printRef={printRef} /></div> : null}
       <style dangerouslySetInnerHTML={{ __html: `@media print{.voucher-print-ui{display:none!important}body{background:#fff!important}.voucher-print-root{display:block!important}}` }} />
     </div>
   </div>;

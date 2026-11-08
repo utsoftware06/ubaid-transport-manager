@@ -7,10 +7,12 @@ import {
   type VehicleDocumentWithStatus,
 } from "./VehicleDocuments";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { usePrintAddaName } from "@/lib/print/usePrintAddaName";
+import PrintAddaLogo from "@/components/print/PrintAddaLogo";
+import { usePrintBranding } from "@/lib/print/usePrintAddaName";
 import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
 import { bilingual, printValue, modulePrintLabel, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
 import { resolveSingleVehicleDocumentOwnerAddaId } from "./ownership";
+import { waitForPrintImages } from "@/lib/print/printAssets";
 
 type Props = {
   documents: VehicleDocumentWithStatus[];
@@ -64,7 +66,8 @@ const VehicleDocumentPrint = forwardRef<VehicleDocumentPrintHandle, Props>(funct
   const activeDocument = printDocument ?? selectedDocument;
   const sourceDocuments = printMode === "single" && activeDocument ? [activeDocument] : documents;
   const ownerAddaId = resolveSingleVehicleDocumentOwnerAddaId(sourceDocuments.map((document) => document.ownerAddaId));
-  const addaName = usePrintAddaName(ownerAddaId, language === "ur" ? "ur" : "en");
+  const branding = usePrintBranding(ownerAddaId);
+  const addaName = branding?.addaName.trim() || (language === "ur" ? "اڈے کا نام دستیاب نہیں" : "Adda name unavailable");
   const { openPresentation, dialog } = useModuleTransportPrint("vehicle_document", ownerAddaId, language === "ur" ? "ur" : "en");
   const statusLabel = (status: VehicleDocumentWithStatus["status"]) =>
     t(`vehicleDocuments.statuses.${status === "Expiring Soon" ? "expiringSoon" : status.toLowerCase()}`);
@@ -83,7 +86,7 @@ const VehicleDocumentPrint = forwardRef<VehicleDocumentPrintHandle, Props>(funct
   function printAfterRender() {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        window.print();
+        void waitForPrintImages(document).then(() => window.print());
       });
     });
   }
@@ -126,7 +129,7 @@ const VehicleDocumentPrint = forwardRef<VehicleDocumentPrintHandle, Props>(funct
     const p = (key: string) => bilingual(modulePrintLabel("en", key), modulePrintLabel("ur", key));
     const presentation: ModulePrintPresentation = {
       documentType: "vehicle_document",
-      title: p("vehicleDocuments.fields.documentType"),
+      title: p("vehicleDocuments.fields.documentNumber"),
       documentNo: printValue(document.document_number),
       documentDate: printValue(formatDate(document.issue_date)),
       fields: [
@@ -219,6 +222,7 @@ const VehicleDocumentPrint = forwardRef<VehicleDocumentPrintHandle, Props>(funct
           <div className="print-document">
             <div className="print-header">
               <div>
+                <PrintAddaLogo branding={branding} />
                 <h1>{t("vehicleDocuments.print.reportTitle")}</h1>
                 <p>{addaName}</p>
               </div>
@@ -317,6 +321,7 @@ const VehicleDocumentPrint = forwardRef<VehicleDocumentPrintHandle, Props>(funct
           <div className="print-document print-single-document">
             <div className="print-header">
               <div>
+                <PrintAddaLogo branding={branding} />
                 <h1>{t("vehicleDocuments.print.recordTitle")}</h1>
                 <p>{addaName}</p>
               </div>

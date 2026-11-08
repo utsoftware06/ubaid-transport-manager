@@ -1,7 +1,9 @@
 import type { OtherAddaPayment } from "./types";
+import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
 
 type ReceiptInput = {
   payment: OtherAddaPayment;
+  addaId: string;
   otherAddaName: string;
   currentAddaName: string | null;
   dir: "ltr" | "rtl";
@@ -34,7 +36,7 @@ function field(label: string, value: string, wide = false): string {
   return `<div class="field${wide ? " wide" : ""}"><span class="label">${escapeHtml(label)}</span><strong>${escapeHtml(value || "—")}</strong></div>`;
 }
 
-export function printOtherAddaPaymentReceipt({ payment, otherAddaName, currentAddaName, dir }: ReceiptInput): void {
+export function printOtherAddaPaymentReceipt({ payment, addaId, otherAddaName, currentAddaName, dir }: ReceiptInput): void {
   const popup = window.open("", "_blank", "width=760,height=900");
   if (!popup) {
     window.alert("Allow pop-ups for this site to print the receipt.");
@@ -45,15 +47,11 @@ export function printOtherAddaPaymentReceipt({ payment, otherAddaName, currentAd
   const title = isReversal ? "Other Adda Payment Reversal Receipt" : "Other Adda Payment Receipt";
   const side = payment.side === "receivable" ? "LENA Received" : "DENA Paid";
   const printedAt = new Date().toLocaleString("en-PK");
-  const currentAdda = currentAddaName
-    ? `<p class="current-adda">${escapeHtml(currentAddaName)}</p>`
-    : "";
   const reversalField = isReversal
     ? field("Reversed Payment ID", payment.reverses_payment_id ?? "—", true)
     : "";
 
-  popup.document.open();
-  popup.document.write(`<!doctype html>
+  void writeAddaBrandedPrintDocument(popup, `<!doctype html>
 <html lang="en" dir="${escapeHtml(dir)}">
 <head>
   <meta charset="utf-8">
@@ -97,7 +95,7 @@ export function printOtherAddaPaymentReceipt({ payment, otherAddaName, currentAd
 <body>
   <main class="receipt">
     <header class="header">
-      <h1>${escapeHtml(currentAddaName?.trim() || (dir === "rtl" ? "اڈے کا نام دستیاب نہیں" : "Adda name unavailable"))}</h1>
+      <h1>${PRINT_ADDA_NAME_TOKEN}</h1>
       <h2>${escapeHtml(title)}</h2>
     </header>
     <section class="details">
@@ -122,6 +120,5 @@ export function printOtherAddaPaymentReceipt({ payment, otherAddaName, currentAd
   </main>
   <script>window.onload=function(){window.focus();window.print();};window.onafterprint=function(){window.close();};</script>
 </body>
-</html>`);
-  popup.document.close();
+</html>`, addaId, dir === "rtl" ? "ur" : "en");
 }

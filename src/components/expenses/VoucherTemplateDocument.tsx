@@ -1,6 +1,6 @@
-/* eslint-disable @next/next/no-img-element -- tenant logos and the bundled truck use guarded local/HTTPS URLs. */
+/* eslint-disable @next/next/no-img-element -- tenant logos use validated URLs and native load/error events for printing. */
 
-import { useState, type Ref } from "react";
+import type { Ref } from "react";
 import { EXPENSE_TYPES_BY_CLASS, expenseTypeLabelKey } from "./expenseClassification";
 import { getPrintPageRule, getPrintDirection, getSafeLogoUrl } from "@/lib/print/foundation";
 import { translations, type AppLanguage } from "@/i18n/translations";
@@ -53,8 +53,8 @@ const printCss = `
   .voucher-template-page h2{font-size:14pt}
   .voucher-template-page h3{font-size:10pt}
   .voucher-template-brand{display:flex;align-items:center;gap:10px;min-width:0}
-  .voucher-template-logo{width:17mm;height:17mm;object-fit:contain;flex:none}
-  .voucher-template-truck{width:23mm;height:13mm;object-fit:contain;flex:none}
+  .voucher-template-logo-slot{display:inline-flex;align-items:center;justify-content:center;flex:none;width:17mm;height:17mm}
+  .voucher-template-logo{display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain}
   .voucher-template-brand-copy{min-width:0}
   .voucher-template-brand-copy p{margin-top:2px;font-size:8.5pt}
   .voucher-template-number{min-width:35mm;border:1.5px solid #111827;padding:5px 7px;text-align:center}
@@ -89,16 +89,15 @@ const printCss = `
   .voucher-template-stamp{min-height:21mm;border:1px dashed #6b7280;padding:2mm;text-align:center}
   .voucher-template-missing{padding:12mm;text-align:center;font-weight:700}
   .voucher-template-traditional{padding:6mm;border:1.5px solid #111827}
-  .voucher-template-traditional .voucher-template-header{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:3mm;padding-bottom:3mm;border-bottom:2px solid #111827}
+  .voucher-template-traditional .voucher-template-header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:3mm;padding-bottom:3mm;border-bottom:2px solid #111827}
   .voucher-template-traditional .voucher-template-title{margin:2.5mm 0;border:0;padding:2mm}
   .voucher-template-modern{padding:8mm;border:1px solid #9ca3af}
   .voucher-template-modern .voucher-template-header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:5mm;border-bottom:2px solid #1d4ed8;padding-bottom:4mm}
   .voucher-template-modern .voucher-template-title{border:0;background:#eff6ff;color:#1e3a8a;margin:4mm 0;text-align:start;padding:3mm}
   .voucher-template-modern .voucher-template-section>h2{border-inline-start-color:#1d4ed8;background:#eff6ff;color:#1e3a8a}
   .voucher-template-compact{max-width:180mm;padding:4mm;border:1px solid #111827;font-size:8.5pt}
-  .voucher-template-compact .voucher-template-header{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:2mm;align-items:center;padding-bottom:2mm;border-bottom:1.5px solid #111827}
-  .voucher-template-compact .voucher-template-logo{width:12mm;height:12mm}
-  .voucher-template-compact .voucher-template-truck{width:16mm;height:9mm}
+  .voucher-template-compact .voucher-template-header{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2mm;align-items:center;padding-bottom:2mm;border-bottom:1.5px solid #111827}
+  .voucher-template-compact .voucher-template-logo-slot{width:12mm;height:12mm}
   .voucher-template-compact .voucher-template-number{min-width:27mm;padding:2mm}
   .voucher-template-compact .voucher-template-number strong{font-size:12pt}
   .voucher-template-compact .voucher-template-title{margin:2mm 0;padding:1.5mm;border:0}
@@ -184,7 +183,6 @@ export function VoucherTemplateDocument({
   onLogoError: () => void;
   printRef?: Ref<HTMLDivElement>;
 }) {
-  const [truckFailed, setTruckFailed] = useState(false);
   const language = overrides.language as AppLanguage;
   const copy = labelCopy[language];
   const direction = getPrintDirection(language);
@@ -195,7 +193,7 @@ export function VoucherTemplateDocument({
   const header = (
     <>
       <div className="voucher-template-brand">
-        {showLogo ? <img src={safeLogo ?? undefined} alt="" className="voucher-template-logo" onError={onLogoError} /> : null}
+        <span className="voucher-template-logo-slot">{showLogo ? <img src={safeLogo ?? undefined} alt="" className="voucher-template-logo" onError={(event) => { event.currentTarget.style.display = "none"; onLogoError(); }} /> : null}</span>
         <div className="voucher-template-brand-copy">
           <h1>{branding.addaName.trim() || missingPrintAddaName(language)}</h1>
           {branding.tagline ? <p>{branding.tagline}</p> : null}
@@ -203,7 +201,6 @@ export function VoucherTemplateDocument({
           {overrides.showPhone && [branding.phone, branding.alternatePhone].filter((value) => value?.trim()).map((value, index) => <p key={`phone-${index}`}>{value}</p>)}
         </div>
       </div>
-      {!truckFailed ? <img src="/images/print/transport-truck.svg" alt="" className="voucher-template-truck" onError={() => setTruckFailed(true)} /> : null}
       <div className="voucher-template-number"><span>{copy.voucherNo}</span><strong>{presentation.voucherNo}</strong></div>
     </>
   );

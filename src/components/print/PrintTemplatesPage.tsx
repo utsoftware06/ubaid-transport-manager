@@ -20,6 +20,7 @@ import PrintTemplateControls from "./PrintTemplateControls";
 import { printCopy } from "./printCopy";
 import ModuleTransportPrintDocument from "./ModuleTransportPrintDocument";
 import { createSyntheticModulePresentation } from "@/lib/print/modulePresentation";
+import { waitForPrintImages } from "@/lib/print/printAssets";
 import { LedgerStatementPrintDocument, createSyntheticLedgerPresentation, isLedgerDocumentType } from "./LedgerStatementPrint";
 
 type ProfileRow = { role: string | null; adda_id: string | null; is_active: boolean | null };
@@ -144,7 +145,7 @@ export default function PrintTemplatesPage() {
   const currentOverrides = baseOverrides
     ? (previewDraft?.key === draftKey ? previewDraft.values : baseOverrides)
     : null;
-  const previewLogoKey = `${draftKey}:${currentOverrides?.templateId ?? "none"}`;
+  const previewLogoKey = `${draftKey}:${branding?.logoUrl ?? ""}:${currentOverrides?.templateId ?? "none"}`;
   const templateStatus = currentOverrides ? getPrintTemplateStatusForDocument(documentType, currentOverrides.templateId) : "planned";
   const templateAvailable = templateStatus !== "planned";
   const canManageDefaults = tenantContext.status === "ready" && tenantContext.canManageDefaults;
@@ -201,7 +202,7 @@ export default function PrintTemplatesPage() {
         new Promise<void>((resolve) => window.setTimeout(resolve, 1200)),
       ]);
     }
-    window.print();
+    void waitForPrintImages(document).then(() => window.print());
   }
 
   const isSuperAdmin = profile?.role === "super_admin";

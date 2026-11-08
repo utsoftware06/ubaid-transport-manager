@@ -1,4 +1,5 @@
 import type { AddaAccountEntry, AddaFinanceSettlement } from "./types";
+import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
 
 export type PrintLabels = {
   expenseTitle: string;
@@ -113,7 +114,7 @@ export function renderAddaAccountPrintWindow(
 </head>
 <body>
   <main class="receipt">
-    <header><h1>${escapeHtml(entry.adda_name?.trim() || (direction === "rtl" ? "اڈے کا نام دستیاب نہیں" : "Adda name unavailable"))}</h1><h2>${escapeHtml(title)}</h2></header>
+    <header><h1>${PRINT_ADDA_NAME_TOKEN}</h1><h2>${escapeHtml(title)}</h2></header>
     <section class="grid">
       ${field(labels.entryType, isExpense ? "Expense" : "Income")}
       ${field(labels.date, formatDate(entry.entry_date))}
@@ -140,7 +141,5 @@ export function renderAddaAccountPrintWindow(
   <script>window.addEventListener('load',function(){window.focus();window.print()});window.addEventListener('afterprint',function(){window.close()});</script>
 </body></html>`;
 
-  printWindow.document.open();
-  printWindow.document.write(html);
-  printWindow.document.close();
+  void writeAddaBrandedPrintDocument(printWindow, html, entry.adda_id, direction === "rtl" ? "ur" : "en");
 }

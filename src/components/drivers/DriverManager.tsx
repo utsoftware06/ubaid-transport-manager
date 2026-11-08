@@ -6,7 +6,7 @@ import {useLanguage} from "@/contexts/LanguageContext";
 import VoiceTypingField from "@/components/shared/VoiceTypingField";
 import ModulePageHeading from "@/components/shared/ModulePageHeading";
 import DriverSalaryAccount from "./DriverSalaryAccount";
-import { usePrintAddaName } from "@/lib/print/usePrintAddaName";
+import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
 import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
 import { singleResolvedAddaId } from "@/components/print/LedgerStatementPrint";
 import { bilingual, modulePrintLabel, printLabel, printValue, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
@@ -60,7 +60,6 @@ function History({ rows, dm, vm, t, dir, language }: { rows: Assignment[]; dm: M
       .filter(Boolean).join(" ").toLowerCase().includes(query.toLowerCase())
   );
   const ownerAddaId = singleResolvedAddaId(list.map((assignment) => assignment.adda_id));
-  const addaName = usePrintAddaName(ownerAddaId, language === "ur" ? "ur" : "en");
   const modulePrint = useModuleTransportPrint("driver_ledger", ownerAddaId, language === "ur" ? "ur" : "en");
   const reset = () => { setDriverId(""); setVehicleId(""); setFrom(""); setTo(""); setStatus(""); setQuery(""); };
 
@@ -96,8 +95,7 @@ function History({ rows, dm, vm, t, dir, language }: { rows: Assignment[]; dm: M
       const popup = window.open("", "_blank", "width=1100,height=800");
       if (!popup) { alert(t("reports.messages.allowPopups")); return; }
       const body = list.map((assignment) => `<tr><td>${escapeHtml(dm.get(assignment.driver_id)?.name ?? "-")}</td><td>${escapeHtml(vm.get(assignment.vehicle_id)?.vehicle_no ?? "-")}</td><td>${escapeHtml(assignment.start_date)}</td><td>${escapeHtml(assignment.end_date ?? "-")}</td><td>${escapeHtml(assignment.shift_reason || "-")}</td><td>${escapeHtml(assignment.remarks || "-")}</td><td>${escapeHtml(t(keyForStatus(assignment)))}</td></tr>`).join("");
-      popup.document.write(`<!doctype html><html lang="${escapeHtml(language)}" dir="${escapeHtml(dir)}"><head><meta charset="utf-8"><title>${escapeHtml(t("drivers.assignment.printTitle"))}</title><style>@page{size:A4 landscape;margin:12mm}body{font-family:Arial;color:#0f172a}h1{border-bottom:3px solid #2563eb}table{width:100%;border-collapse:collapse}th,td{border:1px solid #94a3b8;padding:7px;text-align:start}th{background:#2563eb;color:white}.ltr{direction:ltr;unicode-bidi:isolate}</style></head><body><h1>${escapeHtml(addaName)} — ${escapeHtml(t("drivers.assignment.printTitle"))}</h1><p>${escapeHtml(t("common.fromDate"))}: <span class="ltr">${escapeHtml(from || "-")}</span> · ${escapeHtml(t("common.toDate"))}: <span class="ltr">${escapeHtml(to || "-")}</span></p><table><thead><tr>${["driver","vehicle","startDate","endDate","reason","remarks","status"].map((field) => `<th>${escapeHtml(t(`drivers.assignment.${field}`))}</th>`).join("")}</tr></thead><tbody>${body || `<tr><td colspan="7">${escapeHtml(t("drivers.assignment.all"))}</td></tr>`}</tbody></table><script>onload=()=>{focus();print()}</script></body></html>`);
-      popup.document.close();
+      void writeAddaBrandedPrintDocument(popup, `<!doctype html><html lang="${escapeHtml(language)}" dir="${escapeHtml(dir)}"><head><meta charset="utf-8"><title>${escapeHtml(t("drivers.assignment.printTitle"))}</title><style>@page{size:A4 landscape;margin:12mm}body{font-family:Arial;color:#0f172a}h1{border-bottom:3px solid #2563eb}table{width:100%;border-collapse:collapse}th,td{border:1px solid #94a3b8;padding:7px;text-align:start}th{background:#2563eb;color:white}.ltr{direction:ltr;unicode-bidi:isolate}</style></head><body><h1>${PRINT_ADDA_NAME_TOKEN} — ${escapeHtml(t("drivers.assignment.printTitle"))}</h1><p>${escapeHtml(t("common.fromDate"))}: <span class="ltr">${escapeHtml(from || "-")}</span> · ${escapeHtml(t("common.toDate"))}: <span class="ltr">${escapeHtml(to || "-")}</span></p><table><thead><tr>${["driver","vehicle","startDate","endDate","reason","remarks","status"].map((field) => `<th>${escapeHtml(t(`drivers.assignment.${field}`))}</th>`).join("")}</tr></thead><tbody>${body || `<tr><td colspan="7">${escapeHtml(t("drivers.assignment.all"))}</td></tr>`}</tbody></table><script>onload=()=>{focus();print()}</script></body></html>`, ownerAddaId, language === "ur" ? "ur" : "en");
     };
     modulePrint.openPresentation(presentation, printLegacy, ownerAddaId);
   };

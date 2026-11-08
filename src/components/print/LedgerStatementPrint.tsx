@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- print must await the exact tenant logo and keep failures blank. */
+
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useReactToPrint } from "react-to-print";
 import { supabase } from "@/lib/supabase/client";
@@ -122,12 +124,14 @@ function LedgerStatementPrintDialog({ addaId, documentType, makePresentation, in
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
-  const [logoFailed, setLogoFailed] = useState(false);
+  const [failedLogoKey, setFailedLogoKey] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement | null>(null);
   const key = `${addaId}:${documentType}`;
   const presentation = makePresentation(overrides?.language ?? initialLanguage);
   const activeLoaded = loaded?.key === key ? loaded : null;
   const activeOverrides = activeLoaded ? overrides : null;
+  const logoKey = activeLoaded ? `${activeLoaded.key}:${activeLoaded.branding.logoUrl ?? ""}` : "";
+  const logoFailed = Boolean(logoKey && failedLogoKey === logoKey);
   const invalid = activeOverrides ? validatePrintSettingsValues(activeOverrides) : ["settings_missing"];
   const copy = strings[activeOverrides?.language ?? initialLanguage];
 
@@ -225,7 +229,7 @@ function LedgerStatementPrintDialog({ addaId, documentType, makePresentation, in
           {activeLoaded.canSave ? <p className="text-xs font-semibold text-slate-600 md:col-span-4">{copy.temporary}</p> : null}
           {message ? <p role="status" className="font-bold text-green-800 md:col-span-4">{message}</p> : null}{error ? <p role="alert" className="font-bold text-red-800 md:col-span-4">{error}</p> : null}
         </section>
-        <div className="overflow-auto rounded-lg bg-slate-200 p-3 sm:p-6 print-module-preview" ref={printRef}><LedgerStatementPrintDocument presentation={presentation} branding={activeLoaded.branding} overrides={activeOverrides} logoFailed={logoFailed} onLogoError={() => setLogoFailed(true)} /></div>
+        <div className="overflow-auto rounded-lg bg-slate-200 p-3 sm:p-6 print-module-preview" ref={printRef}><LedgerStatementPrintDocument presentation={presentation} branding={activeLoaded.branding} overrides={activeOverrides} logoFailed={logoFailed} onLogoError={() => setFailedLogoKey(logoKey)} /></div>
       </> : null}
     </div>
   </div>;
@@ -240,7 +244,7 @@ export function LedgerStatementPrintDocument({ presentation, branding, overrides
   const fields = presentation.fields.filter((field) => field.value !== "");
   const tables = presentation.tables;
   const summary = presentation.summary;
-  const header = <header className="ledger-brand"><div className="ledger-mark">{logoUrl ? <img src={logoUrl} alt="" onError={onLogoError} /> : <img src="/images/print/transport-truck.svg" alt="" />}</div><div className="ledger-brand-copy"><h1>{branding.addaName.trim() || (lang === "ur" ? "اڈے کا نام دستیاب نہیں" : "Adda name unavailable")}</h1>{overrides.showAddress && (branding.address || branding.city) ? <p>{[branding.address, branding.city].filter(Boolean).join(", ")}</p> : null}{overrides.showPhone && (branding.phone || branding.alternatePhone) ? <p dir="ltr">{[branding.phone, branding.alternatePhone].filter(Boolean).join(" · ")}</p> : null}</div><div className="ledger-title-badge"><small>{presentation.subtitle ?? (lang === "ur" ? "اکاؤنٹ اسٹیٹمنٹ" : "ACCOUNT STATEMENT")}</small><strong>{presentation.title}</strong>{presentation.reference ? <span dir="ltr">{presentation.reference}</span> : null}</div></header>;
+  const header = <header className="ledger-brand"><div className="ledger-mark">{logoUrl ? <img src={logoUrl} alt="" onError={(event) => { event.currentTarget.style.display = "none"; onLogoError?.(); }} /> : null}</div><div className="ledger-brand-copy"><h1>{branding.addaName.trim() || (lang === "ur" ? "اڈے کا نام دستیاب نہیں" : "Adda name unavailable")}</h1>{overrides.showAddress && (branding.address || branding.city) ? <p>{[branding.address, branding.city].filter(Boolean).join(", ")}</p> : null}{overrides.showPhone && (branding.phone || branding.alternatePhone) ? <p dir="ltr">{[branding.phone, branding.alternatePhone].filter(Boolean).join(" · ")}</p> : null}</div><div className="ledger-title-badge"><small>{presentation.subtitle ?? (lang === "ur" ? "اکاؤنٹ اسٹیٹمنٹ" : "ACCOUNT STATEMENT")}</small><strong>{presentation.title}</strong>{presentation.reference ? <span dir="ltr">{presentation.reference}</span> : null}</div></header>;
   const fieldGrid = <section className="ledger-fields">{fields.map((field, index) => <div className="ledger-field" key={`${field.label}-${index}`}><b>{field.label}</b><span dir={field.direction ?? "auto"}>{field.value}</span></div>)}</section>;
   const tableMarkup = tables.map((table, tableIndex) => <section className="ledger-table-section" key={`${table.title ?? "table"}-${tableIndex}`}>{table.title ? <h2>{table.title}</h2> : null}<table><thead><tr>{table.columns.map((column, index) => <th key={`${column}-${index}`}>{column}</th>)}</tr></thead><tbody>{table.rows.length ? table.rows.map((row, rowIndex) => <tr key={rowIndex}>{table.columns.map((_, columnIndex) => <td key={columnIndex} dir="auto">{row[columnIndex] ?? ""}</td>)}</tr>) : <tr><td colSpan={table.columns.length}>{table.emptyMessage ?? copy.empty}</td></tr>}</tbody></table></section>);
   const summaryMarkup = <section className="ledger-summary" aria-label={lang === "ur" ? "مالی خلاصہ" : "Account summary"}>{summary.map((field, index) => <div className="ledger-summary-item" key={`${field.label}-${index}`}><span>{field.label}</span><strong dir={field.direction ?? "ltr"}>{field.value}</strong></div>)}</section>;

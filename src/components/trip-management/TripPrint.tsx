@@ -8,10 +8,12 @@ import {
   tripStatusTranslationKey,
 } from "./TripManagement";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { usePrintAddaName } from "@/lib/print/usePrintAddaName";
+import PrintAddaLogo from "@/components/print/PrintAddaLogo";
+import { usePrintBranding } from "@/lib/print/usePrintAddaName";
 import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
 import { bilingual, printLabel, printValue, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
 import { singleResolvedAddaId } from "@/components/print/LedgerStatementPrint";
+import { waitForPrintImages } from "@/lib/print/printAssets";
 
 type Props = {
   trips: TripRecord[];
@@ -44,13 +46,14 @@ export default function TripPrint({ trips, summary, selectedTrip }: Props) {
   const [printMode, setPrintMode] = useState<PrintMode>("all");
   const printOwnerIds = (printMode === "single" && selectedTrip ? [selectedTrip] : trips).map((trip) => trip.adda_id);
   const addaId = singleResolvedAddaId(printOwnerIds);
-  const addaName = usePrintAddaName(addaId, language === "ur" ? "ur" : "en");
+  const branding = usePrintBranding(addaId);
+  const addaName = branding?.addaName.trim() || (language === "ur" ? "اڈے کا نام دستیاب نہیں" : "Adda name unavailable");
   const modulePrint = useModuleTransportPrint("reports", addaId, language === "ur" ? "ur" : "en");
 
   function printAfterRender() {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        window.print();
+        void waitForPrintImages(document).then(() => window.print());
       });
     });
   }
@@ -157,6 +160,7 @@ export default function TripPrint({ trips, summary, selectedTrip }: Props) {
           <div className="print-document">
             <div className="print-header">
               <div>
+                <PrintAddaLogo branding={branding} />
                 <h1>{t("tripManagement.print.reportTitle")}</h1>
                 <p>{addaName}</p>
               </div>
@@ -219,6 +223,7 @@ export default function TripPrint({ trips, summary, selectedTrip }: Props) {
           <div className="print-document print-single">
             <div className="print-header">
               <div>
+                <PrintAddaLogo branding={branding} />
                 <h1>{t("tripManagement.print.recordTitle")}</h1>
                 <p>{addaName}</p>
               </div>

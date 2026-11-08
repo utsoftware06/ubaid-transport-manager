@@ -360,11 +360,8 @@ body {
     border-bottom: 1.5pt solid #111;
   }
 
-  .print-foundation-logo {
-    width: 22mm;
-    height: 22mm;
-    object-fit: contain;
-  }
+  .print-foundation-logo-slot { width: 22mm; height: 22mm; }
+  .print-foundation-logo { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
 
   .print-foundation-brand h1 {
     margin: 0;
@@ -536,11 +533,8 @@ body {
   border-bottom: 1.5pt solid #111;
 }
 
-.print-foundation-logo {
-  width: 22mm;
-  height: 22mm;
-  object-fit: contain;
-}
+.print-foundation-logo-slot { display: inline-flex; width: 22mm; height: 22mm; flex: none; align-items: center; justify-content: center; }
+.print-foundation-logo { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
 
 .print-foundation-brand h1 {
   margin: 0;
@@ -664,12 +658,6 @@ body {
   display: none;
 }
 
-.print-foundation-logo-fallback {
-  display: inline-block;
-  margin-top: 2mm;
-  font-size: 8pt;
-  font-weight: 700;
-}
 
 @media print {
   .print-foundation-sheet {
@@ -707,12 +695,12 @@ body {
 .bilty-template-a4-portrait { width: min(100%, 190mm); min-height: 277mm; }
 .bilty-template-page h1, .bilty-template-page h2, .bilty-template-page h3, .bilty-template-page p { margin-top: 0; }
 .bilty-adda-brand { display: flex; align-items: center; gap: 3mm; min-width: 0; }
-.bilty-template-logo { flex: 0 0 auto; width: 19mm; height: 19mm; object-fit: contain; }
+.bilty-logo-slot { display: inline-flex; flex: 0 0 auto; width: 19mm; height: 19mm; align-items: center; justify-content: center; }
+.bilty-template-logo { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
 .bilty-adda-brand-copy { min-width: 0; }
 .bilty-adda-brand h1 { margin: 0 0 1mm; font-size: 15pt; font-weight: 900; line-height: 1.2; overflow-wrap: anywhere; }
 .bilty-adda-brand p { margin: .7mm 0 0; font-size: 7.8pt; line-height: 1.25; }
 .bilty-adda-brand small { font-size: 7pt; }
-.bilty-truck-illustration { display: block; width: 27mm; height: auto; object-fit: contain; }
 .bilty-number-box { display: grid; align-content: center; gap: 1mm; min-width: 36mm; padding: 2mm; border: 2px solid #17212b; text-align: center; }
 .bilty-number-box small { font-size: 7pt; font-weight: 800; }
 .bilty-number-box > strong { font: 900 16pt/1.1 Arial, sans-serif; overflow-wrap: anywhere; }
@@ -760,12 +748,12 @@ body {
 /* Traditional Pakistani transport pad: boxed Urdu masthead, truck mark and ruled form. */
 .bilty-template-traditional_pad { padding: 4mm; border: 2px solid #202020; }
 .bilty-traditional-head { padding: 2.5mm; border: 1px solid #222; }
-.bilty-traditional-title-row { display: grid; grid-template-columns: 29mm minmax(0, 1fr) 38mm; align-items: center; gap: 2mm; }
+.bilty-traditional-title-row { display: grid; grid-template-columns: minmax(0, 1fr) 38mm; align-items: center; gap: 2mm; }
 .bilty-traditional-title .bilty-document-heading h2 { font-size: 21pt; }
 .bilty-traditional-title .bilty-document-heading > span { font-size: 8.5pt; }
 .bilty-traditional-title .bilty-copy-badge { margin-top: 1mm; }
 .bilty-traditional-brand-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3mm; margin-top: 2.5mm; padding-top: 2mm; border-top: 1px solid #555; }
-.bilty-traditional-brand-row .bilty-template-logo { width: 14mm; height: 14mm; }
+.bilty-traditional-brand-row .bilty-logo-slot { width: 14mm; height: 14mm; }
 .bilty-traditional-brand-row .bilty-adda-brand h1 { font-size: 13pt; }
 .bilty-traditional-copy { padding: 1mm 2mm; border: 1px solid #333; font-size: 8pt; font-weight: 900; }
 .bilty-traditional-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 2.5mm; border-top: 1px solid #222; border-inline-start: 1px solid #222; }
@@ -802,9 +790,8 @@ body {
 /* Compact pad: A5 receipt-book proportions, thin ruled rows and restrained spacing. */
 .bilty-template-compact_pad { padding: 3.5mm; border: 1.5px solid #222; font-size: 8.5pt; }
 .bilty-compact-head { padding-bottom: 2mm; border-bottom: 2px solid #222; }
-.bilty-compact-top { display: grid; grid-template-columns: 23mm minmax(0, 1fr) 32mm; align-items: center; gap: 2mm; }
-.bilty-compact-top .bilty-truck-illustration { width: 22mm; }
-.bilty-compact-top .bilty-template-logo { width: 12mm; height: 12mm; }
+.bilty-compact-top { display: grid; grid-template-columns: minmax(0, 1fr) 32mm; align-items: center; gap: 2mm; }
+.bilty-compact-top .bilty-logo-slot { width: 12mm; height: 12mm; }
 .bilty-compact-top .bilty-adda-brand { gap: 1.5mm; }
 .bilty-compact-top .bilty-adda-brand h1 { margin-bottom: .5mm; font-size: 11pt; }
 .bilty-compact-top .bilty-adda-brand p { font-size: 6.8pt; }

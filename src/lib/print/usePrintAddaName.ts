@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { missingPrintAddaName, resolvePrintBranding } from "./resolvePrintBranding";
-import type { PrintLanguage } from "./types";
+import type { PrintBranding, PrintLanguage } from "./types";
 
-/** Resolves a UI print heading only for the document's explicit owning Adda. */
-export function usePrintAddaName(addaId: string | null | undefined, language: PrintLanguage): string {
-  const [resolved, setResolved] = useState<{ addaId: string; name: string } | null>(null);
+/** Resolves the Adda brand only for the document/report's explicit owner. */
+export function usePrintBranding(addaId: string | null | undefined): PrintBranding | null {
+  const [resolved, setResolved] = useState<{ addaId: string; branding: PrintBranding } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -14,16 +14,24 @@ export function usePrintAddaName(addaId: string | null | undefined, language: Pr
 
     void resolvePrintBranding(addaId).then(({ branding }) => {
       if (active && branding.addaId === addaId) {
-        setResolved({ addaId, name: branding.addaName.trim() });
+        setResolved({ addaId, branding });
       }
     }).catch(() => {
-      if (active) setResolved({ addaId, name: "" });
+      if (active) setResolved(null);
     });
 
     return () => { active = false; };
   }, [addaId]);
 
-  return addaId && resolved?.addaId === addaId && resolved.name
-    ? resolved.name
+  return addaId && resolved?.addaId === addaId
+    ? resolved.branding
+    : null;
+}
+
+/** Resolves a UI print heading only for the document's explicit owning Adda. */
+export function usePrintAddaName(addaId: string | null | undefined, language: PrintLanguage): string {
+  const branding = usePrintBranding(addaId);
+  return branding?.addaName.trim()
+    ? branding.addaName.trim()
     : missingPrintAddaName(language);
 }

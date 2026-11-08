@@ -55,7 +55,7 @@ function ModuleTransportPrintDialog({ addaId, presentation, initialLanguage, fal
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [logoFailed, setLogoFailed] = useState(false);
+  const [failedLogoKey, setFailedLogoKey] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement | null>(null);
   const key = `${addaId ?? "missing"}:${presentation.documentType}`;
   const language = overrides?.language ?? "en";
@@ -97,6 +97,8 @@ function ModuleTransportPrintDialog({ addaId, presentation, initialLanguage, fal
 
   const activeLoaded = loaded?.key === key ? loaded : null;
   const activeOverrides = activeLoaded && overrides ? overrides : null;
+  const logoKey = activeLoaded ? `${activeLoaded.key}:${activeLoaded.branding.logoUrl ?? ""}` : "";
+  const logoFailed = Boolean(logoKey && failedLogoKey === logoKey);
   const setValue = <K extends keyof PrintPreviewOverrides>(field: K, value: PrintPreviewOverrides[K]) => {
     if (!activeOverrides) return;
     setMessage("");
@@ -161,7 +163,7 @@ function ModuleTransportPrintDialog({ addaId, presentation, initialLanguage, fal
           {activeLoaded.canSave ? <p className="text-xs font-semibold text-slate-600 md:col-span-4">{strings[activeOverrides.language].temporary}</p> : null}
           {message ? <p role="status" className="font-bold text-green-800 md:col-span-4">{message}</p> : null}{error ? <p role="alert" className="font-bold text-red-800 md:col-span-4">{error}</p> : null}
         </section>
-        <div className="overflow-auto rounded-lg bg-slate-200 p-3 sm:p-6 print-module-preview" ref={printRef}><ModuleTransportPrintDocument presentation={presentation} branding={activeLoaded.branding} overrides={activeOverrides} logoFailed={logoFailed} onLogoError={()=>setLogoFailed(true)}/></div>
+        <div className="overflow-auto rounded-lg bg-slate-200 p-3 sm:p-6 print-module-preview" ref={printRef}><ModuleTransportPrintDocument presentation={presentation} branding={activeLoaded.branding} overrides={activeOverrides} logoFailed={logoFailed} onLogoError={()=>setFailedLogoKey(logoKey)}/></div>
       </> : null}
     </div>
   </div>;

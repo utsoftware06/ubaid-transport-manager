@@ -5,7 +5,7 @@ import type { VehicleFilterType, VehicleReport, VehicleTrip, VehicleTripFreightL
 import { formatAmount } from "./reporting";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { escapeHtml } from "@/lib/print/escapeHtml";
-import { usePrintAddaName } from "@/lib/print/usePrintAddaName";
+import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
 import LedgerStatementPrintButton, { singleResolvedAddaId } from "@/components/print/LedgerStatementPrint";
 import { vehicleLedgerPrintPresentation } from "./vehicleLedgerPrintPresentation";
 
@@ -13,7 +13,6 @@ type Props = { vehicleReport: VehicleReport; period: { filterType: VehicleFilter
 
 export default function VehicleTripsModal({ vehicleReport, period, onClose }: Props) {
   const { t, dir, language } = useLanguage();
-  const printAddaName = usePrintAddaName(vehicleReport.addaId, language === "ur" ? "ur" : "en");
   const printAddaId = singleResolvedAddaId(vehicleReport.trips.map((trip) => trip.addaId));
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -192,6 +191,7 @@ export default function VehicleTripsModal({ vehicleReport, period, onClose }: Pr
   }
 
   function handlePrint() {
+    if (!printAddaId) return;
     const tripHtml = vehicleReport.trips.map((trip) => {
       const leftRows = freightRows(trip).map(([label, value]) =>
         `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`).join("");
@@ -208,10 +208,9 @@ export default function VehicleTripsModal({ vehicleReport, period, onClose }: Pr
     }).join("");
     const printWindow = window.open("", "_blank", "width=1200,height=850");
     if (!printWindow) { alert(t("vehicleLedger.messages.allowPopups")); return; }
-    printWindow.document.write(`<!DOCTYPE html><html lang="${escapeHtml(language)}" dir="${escapeHtml(dir)}"><head><title>${escapeHtml(t("vehicleLedger.title"))}</title><style>
+    void writeAddaBrandedPrintDocument(printWindow, `<!DOCTYPE html><html lang="${escapeHtml(language)}" dir="${escapeHtml(dir)}"><head><title>${escapeHtml(t("vehicleLedger.title"))}</title><style>
       @page{size:landscape;margin:10mm}body{font-family:Arial,sans-serif;padding:24px;color:#111827}h1,h2{text-align:center;margin:0}h2{margin:8px 0 18px}.totals{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:18px}.total,.net{border:1px solid #cbd5e1;border-radius:7px;padding:10px}.trip{border:1px solid #94a3b8;border-radius:9px;padding:14px;margin:14px 0;page-break-inside:avoid}.columns{display:grid;grid-template-columns:1fr 1fr;gap:12px}.bilty-columns{grid-template-columns:1fr}h3{margin:0 0 10px}h4{margin:4px 0 8px}table{width:100%;border-collapse:collapse;font-size:11px}.leg-table{font-size:7px}.leg-table td,.leg-table th{padding:3px}.chakkar-totals{margin-top:8px}.chakkar-totals h5{margin:4px 0}.general-table{margin-bottom:8px}td,th{border:1px solid #cbd5e1;padding:6px;text-align:start}th{background:#eff6ff}.net{margin-top:10px}.net p{margin:5px 0}@media print{body{padding:0}.trip{page-break-inside:avoid}}
-      </style></head><body dir="${escapeHtml(dir)}"><h1>${escapeHtml(printAddaName)}</h1><h2>${escapeHtml(vehicleReport.vehicleNo)} · ${escapeHtml(t("vehicleLedger.title"))}</h2><div class="totals"><div class="total">${escapeHtml(t("vehicleLedger.cards.totalTrips"))}: ${vehicleReport.totalTrips}</div><div class="total">${escapeHtml(t("vehicleLedger.cards.totalVehicleFreight"))}: ${escapeHtml(formatAmount(vehicleReport.totalVehicleFreight))}</div><div class="total">${escapeHtml(t("vehicleLedger.cards.totalReceived"))}: ${escapeHtml(formatAmount(vehicleReport.totalReceived))}</div><div class="total">${escapeHtml(t("vehicleLedger.cards.parchiVehicleWithheld"))}: ${escapeHtml(formatAmount(vehicleReport.totalParchiVehicleWithheld))}</div><div class="total">${escapeHtml(t("vehicleLedger.cards.vehicleEntitlementSettled"))}: ${escapeHtml(formatAmount(vehicleReport.totalVehicleEntitlementSettled))}</div><div class="total">${escapeHtml(t("vehicleLedger.cards.totalOutstanding"))}: ${escapeHtml(formatAmount(vehicleReport.totalOutstanding))}</div><div class="total">${escapeHtml(t("vehicleLedger.cards.totalExpense"))}: ${escapeHtml(formatAmount(vehicleReport.totalExpense))}</div><div class="total">${escapeHtml(t("vehicleLedger.cards.netVehicleEarnings"))}: ${escapeHtml(formatAmount(vehicleReport.netVehicleEarnings))}</div></div>${tripHtml}<script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}</script></body></html>`);
-    printWindow.document.close();
+      </style></head><body dir="${escapeHtml(dir)}"><h1>${PRINT_ADDA_NAME_TOKEN}</h1><h2>${escapeHtml(vehicleReport.vehicleNo)} · ${escapeHtml(t("vehicleLedger.title"))}</h2><div class="totals"><div class="total">${escapeHtml(t("vehicleLedger.cards.totalTrips"))}: ${vehicleReport.totalTrips}</div><div class="total">${escapeHtml(t("vehicleLedger.cards.totalVehicleFreight"))}: ${escapeHtml(formatAmount(vehicleReport.totalVehicleFreight))}</div><div class="total">${escapeHtml(t("vehicleLedger.cards.totalReceived"))}: ${escapeHtml(formatAmount(vehicleReport.totalReceived))}</div><div class="total">${escapeHtml(t("vehicleLedger.cards.parchiVehicleWithheld"))}: ${escapeHtml(formatAmount(vehicleReport.totalParchiVehicleWithheld))}</div><div class="total">${escapeHtml(t("vehicleLedger.cards.vehicleEntitlementSettled"))}: ${escapeHtml(formatAmount(vehicleReport.totalVehicleEntitlementSettled))}</div><div class="total">${escapeHtml(t("vehicleLedger.cards.totalOutstanding"))}: ${escapeHtml(formatAmount(vehicleReport.totalOutstanding))}</div><div class="total">${escapeHtml(t("vehicleLedger.cards.totalExpense"))}: ${escapeHtml(formatAmount(vehicleReport.totalExpense))}</div><div class="total">${escapeHtml(t("vehicleLedger.cards.netVehicleEarnings"))}: ${escapeHtml(formatAmount(vehicleReport.netVehicleEarnings))}</div></div>${tripHtml}<script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}</script></body></html>`, printAddaId, language === "ur" ? "ur" : "en");
   }
 
   return (

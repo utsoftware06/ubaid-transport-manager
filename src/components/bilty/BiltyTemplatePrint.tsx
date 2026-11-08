@@ -427,13 +427,12 @@ export function BiltyTemplateDocument({
   });
   const selectDetails = (keys: string[]) => details.filter(([key]) => keys.includes(key));
   const identity = <div className="bilty-adda-brand">
-    {showLogo ? <img src={logoUrl ?? undefined} alt="" className="bilty-template-logo" onError={onLogoError} /> : null}
+    <span className="bilty-logo-slot">{showLogo ? <img src={logoUrl ?? undefined} alt="" className="bilty-template-logo" onError={(event) => { event.currentTarget.style.display = "none"; onLogoError(); }} /> : null}</span>
     <div className="bilty-adda-brand-copy">
       <h1>{branding.addaName.trim() || missingPrintAddaName(language)}</h1>
       {branding.tagline ? <p>{branding.tagline}</p> : null}
       {overrides.showAddress && [branding.address, branding.city].filter((item) => item?.trim()).map((item, index) => <p key={`address-${index}`}>{item}</p>)}
       {overrides.showPhone && [branding.phone, branding.alternatePhone].filter((item) => item?.trim()).map((item, index) => <p key={`phone-${index}`}>{item}</p>)}
-      {overrides.showLogo && branding.logoUrl && logoFailed ? <small>{isUrdu ? "لوگو دستیاب نہیں" : "Logo unavailable"}</small> : null}
     </div>
   </div>;
   const numberBox = <div className="bilty-number-box">
@@ -446,7 +445,6 @@ export function BiltyTemplateDocument({
     <span>{isUrdu ? "بلٹی" : "GOODS TRANSPORT BILTY"}</span>
     <b className="bilty-copy-badge">{copy}</b>
   </div>;
-  const truck = <img src="/images/print/transport-truck.svg" alt="" className="bilty-truck-illustration" />;
   const goodsTable = <table className="bilty-template-items">
     <thead><tr><th>{labels("serial")}</th><th>{labels("goods")}</th><th>{labels("quantity")}</th><th>{labels("weight")}</th><th>{labels("unit")}</th><th>{labels("remarks")}</th></tr></thead>
     <tbody>{presentation.items.map((item, index) => <tr key={`${item.line_no}-${index}`}><td dir="ltr">{index + 1}</td><td dir="auto">{item.goods_name || "—"}</td><td dir="ltr">{String(item.quantity ?? "—")}</td><td dir="ltr">{item.weight == null ? "—" : String(item.weight)}</td><td dir="auto">{item.unit || "—"}</td><td dir="auto">{item.remarks || "—"}</td></tr>)}</tbody>
@@ -490,7 +488,7 @@ export function BiltyTemplateDocument({
       {presentation.isSyntheticSample ? <div className="bilty-template-sample-mark">SYNTHETIC SAMPLE · NOT A BUSINESS RECORD</div> : null}
       {overrides.templateId === "traditional_pad" ? <>
         <header className="bilty-traditional-head">
-          <div className="bilty-traditional-title-row">{truck}<div className="bilty-traditional-title">{title}</div>{numberBox}</div>
+          <div className="bilty-traditional-title-row"><div className="bilty-traditional-title">{title}</div>{numberBox}</div>
           <div className="bilty-traditional-brand-row">{identity}<span className="bilty-traditional-copy">{copy}</span></div>
         </header>
         {infoFields(traditionalFields, "bilty-traditional-fields")}
@@ -509,7 +507,7 @@ export function BiltyTemplateDocument({
         {financialSection}{note}{signatures}{footer}
       </> : null}
       {overrides.templateId === "compact_pad" ? <>
-        <header className="bilty-compact-head"><div className="bilty-compact-top">{truck}{identity}{numberBox}</div><div className="bilty-compact-heading">{title}</div></header>
+        <header className="bilty-compact-head"><div className="bilty-compact-top">{identity}{numberBox}</div><div className="bilty-compact-heading">{title}</div></header>
         <div className="bilty-compact-route"><b>{labels("from")}:</b><strong dir="auto">{displayedFieldValue(presentation.routeFrom, language)} <span aria-hidden="true">→</span> {displayedFieldValue(presentation.routeTo, language)}</strong></div>
         {infoFields(selectDetails(["loading", "departure", "arrival", "trip", "freightType", "biltyType", "loadingSource", "freightReceivableFrom", "partyName", "broker", "vehicle", "vehicleType", "owner", "group"]), "bilty-compact-fields")}
         {contacts}{containerDetails}

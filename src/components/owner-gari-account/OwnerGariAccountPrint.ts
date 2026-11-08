@@ -1,4 +1,5 @@
 import { escapeHtml } from "@/lib/print/escapeHtml";
+import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
 
 import type { AppLanguage } from "@/i18n/translations";
 import type { OwnerGariMonthlyClosing } from "./types";
@@ -70,7 +71,7 @@ export function printOwnerGariMonthlyClosing({ report, language, dir, t }: Print
     ["commissionDifference", summary.commission_reconciliation_difference],
   ].map(([key, amount]) => `<div class="box"><span>${escapeHtml(t(`ownerGariAccount.monthlyClosing.${key}`))}</span><strong class="money">${escapeHtml(money(Number(amount)))}</strong></div>`).join("");
 
-  popup.document.write(`<!doctype html><html lang="${escapeHtml(language)}" dir="${escapeHtml(dir)}"><head>
+  void writeAddaBrandedPrintDocument(popup, `<!doctype html><html lang="${escapeHtml(language)}" dir="${escapeHtml(dir)}"><head>
     <title>${escapeHtml(t("ownerGariAccount.monthlyClosing.printTitle"))}</title>
     <style>
       @page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#0f172a;padding:18px}
@@ -81,7 +82,7 @@ export function printOwnerGariMonthlyClosing({ report, language, dir, t }: Print
       th,td{border:1px solid #cbd5e1;padding:6px;text-align:start;vertical-align:top}th{background:#1d4ed8;color:#fff}footer{text-align:center;margin-top:16px;font-size:10px;color:#475569}
       @media print{body{padding:0}}
     </style></head><body>
-    <h1>${safe(account.adda_name)}</h1>
+    <h1>${PRINT_ADDA_NAME_TOKEN}</h1>
     <h2>${escapeHtml(t("ownerGariAccount.monthlyClosing.printTitle"))}</h2>
     <div class="meta">${escapeHtml(t("ownerGariAccount.table.vehicle"))}: <strong>${safe(account.vehicle_no)}</strong> · ${escapeHtml(t("ownerGariAccount.table.owner"))}: <strong>${safe(account.owner_name)}</strong> · ${escapeHtml(t("ownerGariAccount.monthlyClosing.period"))}: <strong>${escapeHtml(month)}</strong></div>
     <div class="cards">
@@ -98,6 +99,5 @@ export function printOwnerGariMonthlyClosing({ report, language, dir, t }: Print
     </tr></thead><tbody>${transactionRows || `<tr><td colspan="7">${escapeHtml(t("ownerGariAccount.table.empty"))}</td></tr>`}</tbody></table>
     <footer>${escapeHtml(t("ownerGariAccount.monthlyClosing.currentBalanceAsOf"))}: ${escapeHtml(formatDate(summary.current_balance_as_of_date, language))} · ${escapeHtml(t("ownerGariAccount.monthlyClosing.generatedAt"))}: ${escapeHtml(new Date().toLocaleString(language === "ur" ? "ur-PK" : "en-PK"))} · ${escapeHtml(t("ownerGariAccount.monthlyClosing.immutableNotice"))}</footer>
     <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}</script>
-    </body></html>`);
-  popup.document.close();
+    </body></html>`, account.adda_id, language === "ur" ? "ur" : "en");
 }

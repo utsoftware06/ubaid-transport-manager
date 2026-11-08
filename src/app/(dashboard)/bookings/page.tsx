@@ -14,6 +14,7 @@ import { USER_ROLES } from "@/config/navigation";
 import ModulePageHeading from "@/components/shared/ModulePageHeading";
 import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
 import { printLabel, printValue, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
+import { waitForPrintImages } from "@/lib/print/printAssets";
 import VoiceTypingField from "@/components/shared/VoiceTypingField";
 
 type ProfileRow = {
@@ -59,6 +60,7 @@ export default function BookingsPage() {
 
 const handlePrint = useReactToPrint({
   contentRef: printRef,
+  onBeforePrint: () => waitForPrintImages(printRef.current),
 });
 
   function printBookingSlip(booking: Booking) {

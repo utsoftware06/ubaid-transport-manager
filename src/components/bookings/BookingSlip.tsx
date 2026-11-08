@@ -1,7 +1,9 @@
 import { forwardRef } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import type { Booking } from "./types";
-import { usePrintAddaName } from "@/lib/print/usePrintAddaName";
+import { missingPrintAddaName } from "@/lib/print/resolvePrintBranding";
+import PrintAddaLogo from "@/components/print/PrintAddaLogo";
+import { usePrintBranding } from "@/lib/print/usePrintAddaName";
 
 type BookingSlipProps = {
   booking: Booking | null;
@@ -10,7 +12,8 @@ type BookingSlipProps = {
 const BookingSlip = forwardRef<HTMLDivElement, BookingSlipProps>(
   ({ booking }, ref) => {
   const { t, dir, language } = useLanguage();
-  const addaName = usePrintAddaName(booking?.adda_id, language === "ur" ? "ur" : "en");
+  const branding = usePrintBranding(booking?.adda_id);
+  const addaName = branding?.addaName.trim() || missingPrintAddaName(language === "ur" ? "ur" : "en");
   if (!booking) return null;
 
   return (
@@ -22,9 +25,10 @@ const BookingSlip = forwardRef<HTMLDivElement, BookingSlipProps>(
   className="bg-white text-black p-8"
 >
       <div className="border-2 border-black p-6">
-        <h1 className="text-3xl font-bold text-center">
-          {addaName}
-        </h1>
+        <div className="flex items-center justify-center gap-2">
+          <PrintAddaLogo branding={branding} />
+          <h1 className="text-3xl font-bold text-center">{addaName}</h1>
+        </div>
 
         <p className="text-center mb-6">
           {t("bookings.receipt.title")}

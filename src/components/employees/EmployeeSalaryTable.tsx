@@ -11,7 +11,7 @@ import {
 } from "./EmployeeSalary";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { escapeHtml } from "@/lib/print/escapeHtml";
-import { usePrintAddaName } from "@/lib/print/usePrintAddaName";
+import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
 import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
 import { printLabel, printValue, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
 import VoiceTypingField from "@/components/shared/VoiceTypingField";
@@ -66,7 +66,6 @@ export default function EmployeeSalaryTable({
   errorMessage,
 }: Props) {
   const { t, dir, language } = useLanguage();
-  const addaName = usePrintAddaName(addaId, language === "ur" ? "ur" : "en");
   const modulePrint = useModuleTransportPrint("employee", addaId, language === "ur" ? "ur" : "en");
   const [viewingRow, setViewingRow] = useState<EmployeeSalaryRow | null>(null);
   const statusLabel = (status: string) =>
@@ -138,7 +137,7 @@ export default function EmployeeSalaryTable({
             .join("")
         : `<tr><td colspan="12" class="empty">${escapeHtml(t("employeeSalary.empty"))}</td></tr>`;
 
-    printWindow.document.write(`
+    void writeAddaBrandedPrintDocument(printWindow, `
       <!doctype html>
       <html lang="${language}" dir="${dir}">
         <head>
@@ -168,7 +167,7 @@ export default function EmployeeSalaryTable({
         <body>
           <div class="header">
             <div>
-              <h1>${escapeHtml(addaName)}</h1>
+              <h1>${PRINT_ADDA_NAME_TOKEN}</h1>
               <div class="subtitle">${escapeHtml(t("employeeSalary.print.reportTitle"))}</div>
             </div>
             <div class="printed">
@@ -215,9 +214,7 @@ export default function EmployeeSalaryTable({
           </script>
         </body>
       </html>
-    `);
-
-    printWindow.document.close();
+    `, addaId, language === "ur" ? "ur" : "en");
   }
 
   function handlePrintReport() {

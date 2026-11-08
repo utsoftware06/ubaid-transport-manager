@@ -443,9 +443,7 @@ type ExpenseVoucher = {
 
 type VoucherPrintSettings = {
   business_tagline: string | null;
-  logo_url: string | null;
   paper_size: "A4" | "A5" | "thermal-80mm";
-  show_logo_on_print: boolean;
   show_signature_on_print: boolean;
   print_footer_text: string | null;
 };
@@ -4805,7 +4803,7 @@ export default function ExpensesPage() {
       const { data: settingsData, error: settingsError } = await supabase
         .from("company_settings")
         .select(
-          "business_tagline, logo_url, paper_size, show_logo_on_print, show_signature_on_print, print_footer_text"
+          "business_tagline, paper_size, show_signature_on_print, print_footer_text"
         )
         .eq("adda_id", addaId)
         .maybeSingle();
@@ -4818,10 +4816,6 @@ export default function ExpensesPage() {
     }
 
     const companyTagline = value(printSettings?.business_tagline ?? "");
-    const logo =
-      printSettings?.show_logo_on_print && printSettings.logo_url
-        ? `<img class="logo" src="${value(printSettings.logo_url)}" alt="" />`
-        : "";
     const showSignatures = printSettings?.show_signature_on_print !== false;
     const footerText = value(printSettings?.print_footer_text ?? "");
     const paperSize =
@@ -4938,7 +4932,6 @@ export default function ExpensesPage() {
               margin-bottom: 18px;
             }
             .brand { display: flex; align-items: center; gap: 12px; }
-            .logo { width: 64px; height: 64px; object-fit: contain; }
             .tagline { margin-top: 4px; font-size: 12px; }
             h1 { margin: 0; font-size: 28px; color: #111827; }
             .meta { text-align: right; line-height: 1.7; font-size: 14px; }
@@ -5007,7 +5000,6 @@ export default function ExpensesPage() {
             <div class="header">
               <div>
                 <div class="brand">
-                  ${logo}
                   <div>
                     <h1>${PRINT_ADDA_NAME_TOKEN}</h1>
                     <div class="tagline">${companyTagline}</div>

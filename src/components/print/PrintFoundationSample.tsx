@@ -19,11 +19,11 @@ export default function PrintFoundationSample({
   branding,
   overrides,
 }: PrintFoundationSampleProps) {
-  const [logoFailed, setLogoFailed] = useState(false);
+  const [failedLogoUrl, setFailedLogoUrl] = useState<string | null>(null);
   const copy = (key: string) => printCopy(overrides.language, key);
   const logoUrl = getSafeLogoUrl(branding.logoUrl);
   const direction = getPrintDirection(overrides.language);
-  const showLogo = overrides.showLogo && logoUrl && !logoFailed;
+  const showLogo = overrides.showLogo && logoUrl && failedLogoUrl !== logoUrl;
 
   return (
     <>
@@ -39,14 +39,9 @@ export default function PrintFoundationSample({
           {copy("sampleNo")}
         </div>
         <header className="print-foundation-header">
-          {showLogo ? (
-            <img
-              src={logoUrl}
-              alt=""
-              className="print-foundation-logo"
-              onError={() => setLogoFailed(true)}
-            />
-          ) : null}
+          <span className="print-foundation-logo-slot">
+            {showLogo ? <img src={logoUrl} alt="" className="print-foundation-logo" onError={(event) => { event.currentTarget.style.display = "none"; setFailedLogoUrl(logoUrl); }} /> : null}
+          </span>
           <div className="print-foundation-brand">
             <h1>{branding.addaName.trim() || missingPrintAddaName(overrides.language)}</h1>
             {branding.tagline ? <p>{branding.tagline}</p> : null}
@@ -54,9 +49,6 @@ export default function PrintFoundationSample({
               overrides.showPhone ? branding.phone : null, overrides.showPhone ? branding.alternatePhone : null]
               .filter((value): value is string => Boolean(value?.trim()))
               .map((value, index) => <p key={`${index}-${value}`}>{value}</p>)}
-            {overrides.showLogo && branding.logoUrl && logoFailed ? (
-              <span className="print-foundation-logo-fallback">{copy("logoFailed")}</span>
-            ) : null}
           </div>
           <div className="print-foundation-serial">
             <span>{copy("sampleNo")}</span>

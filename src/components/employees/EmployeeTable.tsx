@@ -9,7 +9,7 @@ import {
 } from "./Employees";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { escapeHtml } from "@/lib/print/escapeHtml";
-import { usePrintAddaName } from "@/lib/print/usePrintAddaName";
+import { PRINT_ADDA_NAME_TOKEN, writeAddaBrandedPrintDocument } from "@/lib/print/legacyPrintBranding";
 import { useModuleTransportPrint } from "@/components/print/ModuleTransportPrintButton";
 import { printLabel, printValue, type ModulePrintPresentation } from "@/lib/print/modulePresentation";
 import VoiceTypingField from "@/components/shared/VoiceTypingField";
@@ -79,7 +79,6 @@ export default function EmployeeTable({
   setPage,
 }: Props) {
   const { t, dir, language } = useLanguage();
-  const addaName = usePrintAddaName(addaId, language === "ur" ? "ur" : "en");
   const modulePrint = useModuleTransportPrint("employee", addaId, language === "ur" ? "ur" : "en");
   const employeeTypeLabel = (type: EmployeeType) => {
     const keys: Record<EmployeeType, string> = {
@@ -158,7 +157,7 @@ export default function EmployeeTable({
             .join("")
         : `<tr><td colspan="14" class="empty">${escapeHtml(t("employees.empty"))}</td></tr>`;
 
-    printWindow.document.write(`
+    void writeAddaBrandedPrintDocument(printWindow, `
       <!doctype html>
       <html lang="${language}" dir="${dir}">
         <head>
@@ -224,7 +223,7 @@ export default function EmployeeTable({
         <body>
           <div class="header">
             <div>
-              <h1>${escapeHtml(addaName)}</h1>
+              <h1>${PRINT_ADDA_NAME_TOKEN}</h1>
               <h2>${escapeHtml(t("employees.print.reportTitle"))}</h2>
             </div>
             <div class="meta">
@@ -278,9 +277,7 @@ export default function EmployeeTable({
           </script>
         </body>
       </html>
-    `);
-
-    printWindow.document.close();
+    `, addaId, language === "ur" ? "ur" : "en");
   }
 
   function handlePrintReport() {
