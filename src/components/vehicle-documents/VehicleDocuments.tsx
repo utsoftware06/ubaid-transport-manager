@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import VehicleDocumentCards from "@/components/vehicle-documents/VehicleDocumentCards";
 import VehicleDocumentFilters from "@/components/vehicle-documents/VehicleDocumentFilters";
 import VehicleDocumentForm from "@/components/vehicle-documents/VehicleDocumentForm";
-import VehicleDocumentPrint from "@/components/vehicle-documents/VehicleDocumentPrint";
+import VehicleDocumentPrint, { type VehicleDocumentPrintHandle } from "@/components/vehicle-documents/VehicleDocumentPrint";
 import { useLanguage } from "@/contexts/LanguageContext";
 import ModulePageHeading from "@/components/shared/ModulePageHeading";
 import VehicleDocumentTable from "@/components/vehicle-documents/VehicleDocumentTable";
+import { resolveVehicleDocumentOwnerAddaId } from "@/components/vehicle-documents/ownership";
 import { supabase } from "@/lib/supabase/client";
 
 export type VehicleDocumentType =
@@ -43,6 +44,7 @@ export type VehicleOption = {
   id: string;
   vehicleNo: string;
   ownerName: string;
+  addaId: string | null;
 };
 
 export type VehicleDocumentRecord = {
@@ -67,6 +69,7 @@ export type VehicleDocumentRecord = {
 export type VehicleDocumentWithStatus = VehicleDocumentRecord & {
   vehicleNo: string;
   ownerName: string;
+  ownerAddaId: string | null;
   status: VehicleDocumentStatus;
   daysRemaining: number | null;
 };
@@ -100,6 +103,7 @@ type VehicleDbRow = {
   id: string;
   vehicle_no: string | null;
   owner_name: string | null;
+  adda_id: string | null;
 };
 
 type VehicleDocumentDbRow = {
@@ -227,6 +231,7 @@ export default function VehicleDocuments() {
         ...document,
         vehicleNo: vehicle?.vehicleNo ?? "-",
         ownerName: vehicle?.ownerName ?? "-",
+        ownerAddaId: resolveVehicleDocumentOwnerAddaId(document.adda_id, vehicle?.addaId),
         status: statusInfo.status,
         daysRemaining: statusInfo.daysRemaining,
       };
@@ -307,7 +312,7 @@ export default function VehicleDocuments() {
   const loadVehicles = useCallback(async () => {
     const { data, error: vehiclesError } = await supabase
       .from("vehicles")
-      .select("id, vehicle_no, owner_name")
+      .select("id, vehicle_no, owner_name, adda_id")
       .order("vehicle_no", { ascending: true });
 
     if (vehiclesError) {
@@ -321,6 +326,7 @@ export default function VehicleDocuments() {
         id: vehicle.id,
         vehicleNo: vehicle.vehicle_no ?? "",
         ownerName: vehicle.owner_name ?? "",
+        addaId: vehicle.adda_id,
       }))
     );
   }, []);
@@ -384,10 +390,16 @@ export default function VehicleDocuments() {
     setError("");
 
     try {
+      const vehicle = vehicleLookup.get(payload.vehicle_id);
+      if (!vehicle?.addaId) {
+        throw new Error("The selected vehicle has no verified Adda relationship.");
+      }
+
       const { error: createError } = await supabase
         .from("vehicle_documents")
         .insert({
           ...payload,
+          adda_id: vehicle.addaId,
           fee_amount: payload.fee_amount ?? 0,
         });
 
@@ -414,10 +426,17 @@ export default function VehicleDocuments() {
     setError("");
 
     try {
+      const existingDocument = documentsWithStatus.find((document) => document.id === id);
+      const vehicle = vehicleLookup.get(payload.vehicle_id);
+      if (!existingDocument?.ownerAddaId || !vehicle?.addaId) {
+        throw new Error("The document or selected vehicle has no verified Adda relationship.");
+      }
+
       const { error: updateError } = await supabase
         .from("vehicle_documents")
         .update({
           ...payload,
+          adda_id: vehicle.addaId,
           fee_amount: payload.fee_amount ?? 0,
         })
         .eq("id", id);
@@ -441,6 +460,11 @@ export default function VehicleDocuments() {
 
   async function deleteDocument(id: string) {
     if (mutationInFlightRef.current) return false;
+    const existingDocument = documentsWithStatus.find((document) => document.id === id);
+    if (!existingDocument?.ownerAddaId) {
+      setError(t("vehicleDocuments.messages.ownerUnverified"));
+      return false;
+    }
     const confirmed = window.confirm(t("vehicleDocuments.messages.deleteConfirm"));
 
     if (!confirmed) return false;
@@ -474,6 +498,8 @@ export default function VehicleDocuments() {
       setSaving(false);
     }
   }
+
+  const printRequestRef = useRef<VehicleDocumentPrintHandle | null>(null);
 
   return (
     <div dir={dir} className="ut-module-page space-y-6">
@@ -512,11 +538,16 @@ export default function VehicleDocuments() {
         saving={saving}
         error={error}
         onSelect={setSelectedDocument}
+        onPrint={(document) => {
+          setSelectedDocument(document);
+          printRequestRef.current?.printSelected(document);
+        }}
         onDelete={deleteDocument}
         onRefresh={refreshDocuments}
       />
 
       <VehicleDocumentPrint
+        ref={printRequestRef}
         documents={filteredDocuments}
         summary={summary}
         selectedDocument={selectedDocument}

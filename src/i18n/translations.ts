@@ -2111,6 +2111,7 @@ export const translations = {
       fields: {
         documentType: "Document Type", documentNumber: "Document Number",
         issueDate: "Issue Date", expiryDate: "Expiry Date", feeAmount: "Fee Amount",
+        feeRecordOnly: "For record only. No accounting entry is created.",
         authority: "Authority / Department", paymentMethod: "Payment Method",
         referenceNumber: "Reference Number", attachmentUrl: "Attachment URL",
         daysRemaining: "Days Remaining",
@@ -2148,6 +2149,7 @@ export const translations = {
       },
       messages: {
         loadFailed: "Vehicle documents could not be loaded. Please try again.",
+        ownerUnverified: "The document's vehicle Adda could not be verified. This action is blocked.",
         createFailed: "The vehicle document could not be created. Please try again.",
         updateFailed: "The vehicle document could not be updated. Please try again.",
         deleteConfirm: "Delete this vehicle document record?",
@@ -5540,6 +5542,7 @@ export const translations = {
       fields: {
         documentType: "دستاویز کی قسم", documentNumber: "دستاویز نمبر",
         issueDate: "اجرا کی تاریخ", expiryDate: "میعاد ختم ہونے کی تاریخ", feeAmount: "فیس کی رقم",
+        feeRecordOnly: "صرف ریکارڈ کے لیے۔ کوئی اکاؤنٹنگ اندراج نہیں ہوگا۔",
         authority: "متعلقہ ادارہ / محکمہ", paymentMethod: "ادائیگی کا طریقہ",
         referenceNumber: "حوالہ نمبر", attachmentUrl: "اٹیچمنٹ یو آر ایل",
         daysRemaining: "باقی دن",
@@ -5577,6 +5580,7 @@ export const translations = {
       },
       messages: {
         loadFailed: "گاڑیوں کے دستاویزات لوڈ نہیں ہو سکے۔ دوبارہ کوشش کریں۔",
+        ownerUnverified: "دستاویز کی گاڑی کا اڈا تصدیق نہیں ہو سکا۔ یہ کارروائی روک دی گئی ہے۔",
         createFailed: "گاڑی کا دستاویز شامل نہیں ہو سکا۔ دوبارہ کوشش کریں۔",
         updateFailed: "گاڑی کا دستاویز اپ ڈیٹ نہیں ہو سکا۔ دوبارہ کوشش کریں۔",
         deleteConfirm: "کیا یہ گاڑی کا دستاویز ریکارڈ حذف کر دیا جائے؟",

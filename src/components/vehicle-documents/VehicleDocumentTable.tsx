@@ -12,6 +12,7 @@ type Props = {
   saving: boolean;
   error: string;
   onSelect: (document: VehicleDocumentWithStatus) => void;
+  onPrint: (document: VehicleDocumentWithStatus) => void;
   onDelete: (id: string) => Promise<boolean>;
   onRefresh: () => Promise<void>;
 };
@@ -52,6 +53,7 @@ export default function VehicleDocumentTable({
   saving,
   error,
   onSelect,
+  onPrint,
   onDelete,
   onRefresh,
 }: Props) {
@@ -69,16 +71,6 @@ export default function VehicleDocumentTable({
     if (document.daysRemaining === 0) return t("vehicleDocuments.days.expiresToday");
     return `${document.daysRemaining} ${t(document.daysRemaining === 1 ? "vehicleDocuments.days.day" : "vehicleDocuments.days.days")}`;
   };
-  function handlePrint(document: VehicleDocumentWithStatus) {
-    if (saving) return;
-
-    onSelect(document);
-
-    window.setTimeout(() => {
-      window.print();
-    }, 150);
-  }
-
   return (
     <div dir={dir} className="rounded-xl bg-white p-6 shadow-md md:p-8">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -238,8 +230,8 @@ export default function VehicleDocumentTable({
 
                       <button
                         type="button"
-                        onClick={() => handlePrint(document)}
-                        disabled={saving}
+                        onClick={() => onPrint(document)}
+                        disabled={saving || !document.ownerAddaId}
                         title={t("vehicleDocuments.actions.printSelected")}
                         className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-bold text-white transition hover:bg-black disabled:cursor-not-allowed"
                       >

@@ -308,6 +308,9 @@ export default function VehicleDocumentForm({
           <label className="mb-2 block text-sm font-bold text-gray-900">
             {t("vehicleDocuments.fields.feeAmount")}
           </label>
+          <p className="mb-2 text-xs font-medium text-slate-600">
+            {t("vehicleDocuments.fields.feeRecordOnly")}
+          </p>
           <VoiceTypingField fieldLabel={t("vehicleDocuments.placeholders.feeAmount")} mode="amount"><input
             type="number"
             min="0"
