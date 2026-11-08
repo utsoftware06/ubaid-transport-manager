@@ -18,6 +18,7 @@ import {
   type ParchiDeadline,
 } from "@/lib/parchi/dueDates";
 import VoiceTypingField from "@/components/shared/VoiceTypingField";
+import { resolveAddaLogoDisplayUrl } from "@/lib/storage/addaLogo";
 
 type Direction = "received" | "issued";
 type EventKind = "document_created" | "created" | "funding" | "settlement" | "recovery" | "reversal" | "amendment" | "cancellation" | "recourse";
@@ -674,9 +675,11 @@ export default function Parchi() {
         if (brandResult.error) console.warn("Parchi stationery settings unavailable", brandResult.error);
         if (addaResult.error) console.warn("Parchi Adda name unavailable", addaResult.error);
         const brand = brandResult.data as PrintHeader | null;
+        const resolvedLogoUrl = await resolveAddaLogoDisplayUrl(contextAddaId, brand?.logo_url);
+        if (!active) return;
         setPrintBrand({
           addaName: addaResult.data?.name ?? null,
-          logoUrl: brand?.logo_url ?? null,
+          logoUrl: resolvedLogoUrl,
           showLogo: brand?.show_logo_on_print === true,
           address: brand?.address ?? addaResult.data?.address ?? null,
           phone: brand?.phone ?? addaResult.data?.phone ?? null,

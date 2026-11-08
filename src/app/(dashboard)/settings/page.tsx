@@ -7,12 +7,16 @@ import SettingsManager from "@/components/settings/SettingsManager";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { supabase } from "@/lib/supabase/client";
 import { settingsTabs, type SettingsTab } from "@/types/settings";
+import { canManageAddaLogo } from "@/lib/storage/addaLogoCore";
 
 type ProfileRow = {
   adda_id: string | null;
+  role: "super_admin" | "adda_admin" | "operator";
+  is_active: boolean;
 };
 
-type SettingsPageError = "load-error" | "no-adda" | null;
+type AddaOption = { id: string; name: string };
+type SettingsPageError = "load-error" | "no-adda" | "inactive" | null;
 
 const settingsTabTranslationKeys: Record<
   SettingsTab,
@@ -44,6 +48,10 @@ export default function SettingsPage() {
   const { t, dir } = useLanguage();
 
   const [addaId, setAddaId] = useState<string | null>(null);
+  const [role, setRole] = useState<ProfileRow["role"] | null>(null);
+  const [profileAddaId, setProfileAddaId] = useState<string | null>(null);
+  const [addas, setAddas] = useState<AddaOption[]>([]);
+  const [selectedAddaId, setSelectedAddaId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [pageError, setPageError] = useState<SettingsPageError>(null);
 
@@ -67,7 +75,7 @@ export default function SettingsPage() {
 
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
-          .select("adda_id")
+          .select("adda_id,role,is_active")
           .eq("id", user.id)
           .maybeSingle();
 
@@ -81,6 +89,34 @@ export default function SettingsPage() {
         }
 
         const currentProfile = profile as ProfileRow | null;
+
+        if (!currentProfile?.is_active) {
+          setPageError("inactive");
+          setAddaId(null);
+          setRole(currentProfile?.role ?? null);
+          return;
+        }
+
+        setRole(currentProfile.role);
+        setProfileAddaId(currentProfile.adda_id);
+
+        if (currentProfile.role === "super_admin") {
+          const { data: addaRows, error: addaError } = await supabase
+            .from("addas")
+            .select("id,name")
+            .order("name");
+          if (!isMounted) return;
+          if (addaError) {
+            console.error("Unable to load Adda options for settings:", addaError);
+            setPageError("load-error");
+            setAddas([]);
+            setAddaId(null);
+            return;
+          }
+          setAddas((addaRows ?? []) as AddaOption[]);
+          setAddaId(null);
+          return;
+        }
 
         if (!currentProfile?.adda_id) {
           setPageError("no-adda");
@@ -174,21 +210,41 @@ export default function SettingsPage() {
               {t("settings.loading")}
             </p>
           </div>
-        ) : pageError || !addaId ? (
+        ) : pageError || (!addaId && role !== "super_admin") ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-6 shadow-md">
             <h2 className="text-xl font-extrabold text-red-700">
-              {pageError === "load-error"
+          {pageError === "load-error"
                 ? t("settings.loadErrorTitle")
                 : t("settings.unavailableTitle")}
             </h2>
             <p className="mt-2 text-sm font-bold text-red-700">
               {pageError === "load-error"
                 ? t("settings.loadError")
-                : t("settings.unavailableDescription")}
+                : pageError === "inactive"
+                  ? t("settings.inactiveProfile")
+                  : t("settings.unavailableDescription")}
             </p>
           </div>
+        ) : role === "super_admin" ? (
+          <>
+            <section className="rounded-2xl border border-blue-200 bg-white p-5 shadow-sm">
+              <label htmlFor="settings-target-adda" className="block text-sm font-bold text-gray-800">
+                {t("settings.selectTargetAdda")}
+                <select
+                  id="settings-target-adda"
+                  value={selectedAddaId}
+                  onChange={(event) => setSelectedAddaId(event.target.value)}
+                  className="mt-2 min-h-11 w-full max-w-xl rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-semibold"
+                >
+                  <option value="">{t("settings.selectTargetAddaPlaceholder")}</option>
+                  {addas.map((adda) => <option key={adda.id} value={adda.id}>{adda.name}</option>)}
+                </select>
+              </label>
+            </section>
+            {selectedAddaId ? <SettingsManager key={selectedAddaId} addaId={selectedAddaId} canManageLogo={canManageAddaLogo(role, true, profileAddaId, selectedAddaId)} /> : null}
+          </>
         ) : (
-          <SettingsManager addaId={addaId} />
+          <SettingsManager key={addaId} addaId={addaId!} canManageLogo={canManageAddaLogo(role, true, profileAddaId, addaId)} />
         )}
       </div>
     </div>

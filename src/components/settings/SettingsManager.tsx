@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import CompanyProfileForm from "@/components/settings/CompanyProfileForm";
 import DocumentNumberingForm from "@/components/settings/DocumentNumberingForm";
 import LocalizationSettingsForm from "@/components/settings/LocalizationSettingsForm";
@@ -16,6 +16,7 @@ import {
 
 type SettingsManagerProps = {
   addaId: string;
+  canManageLogo: boolean;
 };
 
 type CompanySettingsPayload = {
@@ -106,7 +107,7 @@ function mapFormValuesToDatabasePayload(
   };
 }
 
-export default function SettingsManager({ addaId }: SettingsManagerProps) {
+export default function SettingsManager({ addaId, canManageLogo }: SettingsManagerProps) {
   const { setLanguage, t } = useLanguage();
 
   const [formValues, setFormValues] = useState<CompanySettingsFormValues>(
@@ -118,6 +119,8 @@ export default function SettingsManager({ addaId }: SettingsManagerProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<SettingsSaveStatus>("idle");
   const [errorMessage, setErrorMessage] = useState("");
+  const [settingsExists, setSettingsExists] = useState(false);
+  const logoBusyRef = useRef(false);
 
   const showLoadError = useEffectEvent(() => {
     setErrorMessage(t("settings.loadError"));
@@ -129,6 +132,9 @@ export default function SettingsManager({ addaId }: SettingsManagerProps) {
     async function loadSettings() {
       setIsLoading(true);
       setErrorMessage("");
+      setSettingsExists(false);
+      setFormValues(defaultCompanySettingsFormValues);
+      setInitialValues(defaultCompanySettingsFormValues);
 
       try {
         const { data, error } = await supabase
@@ -144,6 +150,7 @@ export default function SettingsManager({ addaId }: SettingsManagerProps) {
         }
 
         if (data) {
+          setSettingsExists(true);
           const mappedValues = mapDatabaseSettingsToFormValues(
             data as CompanySettings
           );
@@ -208,6 +215,10 @@ export default function SettingsManager({ addaId }: SettingsManagerProps) {
   }
 
   async function saveSettings() {
+    if (logoBusyRef.current) {
+      setErrorMessage(t("companyProfile.logoWaitBeforeSave"));
+      return;
+    }
     setSaveStatus("saving");
     setErrorMessage("");
 
@@ -263,6 +274,7 @@ export default function SettingsManager({ addaId }: SettingsManagerProps) {
       setLanguage(mappedValues.language);
       setFormValues(mappedValues);
       setInitialValues(mappedValues);
+      setSettingsExists(true);
       setSaveStatus("success");
     } catch (error) {
       console.error("Unable to save company settings:", error);
@@ -297,6 +309,16 @@ export default function SettingsManager({ addaId }: SettingsManagerProps) {
           onSave={saveSettings}
           onReset={resetSettings}
           saveStatus={saveStatus}
+          addaId={addaId}
+          settingsExists={settingsExists}
+          canManageLogo={canManageLogo}
+          onLogoSaved={(reference) => {
+            setFormValues((current) => ({ ...current, logoUrl: reference }));
+            setInitialValues((current) => ({ ...current, logoUrl: reference }));
+          }}
+          onLogoBusyChange={(busy) => {
+            logoBusyRef.current = busy;
+          }}
         />
       </div>
 

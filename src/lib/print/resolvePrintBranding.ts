@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase/client";
 import { projectPrintBranding, type AddaBrandRow, type CompanySettingsBrandRow } from "./brandingProjection";
 import type { PrintBranding } from "./types";
+import { resolveAddaLogoDisplayUrl } from "@/lib/storage/addaLogo";
 
 export type PrintBrandingResult = {
   branding: PrintBranding;
@@ -35,9 +36,11 @@ export async function resolvePrintBranding(
   const settingsRow = settingsResult.data as CompanySettingsBrandRow | null;
   const resolvedAdda = addaResult.data as AddaBrandRow | null;
   const settingsError = settingsResult.error?.message ?? null;
+  const branding = projectPrintBranding(addaId, settingsRow, resolvedAdda);
+  branding.logoUrl = await resolveAddaLogoDisplayUrl(addaId, branding.logoUrl);
 
   return {
-    branding: projectPrintBranding(addaId, settingsRow, resolvedAdda),
+    branding,
     settingsAvailable: !settingsResult.error,
     settingsError,
   };

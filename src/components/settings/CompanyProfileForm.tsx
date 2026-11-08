@@ -1,4 +1,5 @@
 import { useLanguage } from "@/contexts/LanguageContext";
+import CompanyLogoUpload from "@/components/settings/CompanyLogoUpload";
 import VoiceTypingField from "@/components/shared/VoiceTypingField";
 import type {
   CompanySettingsFormValues,
@@ -15,6 +16,11 @@ type CompanyProfileFormProps = {
   onSave: () => void | Promise<void>;
   onReset: () => void;
   saveStatus: SettingsSaveStatus;
+  addaId: string;
+  settingsExists: boolean;
+  canManageLogo: boolean;
+  onLogoSaved: (reference: string) => void;
+  onLogoBusyChange: (busy: boolean) => void;
 };
 
 export default function CompanyProfileForm({
@@ -24,6 +30,11 @@ export default function CompanyProfileForm({
   onSave,
   onReset,
   saveStatus,
+  addaId,
+  settingsExists,
+  canManageLogo,
+  onLogoSaved,
+  onLogoBusyChange,
 }: CompanyProfileFormProps) {
   const { t, dir } = useLanguage();
   const isSaving = saveStatus === "saving";
@@ -83,19 +94,15 @@ export default function CompanyProfileForm({
           </label>
 
 
-          <VoiceTypingField fieldLabel={t("companyProfile.logoUrlPlaceholder")} mode="url"><label className="block lg:col-span-2">
-            <span className="text-sm font-extrabold text-gray-900">
-              {t("companyProfile.logoUrl")}
-            </span>
-            <input
-              type="url"
-              name="logoUrl"
-              value={values.logoUrl}
-              onChange={(event) => onChange("logoUrl", event.target.value)}
-              placeholder={t("companyProfile.logoUrlPlaceholder")}
-              className="mt-2 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-900 shadow-sm outline-none transition placeholder:text-gray-500 focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-            />
-          </label></VoiceTypingField>
+          <CompanyLogoUpload
+            key={contextKey}
+            addaId={addaId}
+            logoReference={values.logoUrl}
+            settingsExists={settingsExists}
+            canManage={canManageLogo}
+            onSaved={onLogoSaved}
+            onBusyChange={onLogoBusyChange}
+          />
 
 
 
