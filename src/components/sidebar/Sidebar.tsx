@@ -45,7 +45,6 @@ const iconTones: Record<string, string> = {
   "/other-addas": "bg-rose-600",
   "/drivers": "bg-blue-500",
   "/vehicles": "bg-orange-600",
-  "/trip-management": "bg-violet-600",
   "/bilty": "bg-purple-600",
   "/drivers-ledger": "bg-indigo-600",
   "/customer-ledger": "bg-teal-600",

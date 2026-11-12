@@ -78,7 +78,6 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/petrol-pumps") ||
     pathname.startsWith("/reports") ||
     pathname.startsWith("/settings") ||
-    pathname.startsWith("/trip-management") ||
     pathname.startsWith("/vehicle-documents") ||
     pathname.startsWith("/vehicle-ledger") ||
     pathname.startsWith("/vehicles") ||

@@ -144,7 +144,6 @@ export const translations = {
         otherAdda: "Other Adda",
         drivers: "Drivers",
         vehicles: "Vehicles",
-        tripManagement: "Trip / Chakkar Management",
         bilty: "Bilty / Loading",
         bookings: "Legacy Bookings",
         loading: "Loading",
@@ -2636,7 +2635,7 @@ export const translations = {
     },
     dashboard: {
       title: "Transport Business Dashboard",
-      description: "Track trips, freight, cash received, expenses, pending balances and net profit.",
+      description: "See vehicle and active-party totals, recent Cashbook activity, and common actions.",
       refresh: "Refresh",
       refreshing: "Refreshing...",
       shell: {
@@ -6229,7 +6228,6 @@ export const translations = {
         otherAdda: "دوسرا اڈا",
         drivers: "ڈرائیورز",
         vehicles: "گاڑیاں",
-        tripManagement: "ٹرپ / چکر کا انتظام",
         bilty: "بلٹی / لوڈنگ",
         bookings: "پرانی بکنگز",
         loading: "لوڈنگ",
@@ -6710,7 +6708,7 @@ export const translations = {
     },
     dashboard: {
       title: "ٹرانسپورٹ کاروباری ڈیش بورڈ",
-      description: "ٹرپس، کرایہ، وصول شدہ رقم، اخراجات، بقایا اور خالص منافع دیکھیں۔",
+      description: "گاڑیوں اور فعال پارٹیوں کی تعداد، حالیہ کیش بک سرگرمی اور عام کارروائیاں دیکھیں۔",
       refresh: "تازہ کریں",
       refreshing: "تازہ ہو رہا ہے...",
       shell: {

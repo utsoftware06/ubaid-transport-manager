@@ -4,7 +4,6 @@ import {
   Banknote,
   BriefcaseBusiness,
   Building2,
-  Bus,
   Calculator,
   ClipboardList,
   ClipboardMinus,
@@ -123,12 +122,6 @@ export const navigationGroups: NavigationGroup[] = [
   {
     titleKey: "sidebar.groups.transportOperations",
     items: [
-      {
-        titleKey: "sidebar.items.tripManagement",
-        href: "/trip-management",
-        icon: Bus,
-        roles: allRoles,
-      },
       {
         titleKey: "sidebar.items.bilty",
         href: "/bilty",

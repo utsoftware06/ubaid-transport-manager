@@ -1,22 +1,14 @@
 "use client";
 
 import {
-  Banknote,
   CarFront,
-  MapPinned,
-  Receipt,
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
 
-import {
-  type DashboardSummary,
-  formatAmount,
-} from "./DashboardOverview";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 type Props = {
-  summary: DashboardSummary;
   loading: boolean;
   vehicleCount: number | null;
   partyCount: number | null;
@@ -26,6 +18,7 @@ type Props = {
 type MetricCard = {
   label: string;
   value: string | number;
+  helper: string;
   icon: LucideIcon;
   tone: string;
   iconTone: string;
@@ -36,8 +29,8 @@ type MetricCard = {
 
 function SkeletonGrid() {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-      {Array.from({ length: 5 }).map((_, index) => (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {Array.from({ length: 2 }).map((_, index) => (
         <div
           key={index}
           className="h-[150px] animate-pulse rounded-[16px] border border-slate-200 bg-white p-4"
@@ -52,7 +45,6 @@ function SkeletonGrid() {
 }
 
 export default function DashboardCards({
-  summary,
   loading,
   vehicleCount,
   partyCount,
@@ -63,6 +55,7 @@ export default function DashboardCards({
     {
       label: t("dashboard.shell.stats.vehicles"),
       value: vehicleCount === null ? "—" : vehicleCount.toLocaleString("en-PK"),
+      helper: t("dashboard.shell.stats.allVehiclesInAdda"),
       icon: CarFront,
       tone: "border-blue-100 bg-blue-50/65",
       iconTone: "bg-blue-600 text-white",
@@ -73,6 +66,7 @@ export default function DashboardCards({
     {
       label: t("dashboard.shell.stats.parties"),
       value: partyCount === null ? "—" : partyCount.toLocaleString("en-PK"),
+      helper: t("dashboard.shell.stats.activePartiesInAdda"),
       icon: UsersRound,
       tone: "border-emerald-100 bg-emerald-50/65",
       iconTone: "bg-emerald-600 text-white",
@@ -80,40 +74,13 @@ export default function DashboardCards({
       decorativeTone: "text-emerald-700/[0.12]",
       loading: countsLoading,
     },
-    {
-      label: t("dashboard.shell.stats.trips"),
-      value: summary.filtered.totalTrips.toLocaleString("en-PK"),
-      icon: MapPinned,
-      tone: "border-orange-100 bg-orange-50/65",
-      iconTone: "bg-orange-500 text-white",
-      valueTone: "text-orange-800",
-      decorativeTone: "text-orange-700/[0.12]",
-    },
-    {
-      label: t("dashboard.shell.stats.income"),
-      value: formatAmount(summary.filtered.cashReceived),
-      icon: Banknote,
-      tone: "border-violet-100 bg-violet-50/65",
-      iconTone: "bg-violet-600 text-white",
-      valueTone: "text-violet-800",
-      decorativeTone: "text-violet-700/[0.12]",
-    },
-    {
-      label: t("dashboard.shell.stats.expenses"),
-      value: formatAmount(summary.filtered.expenses),
-      icon: Receipt,
-      tone: "border-rose-100 bg-rose-50/65",
-      iconTone: "bg-rose-600 text-white",
-      valueTone: "text-rose-800",
-      decorativeTone: "text-rose-700/[0.12]",
-    },
   ];
   return (
-    <section dir={dir} aria-label={t("dashboard.sections.filteredPeriod")}>
+    <section dir={dir} aria-label={t("dashboard.shell.stats.currentAdda")}>
       {loading ? (
         <SkeletonGrid />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {cards.map((card) => {
             const Icon = card.icon;
             return (
@@ -149,7 +116,7 @@ export default function DashboardCards({
                 )}
                 <div className="relative mt-auto pt-1">
                   <p className="text-[11px] font-medium leading-4 text-slate-500">
-                    {t("dashboard.shell.stats.vsLastMonth")}
+                    {card.helper}
                   </p>
                 </div>
               </article>
