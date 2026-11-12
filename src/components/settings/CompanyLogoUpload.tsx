@@ -263,7 +263,7 @@ export default function CompanyLogoUpload({
                       {busy ? t("companyProfile.logoUploading") : t(logoReference ? "companyProfile.replaceLogo" : "companyProfile.uploadLogo")}
                     </button>
                     <button type="button" disabled={busy} onClick={clearSelection} className="min-h-10 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-800 disabled:opacity-50">
-                      {t("common.cancel")}
+                      {t("common.actions.cancel")}
                     </button>
                   </>
                 )}
