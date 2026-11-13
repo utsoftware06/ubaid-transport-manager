@@ -4,6 +4,7 @@ export type BilingualText = { en: string; ur: string };
 export type PrintCell = string | number | BilingualText | null | undefined;
 export type ModulePrintPresentation = {
   documentType: PrintDocumentType;
+  layoutVariant?: "vehicle_owner_summary";
   title: BilingualText;
   documentNo?: PrintCell;
   documentDate?: PrintCell;
